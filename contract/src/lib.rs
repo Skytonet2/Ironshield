@@ -1,0 +1,83 @@
+use near_sdk::{near, env, AccountId, PanicOnDefault, Promise, PromiseOrValue, NearToken, assert_one_yocto};
+use near_sdk::store::{LookupMap, Vector};
+use near_sdk::json_types::U128;
+pub type Balance = u128;
+
+mod pool;
+mod ft_callbacks;
+mod actions;
+mod admin;
+
+pub type PoolId = u32;
+
+/// Precision for MasterChef math. We multiply rewards by this before dividing by total_staked.
+pub const ACC_REWARD_MULTIPLIER: u128 = 1_000_000_000_000_000_000_000_000; // 1e24
+
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct UserInfo {
+    /// Total amount of $IRONCLAW staked by this user in a specific pool
+    pub amount: Balance,
+    /// Reward debt for MasterChef logic
+    pub reward_debt: Balance,
+    /// The timestamp when the user staked. Used to calculate lockup penalty.
+    pub staked_at: u64,
+}
+
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct PoolInfo {
+    /// Total $IRONCLAW staked in this pool
+    pub total_staked: Balance,
+    /// Reward multiplier (e.g. 1.0x, 1.5x, 2.0x). Represented with 2 decimals (100 = 1x, 150 = 1.5x)
+    pub reward_multiplier: u32,
+    /// Minimum lock period in nanoseconds
+    pub lock_period_ns: u64,
+    /// Penalty percentage (0-100) if user unstakes before lock period expires
+    pub early_exit_penalty_pct: u8,
+    /// Accumulated NEAR rewards per share (multiplied by ACC_REWARD_MULTIPLIER)
+    pub acc_reward_per_share: u128,
+}
+
+#[near(contract_state)]
+#[derive(PanicOnDefault)]
+pub struct StakingContract {
+    pub owner_id: AccountId,
+    pub ironclaw_token_id: AccountId,
+    
+    pub pools: Vector<PoolInfo>,
+    /// Maps (AccountId, PoolId) string to UserInfo
+    pub user_info: LookupMap<String, UserInfo>,
+    
+    /// The global rate at which NEAR rewards are distributed per nanosecond.
+    pub reward_per_ns: Balance,
+    /// Timestamp of the last time rewards were updated across pools.
+    pub last_reward_time: u64,
+    /// Total allocation points. Must be the sum of all pools' multipliers.
+    pub total_alloc_point: u32,
+    
+    pub paused: bool,
+}
+
+#[near]
+impl StakingContract {
+    #[init]
+    pub fn new(owner_id: AccountId, ironclaw_token_id: AccountId, reward_per_ns: U128) -> Self {
+        assert!(!env::state_exists(), "Already initialized");
+        Self {
+            owner_id,
+            ironclaw_token_id,
+            pools: Vector::new(b"p"),
+            user_info: LookupMap::new(b"u"),
+            reward_per_ns: reward_per_ns.into(),
+            last_reward_time: env::block_timestamp(),
+            total_alloc_point: 0,
+            paused: false,
+        }
+    }
+}
+
+/// Helper function to generate keys for the user_info lookup map
+pub(crate) fn get_user_key(account_id: &AccountId, pool_id: PoolId) -> String {
+    format!("{}:{}", account_id, pool_id)
+}

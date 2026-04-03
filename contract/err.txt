@@ -1,0 +1,194 @@
+    Checking ironshield-staking v0.1.0 (C:\Users\SKYTONET\ironshield\contract)
+warning: unused imports: `NearToken`, `PromiseOrValue`, and `assert_one_yocto`
+ --> src\lib.rs:1:63
+  |
+1 | use near_sdk::{near, env, AccountId, PanicOnDefault, Promise, PromiseOrValue, NearToken, assert_one_yocto};
+  |                                                               ^^^^^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `near_sdk::Promise`
+ --> src\admin.rs:2:5
+  |
+2 | use near_sdk::Promise;
+  |     ^^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> src\pool.rs:39:33
+    |
+ 39 |         self.pools.replace(pid, pool);
+    |                    -------      ^^^^ expected `PoolInfo`, found `&PoolInfo`
+    |                    |
+    |                    arguments to this method are incorrect
+    |
+note: `PoolInfo` does not implement `Clone`, so `&PoolInfo` was cloned instead
+   --> src\pool.rs:21:24
+    |
+ 21 |         let mut pool = self.pools.get(pid).expect("Pool not found").clone();
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the return type of this call is `&PoolInfo` due to the type of the argument passed
+   --> src\pool.rs:39:9
+    |
+ 39 |         self.pools.replace(pid, pool);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^----^
+    |                                 |
+    |                                 this argument influences the return type of `replace`
+note: method defined here
+   --> C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\near-sdk-5.1.0\src\store\vec\mod.rs:430:12
+    |
+430 |     pub fn replace(&mut self, index: u32, element: T) -> T {
+    |            ^^^^^^^
+help: consider annotating `PoolInfo` with `#[derive(Clone)]`
+   --> src\lib.rs:27:1
+    |
+ 27 + #[derive(Clone)]
+ 28 | pub struct PoolInfo {
+    |
+
+error[E0277]: the trait bound `UserInfo: Clone` is not satisfied
+  --> src\ft_callbacks.rs:53:54
+   |
+53 |         let mut user = self.user_info.get(&user_key).cloned().unwrap_or_else(|| UserInfo {
+   |                                                      ^^^^^^ the trait `Clone` is not implemented for `UserInfo`
+   |
+note: required by a bound in `std::option::Option::<&T>::cloned`
+  --> /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/option.rs:2102:4
+help: consider annotating `UserInfo` with `#[derive(Clone)]`
+  --> src\lib.rs:17:1
+   |
+17 + #[derive(Clone)]
+18 | pub struct UserInfo {
+   |
+
+error[E0308]: mismatched types
+   --> src\ft_callbacks.rs:80:37
+    |
+ 80 |         self.pools.replace(pool_id, pool);
+    |                    -------          ^^^^ expected `PoolInfo`, found `&PoolInfo`
+    |                    |
+    |                    arguments to this method are incorrect
+    |
+note: `PoolInfo` does not implement `Clone`, so `&PoolInfo` was cloned instead
+   --> src\ft_callbacks.rs:48:24
+    |
+ 48 |         let mut pool = self.pools.get(pool_id).unwrap().clone();
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the return type of this call is `&PoolInfo` due to the type of the argument passed
+   --> src\ft_callbacks.rs:80:9
+    |
+ 80 |         self.pools.replace(pool_id, pool);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^----^
+    |                                     |
+    |                                     this argument influences the return type of `replace`
+note: method defined here
+   --> C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\near-sdk-5.1.0\src\store\vec\mod.rs:430:12
+    |
+430 |     pub fn replace(&mut self, index: u32, element: T) -> T {
+    |            ^^^^^^^
+help: consider annotating `PoolInfo` with `#[derive(Clone)]`
+   --> src\lib.rs:27:1
+    |
+ 27 + #[derive(Clone)]
+ 28 | pub struct PoolInfo {
+    |
+
+error[E0308]: mismatched types
+   --> src\actions.rs:36:41
+    |
+ 36 |         self.user_info.insert(user_key, user);
+    |                        ------           ^^^^ expected `UserInfo`, found `&UserInfo`
+    |                        |
+    |                        arguments to this method are incorrect
+    |
+note: `UserInfo` does not implement `Clone`, so `&UserInfo` was cloned instead
+   --> src\actions.rs:24:24
+    |
+ 24 |         let mut user = self.user_info.get(&user_key).expect("You do not have a stake in this pool").clone();
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the return type of this call is `&UserInfo` due to the type of the argument passed
+   --> src\actions.rs:36:9
+    |
+ 36 |         self.user_info.insert(user_key, user);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^----^
+    |                                         |
+    |                                         this argument influences the return type of `insert`
+note: method defined here
+   --> C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\near-sdk-5.1.0\src\store\lookup_map\mod.rs:319:12
+    |
+319 |     pub fn insert(&mut self, k: K, v: V) -> Option<V>
+    |            ^^^^^^
+help: consider annotating `UserInfo` with `#[derive(Clone)]`
+   --> src\lib.rs:17:1
+    |
+ 17 + #[derive(Clone)]
+ 18 | pub struct UserInfo {
+    |
+
+error[E0308]: mismatched types
+   --> src\actions.rs:78:41
+    |
+ 78 |         self.user_info.insert(user_key, user);
+    |                        ------           ^^^^ expected `UserInfo`, found `&UserInfo`
+    |                        |
+    |                        arguments to this method are incorrect
+    |
+note: `UserInfo` does not implement `Clone`, so `&UserInfo` was cloned instead
+   --> src\actions.rs:50:24
+    |
+ 50 |         let mut user = self.user_info.get(&user_key).expect("Not staked").clone();
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the return type of this call is `&UserInfo` due to the type of the argument passed
+   --> src\actions.rs:78:9
+    |
+ 78 |         self.user_info.insert(user_key, user);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^----^
+    |                                         |
+    |                                         this argument influences the return type of `insert`
+note: method defined here
+   --> C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\near-sdk-5.1.0\src\store\lookup_map\mod.rs:319:12
+    |
+319 |     pub fn insert(&mut self, k: K, v: V) -> Option<V>
+    |            ^^^^^^
+help: consider annotating `UserInfo` with `#[derive(Clone)]`
+   --> src\lib.rs:17:1
+    |
+ 17 + #[derive(Clone)]
+ 18 | pub struct UserInfo {
+    |
+
+error[E0308]: mismatched types
+   --> src\actions.rs:79:37
+    |
+ 79 |         self.pools.replace(pool_id, pool);
+    |                    -------          ^^^^ expected `PoolInfo`, found `&PoolInfo`
+    |                    |
+    |                    arguments to this method are incorrect
+    |
+note: `PoolInfo` does not implement `Clone`, so `&PoolInfo` was cloned instead
+   --> src\actions.rs:49:24
+    |
+ 49 |         let mut pool = self.pools.get(pool_id).expect("Pool not found").clone();
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the return type of this call is `&PoolInfo` due to the type of the argument passed
+   --> src\actions.rs:79:9
+    |
+ 79 |         self.pools.replace(pool_id, pool);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^----^
+    |                                     |
+    |                                     this argument influences the return type of `replace`
+note: method defined here
+   --> C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\near-sdk-5.1.0\src\store\vec\mod.rs:430:12
+    |
+430 |     pub fn replace(&mut self, index: u32, element: T) -> T {
+    |            ^^^^^^^
+help: consider annotating `PoolInfo` with `#[derive(Clone)]`
+   --> src\lib.rs:27:1
+    |
+ 27 + #[derive(Clone)]
+ 28 | pub struct PoolInfo {
+    |
+
+Some errors have detailed explanations: E0277, E0308.
+For more information about an error, try `rustc --explain E0277`.
+warning: `ironshield-staking` (lib) generated 2 warnings
+error: could not compile `ironshield-staking` (lib) due to 6 previous errors; 2 warnings emitted

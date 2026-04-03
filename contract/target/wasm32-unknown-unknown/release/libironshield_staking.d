@@ -1,0 +1,1 @@
+C:\Users\SKYTONET\ironshield\contract\target\wasm32-unknown-unknown\release\libironshield_staking.rlib: C:\Users\SKYTONET\ironshield\contract\src\actions.rs C:\Users\SKYTONET\ironshield\contract\src\admin.rs C:\Users\SKYTONET\ironshield\contract\src\ft_callbacks.rs C:\Users\SKYTONET\ironshield\contract\src\lib.rs C:\Users\SKYTONET\ironshield\contract\src\pool.rs

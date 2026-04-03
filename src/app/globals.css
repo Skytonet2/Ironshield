@@ -1,0 +1,24 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes floatBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes swordSwing { 0%{transform:rotate(-8deg)} 25%{transform:rotate(12deg)} 50%{transform:rotate(-5deg)} 75%{transform:rotate(8deg)} 100%{transform:rotate(-8deg)} }
+input::placeholder, textarea::placeholder { color: #64748b; }
+select option { background: #0d1117; color: #e2e8f0; }
+.nav-link { transition: color 0.2s; }
+.nav-link:hover { color: #ffffff !important; }
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .desktop-nav { display: none !important; }
+  .mobile-only { display: block !important; }
+  
+  /* Force grid components to wrap smoothly */
+  .grid-wrap-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }
+  .grid-wrap-3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }
+  .grid-wrap-2 { grid-template-columns: 1fr !important; }
+  .flex-col-responsive { flex-direction: column !important; text-align: center !important; }
+  .flex-col-responsive > div { align-items: center !important; justify-content: center !important; }
+}
