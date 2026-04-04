@@ -25,10 +25,10 @@ export default function StakingPage({ openWallet }) {
       </div>
 
       <div className="grid-wrap-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 40 }}>
-        <StatCard icon={Coins} label="Total Staked" value="4.2M" change="+8%" positive color={t.accent} />
-        <StatCard icon={TrendingUp} label="Current APY" value="18.4%" change="+2.1%" positive color={t.green} />
-        <StatCard icon={Users} label="Active Stakers" value="1,247" change="+89" positive color={t.accent} />
-        <StatCard icon={Flame} label="Burned This Week" value="24,500" color={t.red} />
+        <StatCard icon={Coins} label="Total Staked" value="—" positive={false} color={t.textMuted} />
+        <StatCard icon={TrendingUp} label="Current APY" value="TBA" positive={false} color={t.textMuted} />
+        <StatCard icon={Users} label="Active Stakers" value="—" positive={false} color={t.textMuted} />
+        <StatCard icon={Flame} label="Burned This Week" value="—" color={t.textMuted} />
       </div>
 
       <div className="grid-wrap-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 36 }}>
@@ -55,17 +55,17 @@ export default function StakingPage({ openWallet }) {
             <Btn primary={activeTab === "unstake"} onClick={() => setActiveTab("unstake")} style={{ flex: 1, background: activeTab === "unstake" ? t.accent : t.bgSurface }}>Unstake</Btn>
           </div>
 
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 24, opacity: 0.5, pointerEvents: "none" }}>
             <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>Amount ($IRONCLAW)</div>
             <div style={{ position: "relative" }}>
-              <input type="text" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={{ width: "100%", background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 12, padding: "16px 20px", fontSize: 24, fontWeight: 600, color: t.white, outline: "none" }} />
+              <input type="text" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} disabled style={{ width: "100%", background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 12, padding: "16px 20px", fontSize: 24, fontWeight: 600, color: t.white, outline: "none" }} />
               <div style={{ position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)", fontSize: 13, fontWeight: 700, color: t.accent }}>$IRONCLAW</div>
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 32 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 32, opacity: 0.5, pointerEvents: "none" }}>
             {["25%", "50%", "75%", "MAX"].map(pct => (
-              <button key={pct} onClick={() => setAmount(pct)} style={{ background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 0", color: t.textMuted, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{pct}</button>
+              <button key={pct} onClick={() => setAmount(pct)} disabled style={{ background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 0", color: t.textMuted, fontSize: 12, fontWeight: 600, cursor: "not-allowed" }}>{pct}</button>
             ))}
           </div>
 
@@ -88,45 +88,42 @@ export default function StakingPage({ openWallet }) {
             </div>
           </div>
 
-          <Btn primary style={{ width: "100%", padding: 16, fontSize: 16 }}>
-            {activeTab === "stake" ? <Lock size={18} /> : <Unlock size={18} />}
-            {activeTab === "stake" ? "Stake Tokens" : "Unstake Tokens"}
+          <Btn disabled primary style={{ width: "100%", padding: 16, fontSize: 16, cursor: "not-allowed", opacity: 0.5 }}>
+            <Lock size={18} /> Coming Soon
           </Btn>
         </div>
 
         <WalletGate openWallet={openWallet}>
           <div style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20, padding: 32 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: t.white, marginBottom: 24 }}>Your Position</div>
-            <div style={{ filter: "blur(4px)", opacity: 0.6, pointerEvents: "none", userSelect: "none" }}>
+            <div style={{ pointerEvents: "none", userSelect: "none" }}>
               <div style={{ background: t.bgSurface, borderRadius: 12, padding: 24, marginBottom: 16 }}>
                 <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>Staked Balance</div>
-                <div style={{ fontSize: 32, fontWeight: 800, color: t.white }}>24,500</div>
-                <div style={{ fontSize: 12, color: t.textDim, marginTop: 4 }}>$IRONCLAW · Gold Tier 🥇</div>
+                <div style={{ fontSize: 32, fontWeight: 800, color: t.white }}>—</div>
+                <div style={{ fontSize: 12, color: t.textDim, marginTop: 4 }}>$IRONCLAW</div>
               </div>
 
               <div className="grid-wrap-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
                 <div style={{ background: t.bgSurface, borderRadius: 12, padding: 20 }}>
                   <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>Pending Rewards</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: t.green }}>347.8</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: t.white }}>—</div>
                 </div>
                 <div style={{ background: t.bgSurface, borderRadius: 12, padding: 20 }}>
                   <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>Total Earned</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: t.accent }}>3,694</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: t.white }}>—</div>
                 </div>
               </div>
 
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>Earnings This Month</div>
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 60 }}>
-                  {[12, 15, 14, 18, 22, 25, 24, 28, 32, 30, 35, 40].map((h, i) => (
-                    <div key={i} style={{ flex: 1, background: `linear-gradient(to top, ${t.green}, ${t.green}44)`, height: `${h}%`, borderRadius: 2 }} />
-                  ))}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 60, background: t.bgSurface, borderRadius: 8, border: `1px dashed ${t.border}` }}>
+                  <div style={{ fontSize: 13, color: t.textDim }}>Available after token launch</div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 12 }}>
-                <Btn primary style={{ flex: 1, background: t.green }}><CheckCircle size={16} /> Claim</Btn>
-                <Btn style={{ flex: 1 }}>Unstake</Btn>
+              <div style={{ display: "flex", gap: 12, opacity: 0.5 }}>
+                <Btn disabled primary style={{ flex: 1, background: t.green, cursor: "not-allowed" }}><CheckCircle size={16} /> Claim</Btn>
+                <Btn disabled style={{ flex: 1, cursor: "not-allowed" }}>Unstake</Btn>
               </div>
             </div>
           </div>

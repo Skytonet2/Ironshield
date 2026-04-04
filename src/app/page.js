@@ -25,6 +25,42 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Mascot Feature State
+  const [mascotPos, setMascotPos] = useState({ x: 0, y: 0 });
+  const [mascotClicks, setMascotClicks] = useState(0);
+  const [showSurprise, setShowSurprise] = useState(false);
+  const [isDraggingMascot, setIsDraggingMascot] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hasDragged, setHasDragged] = useState(false);
+
+  const handlePointerDown = (e) => {
+    setIsDraggingMascot(true);
+    setHasDragged(false);
+    setDragStart({ x: e.clientX - mascotPos.x, y: e.clientY - mascotPos.y });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  
+  const handlePointerMove = (e) => {
+    if (isDraggingMascot) {
+      setHasDragged(true);
+      setMascotPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    }
+  };
+  
+  const handlePointerUp = (e) => {
+    setIsDraggingMascot(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (!hasDragged) {
+      setMascotClicks(prev => {
+        if (prev + 1 >= 3) {
+          setShowSurprise(true);
+          return 0;
+        }
+        return prev + 1;
+      });
+    }
+  };
+
   const openWallet = () => showModal();
 
   const renderPage = () => {
@@ -50,11 +86,24 @@ export default function App() {
 
       <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "90vw", maxWidth: 500, height: 500, opacity: t.watermarkOpacity, backgroundImage: `url(${MASCOT_IMG})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center", pointerEvents: "none", zIndex: 0 }} />
 
-      <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 90, width: 90, height: 90, animation: "floatBounce 3s ease-in-out infinite", cursor: "pointer" }}
-        onMouseEnter={e => e.currentTarget.style.transform = "scale(1.2)"}
-        onMouseLeave={e => e.currentTarget.style.transform = ""}>
-        <img src={MASCOT_IMG} alt="IronClaw" style={{ width: "100%", height: "100%", objectFit: "contain", animation: "swordSwing 2.5s ease-in-out infinite", filter: "drop-shadow(0 4px 16px rgba(59,130,246,0.4))" }} />
+      <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 90, width: 90, height: 90, cursor: isDraggingMascot ? "grabbing" : "grab", transform: `translate(${mascotPos.x}px, ${mascotPos.y}px)`, touchAction: "none" }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
+        <img src={MASCOT_IMG} alt="IronClaw" draggable="false" style={{ width: "100%", height: "100%", objectFit: "contain", animation: "swordSwing 2.5s ease-in-out infinite", filter: "drop-shadow(0 4px 16px rgba(59,130,246,0.4))", transform: hasDragged ? "none" : "" }} />
       </div>
+
+      {showSurprise && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowSurprise(false)}>
+          <div style={{ background: t.bgCard, border: `2px solid ${t.accent}`, borderRadius: 24, padding: 40, textAlign: "center", maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
+            <h2 style={{ fontSize: 24, fontWeight: 800, color: t.white, marginBottom: 12 }}>You found the secret!</h2>
+            <p style={{ fontSize: 16, color: t.textMuted, marginBottom: 24, lineHeight: 1.6 }}>You just got a Whitelist Allocation for the $IRON token presale!</p>
+            <Btn primary onClick={() => setShowSurprise(false)} style={{ padding: "12px 32px" }}>Claim Allocation</Btn>
+          </div>
+        </div>
+      )}
 
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: t.navBg, backdropFilter: "blur(20px)", borderBottom: `1px solid ${t.border}` }}>
         <div style={{ maxWidth: 1600, margin: "0 auto", padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
