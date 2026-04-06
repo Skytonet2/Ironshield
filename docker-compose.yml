@@ -1,0 +1,63 @@
+# docker-compose.yml — Deploy IronClaw on ironclaw.com
+# Usage:
+#   docker-compose up -d          # start all services
+#   docker-compose logs -f        # tail logs
+#   docker-compose down           # stop
+#
+# Required: copy .env.example to .env and fill in real values before deploying.
+
+version: "3.8"
+
+services:
+  ironclaw:
+    build: .
+    container_name: ironclaw
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - BOT_MODE=webhook
+      - WEBHOOK_URL=https://ironclaw.com
+      - WEBHOOK_PORT=8443
+      - BACKEND_PORT=3001
+      - AUTONOMOUS_LOOP_INTERVAL=600000
+    ports:
+      - "3001:3001"   # Backend API
+      - "8443:8443"   # Telegram webhook
+    volumes:
+      - ./agent/activePrompt.json:/app/agent/activePrompt.json
+      - ./agent/activeMission.json:/app/agent/activeMission.json
+      - ./agent/loopState.json:/app/agent/loopState.json
+      - ./jobs/data:/app/jobs/data
+
+  # Optional: nginx reverse proxy for HTTPS termination
+  nginx:
+    image: nginx:alpine
+    container_name: ironclaw-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+      - ./out:/usr/share/nginx/html:ro  # Serve Next.js static export
+    depends_on:
+      - ironclaw
+
+  # Optional: PostgreSQL for persistent storage
+  db:
+    image: postgres:16-alpine
+    container_name: ironclaw-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ironclaw
+      POSTGRES_USER: ironclaw
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ironclaw_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pgdata:

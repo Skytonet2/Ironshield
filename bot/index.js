@@ -6,11 +6,25 @@ const { handleMessage }  = require("./handlers/messageHandler");
 const { handleDM }       = require("./handlers/dmHandler");
 const { recordMessage }  = require("./commands/summary");
 
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TOKEN    = process.env.TELEGRAM_BOT_TOKEN;
+const USE_WEBHOOK = process.env.BOT_MODE === "webhook";
+const WEBHOOK_URL = process.env.WEBHOOK_URL || ""; // e.g. https://ironclaw.com/bot
+const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || "8443", 10);
+
 if (!TOKEN) { console.error("TELEGRAM_BOT_TOKEN not set"); process.exit(1); }
 
-const bot = new TelegramBot(TOKEN, { polling: true }); // switch to webhook in production
-console.log("IronClaw bot started (polling mode)");
+let bot;
+
+if (USE_WEBHOOK && WEBHOOK_URL) {
+  // Production: webhook mode — no polling, receives pushes from Telegram
+  bot = new TelegramBot(TOKEN, { webHook: { port: WEBHOOK_PORT } });
+  bot.setWebHook(`${WEBHOOK_URL}/bot${TOKEN}`);
+  console.log(`IronClaw bot started (webhook mode → ${WEBHOOK_URL})`);
+} else {
+  // Development: polling mode
+  bot = new TelegramBot(TOKEN, { polling: true });
+  console.log("IronClaw bot started (polling mode)");
+}
 
 // Register command menu so Telegram shows suggestions when users type /
 bot.setMyCommands([
