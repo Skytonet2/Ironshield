@@ -12,18 +12,22 @@ import EarnPage from "@/components/EarnPage";
 import RoadmapPage from "@/components/RoadmapPage";
 import EcosystemPage from "@/components/EcosystemPage";
 import AdminPanel from "@/components/AdminPanel";
+import GovernancePage from "@/components/GovernancePage";
 import LaunchPage from "@/components/LaunchPage";
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Dashboard", "Staking", "Launch", "Trade", "Earn", "Roadmap", "Ecosystem"];
+const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Launch", "Roadmap", "Ecosystem"];
 
+/* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
 function getPageFromHash() {
-  if (typeof window === "undefined") return "Home";
-  const hash = window.location.hash.replace("#/", "").replace("#", "");
-  if (!hash) return "Home";
-  const match = pages.find(p => p.toLowerCase() === hash.toLowerCase());
+  const raw = window.location.hash.replace("#/", "").replace("#", "").toLowerCase();
+  const match = pages.find(p => p.toLowerCase() === raw);
   return match || "Home";
+}
+
+function navigate(page) {
+  window.location.hash = "#/" + page;
 }
 
 export default function App() {
@@ -31,20 +35,6 @@ export default function App() {
   const { connected, address, balance, showModal, signOut } = useWallet();
 
   const [page, setPageState] = useState("Home");
-
-  const navigate = useCallback((p) => {
-    setPageState(p);
-    window.location.hash = p === "Home" ? "/" : `/${p.toLowerCase()}`;
-    window.scrollTo(0, 0);
-  }, []);
-
-  // Read hash on mount + listen for back/forward
-  useEffect(() => {
-    setPageState(getPageFromHash());
-    const onHashChange = () => setPageState(getPageFromHash());
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
   const [showAdmin, setShowAdmin] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -56,20 +46,34 @@ export default function App() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hasDragged, setHasDragged] = useState(false);
 
+  const setPage = useCallback((p) => {
+    setPageState(p);
+    navigate(p);
+    window.scrollTo(0, 0);
+  }, []);
+
+  // Sync page from hash on mount and on hash change
+  useEffect(() => {
+    setPageState(getPageFromHash());
+    const onHash = () => setPageState(getPageFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   const handlePointerDown = (e) => {
     setIsDraggingMascot(true);
     setHasDragged(false);
     setDragStart({ x: e.clientX - mascotPos.x, y: e.clientY - mascotPos.y });
     e.currentTarget.setPointerCapture(e.pointerId);
   };
-  
+
   const handlePointerMove = (e) => {
     if (isDraggingMascot) {
       setHasDragged(true);
       setMascotPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
     }
   };
-  
+
   const handlePointerUp = (e) => {
     setIsDraggingMascot(false);
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -88,15 +92,16 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case "Home": return <HomePage setPage={navigate} openWallet={openWallet} />;
-      case "Dashboard": return <DashboardPage openWallet={openWallet} />;
-      case "Staking": return <StakingPage openWallet={openWallet} />;
-      case "Launch": return <LaunchPage openWallet={openWallet} />;
-      case "Trade": return <TradePage openWallet={openWallet} />;
-      case "Earn": return <EarnPage openWallet={openWallet} />;
-      case "Roadmap": return <RoadmapPage />;
-      case "Ecosystem": return <EcosystemPage />;
-      default: return <HomePage setPage={navigate} openWallet={openWallet} />;
+      case "Home":       return <HomePage setPage={setPage} openWallet={openWallet} />;
+      case "Dashboard":  return <DashboardPage openWallet={openWallet} />;
+      case "Staking":    return <StakingPage openWallet={openWallet} />;
+      case "Trade":      return <TradePage openWallet={openWallet} />;
+      case "Earn":       return <EarnPage openWallet={openWallet} />;
+      case "Governance": return <GovernancePage openWallet={openWallet} />;
+      case "Launch":     return <LaunchPage setPage={setPage} openWallet={openWallet} />;
+      case "Roadmap":    return <RoadmapPage />;
+      case "Ecosystem":  return <EcosystemPage />;
+      default:           return <HomePage setPage={setPage} openWallet={openWallet} />;
     }
   };
 
@@ -131,18 +136,18 @@ export default function App() {
 
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: t.navBg, backdropFilter: "blur(20px)", borderBottom: `1px solid ${t.border}` }}>
         <div style={{ maxWidth: 1600, margin: "0 auto", padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => navigate("Home")}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => setPage("Home")}>
             <Shield size={24} color={t.accent} />
             <span style={{ fontSize: 18, fontWeight: 800, color: t.white, letterSpacing: "-0.5px" }}>Iron<span style={{ color: t.accent }}>Shield</span></span>
           </div>
-          
+
           {/* Desktop Nav */}
           <div className="desktop-nav" style={{ display: "flex", gap: 4 }}>
             {pages.map(p => (
-              <button key={p} onClick={() => navigate(p)} className="nav-link" style={{
-                background: page === p ? `${t.accent}18` : "transparent",
-                border: page === p ? `1px solid ${t.accent}44` : "1px solid transparent",
-                color: page === p ? t.accent : t.textMuted,
+              <button key={p} onClick={() => setPage(p)} className="nav-link" style={{
+                background: page === p ? `${p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent}18` : "transparent",
+                border: page === p ? `1px solid ${p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent}44` : "1px solid transparent",
+                color: page === p ? (p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent) : t.textMuted,
                 padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>{p}</button>
             ))}
@@ -164,20 +169,20 @@ export default function App() {
             ) : (
               <Btn primary onClick={openWallet} style={{ padding: "8px 18px", fontSize: 13 }}><Wallet size={13} /> Connect</Btn>
             )}
-            
+
             {/* Mobile Menu Toggle */}
             <button className="mobile-only" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ background: "none", border: "none", color: t.white, fontSize: 24, cursor: "pointer", display: "none" }}>
               ☰
             </button>
           </div>
         </div>
-        
+
         {/* Mobile Nav Drawer */}
         {mobileMenuOpen && (
           <div className="mobile-only" style={{ background: t.bgCard, borderBottom: `1px solid ${t.border}`, padding: "10px 24px", display: "none" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {pages.map(p => (
-                <button key={p} onClick={() => { navigate(p); setMobileMenuOpen(false); }} style={{
+                <button key={p} onClick={() => { setPage(p); setMobileMenuOpen(false); }} style={{
                   background: page === p ? `${t.accent}18` : "transparent",
                   border: "none", color: page === p ? t.accent : t.textMuted,
                   padding: "12px", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", textAlign: "left"

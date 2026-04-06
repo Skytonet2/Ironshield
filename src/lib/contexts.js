@@ -5,7 +5,6 @@ import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import * as nearAPI from "near-api-js";
 import { createContext, useContext, useState, useEffect } from "react";
-import { seedDefaults } from "./store";
 
 export const DARK = {
   bg: "#080b12", bgCard: "#0d1117", bgCardHover: "#111827", bgSurface: "#161b22",
@@ -54,7 +53,6 @@ export function WalletProvider({ children }) {
   const [balance, setBalance] = useState("0");
 
   useEffect(() => {
-    seedDefaults();
     const init = async () => {
       const _selector = await setupWalletSelector({
         network: "mainnet",
@@ -103,10 +101,24 @@ export function WalletProvider({ children }) {
       };
       const nearConnection = await connect(connectionConfig);
       const account = await nearConnection.account(accountId);
-      const accountBalance = await account.getAccountBalance();
-      setBalance((accountBalance.available / 1e24).toFixed(2));
+
+      // Use account.state() as primary method (more reliable than getAccountBalance)
+      try {
+        const state = await account.state();
+        const totalBn = BigInt(state.amount);
+        const lockedBn = BigInt(state.locked || "0");
+        // Storage staking cost ~0.1 NEAR per key, reserve a safe minimum
+        const storageCost = BigInt(state.storage_usage || 0) * BigInt("10000000000000000000"); // 10^19 per byte
+        const available = totalBn - lockedBn - storageCost;
+        const displayBal = available > 0n ? available : 0n;
+        setBalance((Number(displayBal) / 1e24).toFixed(2));
+      } catch {
+        // Fallback to getAccountBalance if state() fails
+        const accountBalance = await account.getAccountBalance();
+        setBalance((parseFloat(accountBalance.available) / 1e24).toFixed(2));
+      }
     } catch (e) {
-      console.error(e);
+      console.error("Balance fetch error:", e);
       setBalance("0");
     }
   };
