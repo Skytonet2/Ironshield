@@ -34,7 +34,13 @@ async function handle(bot, msg) {
     const json = await res.json();
     await bot.deleteMessage(chatId, waitMsg.message_id);
     if (json.success) {
-      await bot.sendMessage(chatId, formatter.formatResearch(json.data), { parse_mode: "Markdown" });
+      const formatted = formatter.formatResearch(json.data);
+      try {
+        await bot.sendMessage(chatId, formatted, { parse_mode: "Markdown" });
+      } catch {
+        // Markdown parse failed — send as plain text
+        await bot.sendMessage(chatId, formatted.replace(/[*_`]/g, ""));
+      }
     } else {
       await bot.sendMessage(chatId, `⚠️ ${json.error || "Research failed. Please try again."}`);
     }

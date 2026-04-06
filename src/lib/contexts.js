@@ -1,5 +1,4 @@
 "use client";
-import "@near-wallet-selector/modal-ui/styles.css";
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 
 export const DARK = {
@@ -65,6 +64,7 @@ export function WalletProvider({ children }) {
         import("@near-wallet-selector/core"),
         import("@near-wallet-selector/modal-ui"),
         import("@near-wallet-selector/meteor-wallet"),
+        import("@near-wallet-selector/modal-ui/styles.css"),
       ]);
 
       const _selector = await setupWalletSelector({

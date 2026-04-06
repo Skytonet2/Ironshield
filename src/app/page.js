@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Shield, Sun, Moon, LogOut, Wallet } from "lucide-react";
+import { Shield, Sun, Moon, LogOut, Wallet, MessageCircle } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
 
@@ -199,6 +199,27 @@ export default function App() {
       </div>
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+
+      {/* Floating Telegram Bot Launcher */}
+      <a
+        href="https://t.me/IronShieldCore_bot"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Launch IronShield Bot"
+        style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 99,
+          width: 56, height: 56, borderRadius: "50%",
+          background: `linear-gradient(135deg, ${t.accent}, #0ea5e9)`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: `0 4px 20px ${t.accent}55`,
+          cursor: "pointer", textDecoration: "none",
+          transition: "transform 0.2s, box-shadow 0.2s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.boxShadow = `0 6px 28px ${t.accent}88`; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = `0 4px 20px ${t.accent}55`; }}
+      >
+        <MessageCircle size={26} color="#fff" fill="#fff" />
+      </a>
     </div>
   );
 }

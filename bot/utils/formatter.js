@@ -1,6 +1,7 @@
 // bot/utils/formatter.js
 
-const esc = (text) => String(text || "").replace(/[_*[\]()~`>#+=|{}.!-]/g, "\\$&");
+// Escape special chars for Telegram Markdown v1 (_*`[)
+const esc = (text) => String(text || "").replace(/([_*`\[])/g, "\\$1");
 
 const trustColor = (score) => {
   if (score >= 75) return "🟢";
@@ -22,8 +23,9 @@ module.exports = {
   formatResearch(data) {
     if (!data) return "⚠️ No research data returned.";
     const m = data.metrics || {};
+    const overview = data.overview ? esc(data.overview.split(".")[0]) : "Unknown";
     const lines = [
-      `🔍 *Research: ${data.overview ? data.overview.split(".")[0] : "Unknown"}*`,
+      `🔍 *Research: ${overview}*`,
       `━━━━━━━━━━━━━━━━━━`,
       `📊 *Metrics*`,
       m.price       ? `• Price: \`${m.price}\``             : null,
@@ -37,13 +39,13 @@ module.exports = {
 
     if (data.risks?.length) {
       lines.push(`⚠️ *Risks*`);
-      data.risks.slice(0, 4).forEach(r => lines.push(`• ${r}`));
+      data.risks.slice(0, 4).forEach(r => lines.push(`• ${esc(r)}`));
       lines.push(``);
     }
 
     if (data.redFlags?.length) {
       lines.push(`🚩 *Red Flags*`);
-      data.redFlags.slice(0, 3).forEach(f => lines.push(`• ${f}`));
+      data.redFlags.slice(0, 3).forEach(f => lines.push(`• ${esc(f)}`));
       lines.push(``);
     }
 
@@ -52,7 +54,7 @@ module.exports = {
     }
 
     if (data.sources?.length) {
-      lines.push(`\n🔗 _Sources: ${data.sources.join(" · ")}_`);
+      lines.push(`\n🔗 Sources: ${data.sources.join(" | ")}`);
     }
 
     return lines.join("\n");
@@ -67,23 +69,23 @@ module.exports = {
 
     if (data.keyPoints?.length) {
       lines.push(`📌 *Key Points*`);
-      data.keyPoints.slice(0, 5).forEach(p => lines.push(`• ${p}`));
+      data.keyPoints.slice(0, 5).forEach(p => lines.push(`• ${esc(p)}`));
       lines.push(``);
     }
 
     if (data.tokensMentioned?.length) {
-      lines.push(`🪙 *Tokens Mentioned:* ${data.tokensMentioned.join(", ")}`);
+      lines.push(`🪙 *Tokens Mentioned:* ${data.tokensMentioned.map(t => esc(t)).join(", ")}`);
     }
 
     if (data.redFlags?.length) {
       lines.push(`🚩 *Red Flags*`);
-      data.redFlags.forEach(f => lines.push(`• ${f}`));
+      data.redFlags.forEach(f => lines.push(`• ${esc(f)}`));
       lines.push(``);
     }
 
     if (data.actionableInsights?.length) {
       lines.push(`⚡ *Insights*`);
-      data.actionableInsights.forEach(i => lines.push(`• ${i}`));
+      data.actionableInsights.forEach(i => lines.push(`• ${esc(i)}`));
     }
 
     return lines.join("\n");
