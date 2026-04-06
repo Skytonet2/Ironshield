@@ -14,10 +14,12 @@ import EcosystemPage from "@/components/EcosystemPage";
 import AdminPanel from "@/components/AdminPanel";
 import GovernancePage from "@/components/GovernancePage";
 import LaunchPage from "@/components/LaunchPage";
+import DocsPage from "@/components/DocsPage";
+import MascotSystem from "@/components/MascotSystem";
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Launch", "Roadmap", "Ecosystem"];
+const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Launch", "Roadmap", "Ecosystem", "Docs"];
 
 /* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
 function getPageFromHash() {
@@ -43,13 +45,7 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Mascot Feature State
-  const [mascotPos, setMascotPos] = useState({ x: 0, y: 0 });
-  const [mascotClicks, setMascotClicks] = useState(0);
   const [showSurprise, setShowSurprise] = useState(false);
-  const [isDraggingMascot, setIsDraggingMascot] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [hasDragged, setHasDragged] = useState(false);
 
   const setPage = useCallback((p) => {
     setPageState(p);
@@ -65,34 +61,6 @@ export default function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
-
-  const handlePointerDown = (e) => {
-    setIsDraggingMascot(true);
-    setHasDragged(false);
-    setDragStart({ x: e.clientX - mascotPos.x, y: e.clientY - mascotPos.y });
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e) => {
-    if (isDraggingMascot) {
-      setHasDragged(true);
-      setMascotPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-    }
-  };
-
-  const handlePointerUp = (e) => {
-    setIsDraggingMascot(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    if (!hasDragged) {
-      setMascotClicks(prev => {
-        if (prev + 1 >= 3) {
-          setShowSurprise(true);
-          return 0;
-        }
-        return prev + 1;
-      });
-    }
-  };
 
   const openWallet = () => showModal();
 
@@ -119,6 +87,7 @@ export default function App() {
       case "Launch":     return <LaunchPage setPage={setPage} openWallet={openWallet} />;
       case "Roadmap":    return <RoadmapPage />;
       case "Ecosystem":  return <EcosystemPage />;
+      case "Docs":       return <DocsPage />;
       default:           return <HomePage setPage={setPage} openWallet={openWallet} />;
     }
   };
@@ -133,13 +102,7 @@ export default function App() {
 
       <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "90vw", maxWidth: 500, height: 500, opacity: t.watermarkOpacity, backgroundImage: `url(${MASCOT_IMG})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center", pointerEvents: "none", zIndex: 0 }} />
 
-      <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 90, width: 90, height: 90, cursor: isDraggingMascot ? "grabbing" : "grab", transform: `translate(${mascotPos.x}px, ${mascotPos.y}px)`, touchAction: "none" }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-      >
-        <img src={MASCOT_IMG} alt="IronClaw" draggable="false" style={{ width: "100%", height: "100%", objectFit: "contain", animation: "swordSwing 2.5s ease-in-out infinite", filter: "drop-shadow(0 4px 16px rgba(59,130,246,0.4))", transform: hasDragged ? "none" : "" }} />
-      </div>
+      <MascotSystem onSecretFound={() => setShowSurprise(true)} />
 
       {showSurprise && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowSurprise(false)}>
@@ -222,7 +185,7 @@ export default function App() {
             <span style={{ fontSize: 13, color: t.textMuted }}>IronShield — by <span style={{ color: t.white }}>IronClaw</span> on NEAR Protocol</span>
           </div>
           <div style={{ display: "flex", gap: 20, fontSize: 13, color: t.textDim, flexWrap: "wrap", alignItems: "center" }}>
-            <a href="https://docs.google.com/document/d/1xRiNukfCBmgmGatib_3xSMtI_GmTjWzN/edit?usp=sharing&ouid=102071430463828769085&rtpof=true&sd=true" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Docs</a>
+            <span onClick={() => setPage("Docs")} style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Docs</span>
             <a href="https://t.me/IronClawHQ" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Telegram</a>
             <a href="https://x.com/_IronClaw" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>X (Twitter)</a>
             <a href="https://t.me/IronShieldCore_bot" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>IronShield Bot</a>
