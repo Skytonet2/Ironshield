@@ -71,12 +71,23 @@ async function getDexScreenerTrending() {
 
 /**
  * Fetch NEAR ecosystem trending from DexScreener
+ * Uses wrap.near as anchor token to find all active NEAR pairs
  */
 async function getNearTrending() {
-  const data = await fetchJson(`${DEXSCREENER_API}/latest/dex/search?q=near`);
+  const data = await fetchJson(`${DEXSCREENER_API}/latest/dex/tokens/wrap.near`);
   if (!data?.pairs) return [];
-  return data.pairs
-    .filter(p => p.chainId === "near")
+
+  // Deduplicate by base token, keep highest volume pair for each
+  const seen = new Map();
+  for (const p of data.pairs) {
+    const key = p.baseToken?.address || p.baseToken?.symbol;
+    const existing = seen.get(key);
+    if (!existing || (p.volume?.h24 || 0) > (existing.volume?.h24 || 0)) {
+      seen.set(key, p);
+    }
+  }
+
+  return Array.from(seen.values())
     .sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0))
     .slice(0, 5)
     .map(p => ({
