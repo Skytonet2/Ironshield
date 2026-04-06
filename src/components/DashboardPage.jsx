@@ -33,7 +33,7 @@ export default function DashboardPage() {
           {[
             { type: "Phishing", group: "NEAR Builders", time: "2m", severity: "high" },
             { type: "Rug Contract", group: "DeFi Alpha", time: "14m", severity: "critical" },
-            { type: "Impersonation", group: "Ref Finance", time: "1h", severity: "medium" },
+            { type: "Impersonation", group: "Rhea Finance", time: "1h", severity: "medium" },
             { type: "Phishing Link", group: "NEAR Dev", time: "3h", severity: "high" },
           ].map((a, i, arr) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none" }}>

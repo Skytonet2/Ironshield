@@ -51,7 +51,7 @@ export default function HomePage({ setPage, openWallet }) {
       }}>
         <Section style={{ padding: "130px 24px 80px" }}>
           <div style={{ maxWidth: 720 }}>
-            <Badge color={t.green}>✦ LIVE ON NEAR PROTOCOL</Badge>
+            <Badge color={t.green}>LIVE ON NEAR PROTOCOL</Badge>
 
             <h1 style={{ fontSize: 58, fontWeight: 800, color: t.white, lineHeight: 1.08, marginTop: 20, letterSpacing: "-1.5px" }}>
               The AI Agent<br />

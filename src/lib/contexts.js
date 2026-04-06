@@ -47,46 +47,56 @@ export const WalletCtx = createContext({
 export const useWallet = () => useContext(WalletCtx);
 
 export function WalletProvider({ children }) {
+  const [mounted, setMounted] = useState(false);
   const [selector, setSelector] = useState(null);
   const [modal, setModal] = useState(null);
   const [address, setAddress] = useState(null);
   const [balance, setBalance] = useState("0");
 
+  // Hydration guard — render children immediately but defer wallet init
+  useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
+    if (!mounted) return;
+    let subscription;
     const init = async () => {
-      const _selector = await setupWalletSelector({
-        network: "mainnet",
-        modules: [setupMeteorWallet()],
-      });
+      try {
+        const _selector = await setupWalletSelector({
+          network: "mainnet",
+          modules: [setupMeteorWallet()],
+        });
 
-      const _modal = setupModal(_selector, {
-        contractId: "guest-book.near",
-      });
+        const _modal = setupModal(_selector, {
+          contractId: "ironshield.near",
+        });
 
-      const state = _selector.store.getState();
-      const accounts = state.accounts;
+        const state = _selector.store.getState();
+        const accounts = state.accounts;
 
-      if (accounts.length > 0) {
-        setAddress(accounts[0].accountId);
-        fetchBalance(accounts[0].accountId);
-      }
-
-      setSelector(_selector);
-      setModal(_modal);
-
-      const subscription = _selector.store.observable.subscribe((state) => {
-        if (state.accounts.length > 0) {
-          setAddress(state.accounts[0].accountId);
-          fetchBalance(state.accounts[0].accountId);
-        } else {
-          setAddress(null);
-          setBalance("0");
+        if (accounts.length > 0) {
+          setAddress(accounts[0].accountId);
+          fetchBalance(accounts[0].accountId);
         }
-      });
-      return () => subscription.unsubscribe();
+
+        setSelector(_selector);
+        setModal(_modal);
+
+        subscription = _selector.store.observable.subscribe((state) => {
+          if (state.accounts.length > 0) {
+            setAddress(state.accounts[0].accountId);
+            fetchBalance(state.accounts[0].accountId);
+          } else {
+            setAddress(null);
+            setBalance("0");
+          }
+        });
+      } catch (err) {
+        console.warn("Wallet selector init failed, app continues without wallet:", err);
+      }
     };
     init();
-  }, []);
+    return () => { if (subscription) subscription.unsubscribe(); };
+  }, [mounted]);
 
   const fetchBalance = async (accountId) => {
     try {
@@ -101,10 +111,24 @@ export function WalletProvider({ children }) {
       };
       const nearConnection = await connect(connectionConfig);
       const account = await nearConnection.account(accountId);
-      const accountBalance = await account.getAccountBalance();
-      setBalance((accountBalance.available / 1e24).toFixed(2));
+
+      // Use account.state() as primary method (more reliable than getAccountBalance)
+      try {
+        const state = await account.state();
+        const totalBn = BigInt(state.amount);
+        const lockedBn = BigInt(state.locked || "0");
+        // Storage staking cost ~0.1 NEAR per key, reserve a safe minimum
+        const storageCost = BigInt(state.storage_usage || 0) * BigInt("10000000000000000000"); // 10^19 per byte
+        const available = totalBn - lockedBn - storageCost;
+        const displayBal = available > 0n ? available : 0n;
+        setBalance((Number(displayBal) / 1e24).toFixed(2));
+      } catch {
+        // Fallback to getAccountBalance if state() fails
+        const accountBalance = await account.getAccountBalance();
+        setBalance((parseFloat(accountBalance.available) / 1e24).toFixed(2));
+      }
     } catch (e) {
-      console.error(e);
+      console.error("Balance fetch error:", e);
       setBalance("0");
     }
   };

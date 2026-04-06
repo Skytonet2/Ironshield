@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(xargs cat:*)",
+      "Bash(npx next:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx near:*)",
+      "Bash(npx web4-deploy:*)",
+      "Bash(curl -sL --max-time 15 https://ironclaw.com)",
+      "Bash(curl -sL --max-time 15 https://github.com/nearai/ironclaw)",
+      "WebFetch(domain:ironclaw.com)",
+      "Bash(curl -sL --max-time 15 -o /dev/null -w \"%{http_code} %{url_effective}\" https://ironclaw.com)",
+      "Bash(curl -sL --max-time 15 -o /dev/null -w \"%{http_code} %{url_effective}\" https://app.near.ai)",
+      "Bash(curl -sL --max-time 15 https://app.near.ai)",
+      "Bash(curl -sL --max-time 15 -o /dev/null -w \"%{http_code} %{url_effective}\" https://github.com/nearai/ironclaw)",
+      "WebFetch(domain:app.near.ai)",
+      "Bash(gh api:*)",
+      "Bash(curl -sL --max-time 15 https://raw.githubusercontent.com/nearai/ironclaw/main/README.md)",
+      "WebFetch(domain:near.ai)",
+      "Bash(gh search:*)",
+      "WebFetch(domain:agent.near.ai)",
+      "Bash(where gh:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" repo view nearai/ironclaw --json name,description)",
+      "Bash(\"/c/Program Files \\(x86\\)/GitHub CLI/gh.exe\" repo view nearai/ironclaw --json name,description)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:ironshield.near.page)",
+      "Bash(grep -c hashchange out/_next/static/chunks/*.js)"
+    ]
+  }
+}

@@ -146,7 +146,7 @@ export default function EarnPage({ openWallet }) {
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
                       <Badge color={t.accent}>{task.type}</Badge>
                       <Badge color={task.difficulty === "Hard" ? t.red : task.difficulty === "Medium" ? t.amber : t.green}>{task.difficulty}</Badge>
-                      <span style={{ fontSize: 11, color: t.textDim }}>⏱ Due: {task.deadline}</span>
+                      <span style={{ fontSize: 11, color: t.textDim }}>Due: {task.deadline}</span>
                     </div>
                   </div>
                 </div>

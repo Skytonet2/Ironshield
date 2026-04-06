@@ -44,7 +44,7 @@ export default function EcosystemPage() {
               { text: "near.org", url: "https://near.org" }, 
               { text: "Wallet Selector", url: "https://github.com/near/wallet-selector" }, 
               { text: "Aurora EVM", url: "https://aurora.dev" }, 
-              { text: "Ref Finance", url: "https://ref.finance" }
+              { text: "Rhea Finance", url: "https://app.rhea.finance/" }
             ].map((item, i) => (
               <a key={i} href={item.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, color: t.textMuted, textDecoration: "none" }}>
                 <Globe size={12} color={t.green} />{item.text}

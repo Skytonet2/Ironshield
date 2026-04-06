@@ -85,7 +85,7 @@ export default function AdminPanel({ onClose }) {
         <div style={{ fontSize: 20, fontWeight: 700, color: t.white, marginBottom: 6 }}>Admin Access</div>
         {connected && address === ADMIN_WALLET ? (
           <>
-            <div style={{ fontSize: 13, color: t.green, marginBottom: 20 }}>✓ Wallet recognized as admin</div>
+            <div style={{ fontSize: 13, color: t.green, marginBottom: 20 }}>Wallet recognized as admin</div>
             <Btn primary onClick={() => setAuthed(true)} style={{ width: "100%", justifyContent: "center" }}>Enter Admin Panel</Btn>
           </>
         ) : (
@@ -127,7 +127,7 @@ export default function AdminPanel({ onClose }) {
 
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 6, padding: "14px 28px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
-          {[{ key: "contests", label: "📋 Contests" }, { key: "scores", label: "🏆 Score Users" }].map(tab => (
+          {[{ key: "contests", label: "Contests" }, { key: "scores", label: "Score Users" }].map(tab => (
             <button key={tab.key} onClick={() => setAdminTab(tab.key)} style={{
               padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none",
               background: adminTab === tab.key ? t.accent : t.bgSurface,

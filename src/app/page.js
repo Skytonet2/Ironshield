@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Shield, Sun, Moon, LogOut, Wallet } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -13,16 +13,33 @@ import RoadmapPage from "@/components/RoadmapPage";
 import EcosystemPage from "@/components/EcosystemPage";
 import AdminPanel from "@/components/AdminPanel";
 import GovernancePage from "@/components/GovernancePage";
+import LaunchPage from "@/components/LaunchPage";
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Roadmap", "Ecosystem"];
+const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Launch", "Roadmap", "Ecosystem"];
+
+/* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
+function getPageFromHash() {
+  if (typeof window === "undefined") return "Home";
+  const raw = window.location.hash.replace("#/", "").replace("#", "").toLowerCase();
+  const match = pages.find(p => p.toLowerCase() === raw);
+  return match || "Home";
+}
+
+function navigate(page) {
+  window.location.hash = "#/" + page;
+}
+
+// Read hash once at module load (client-only) to avoid flash
+const initialPage = typeof window !== "undefined" ? getPageFromHash() : "Home";
 
 export default function App() {
   const { theme: t, isDark, setIsDark } = useThemeInfo();
   const { connected, address, balance, showModal, signOut } = useWallet();
 
-  const [page, setPage] = useState("Home");
+  const [mounted, setMounted] = useState(false);
+  const [page, setPageState] = useState(initialPage);
   const [showAdmin, setShowAdmin] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -33,6 +50,21 @@ export default function App() {
   const [isDraggingMascot, setIsDraggingMascot] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hasDragged, setHasDragged] = useState(false);
+
+  const setPage = useCallback((p) => {
+    setPageState(p);
+    navigate(p);
+    window.scrollTo(0, 0);
+  }, []);
+
+  // Hydration guard + hash listener
+  useEffect(() => {
+    setMounted(true);
+    setPageState(getPageFromHash());
+    const onHash = () => setPageState(getPageFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const handlePointerDown = (e) => {
     setIsDraggingMascot(true);
@@ -64,6 +96,18 @@ export default function App() {
 
   const openWallet = () => showModal();
 
+  // Prevent blank flash during SSR hydration
+  if (!mounted) {
+    return (
+      <div style={{ background: "#080b12", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <Shield size={40} color="#3b82f6" style={{ marginBottom: 12 }} />
+          <div style={{ color: "#94a3b8", fontSize: 14 }}>Loading IronShield...</div>
+        </div>
+      </div>
+    );
+  }
+
   const renderPage = () => {
     switch (page) {
       case "Home":       return <HomePage setPage={setPage} openWallet={openWallet} />;
@@ -72,6 +116,7 @@ export default function App() {
       case "Trade":      return <TradePage openWallet={openWallet} />;
       case "Earn":       return <EarnPage openWallet={openWallet} />;
       case "Governance": return <GovernancePage openWallet={openWallet} />;
+      case "Launch":     return <LaunchPage setPage={setPage} openWallet={openWallet} />;
       case "Roadmap":    return <RoadmapPage />;
       case "Ecosystem":  return <EcosystemPage />;
       default:           return <HomePage setPage={setPage} openWallet={openWallet} />;
@@ -118,9 +163,9 @@ export default function App() {
           <div className="desktop-nav" style={{ display: "flex", gap: 4 }}>
             {pages.map(p => (
               <button key={p} onClick={() => setPage(p)} className="nav-link" style={{
-                background: page === p ? `${p === "Governance" ? "#ff6b00" : t.accent}18` : "transparent",
-                border: page === p ? `1px solid ${p === "Governance" ? "#ff6b00" : t.accent}44` : "1px solid transparent",
-                color: page === p ? (p === "Governance" ? "#ff6b00" : t.accent) : t.textMuted,
+                background: page === p ? `${p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent}18` : "transparent",
+                border: page === p ? `1px solid ${p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent}44` : "1px solid transparent",
+                color: page === p ? (p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent) : t.textMuted,
                 padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>{p}</button>
             ))}
@@ -180,7 +225,7 @@ export default function App() {
             <a href="https://docs.google.com/document/d/1xRiNukfCBmgmGatib_3xSMtI_GmTjWzN/edit?usp=sharing&ouid=102071430463828769085&rtpof=true&sd=true" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Docs</a>
             <a href="https://t.me/IronClawHQ" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Telegram</a>
             <a href="https://x.com/_IronClaw" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>X (Twitter)</a>
-            <a href="https://t.me/clawfadabot" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Admin Bot</a>
+            <a href="https://t.me/IronShieldCore_bot" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>IronShield Bot</a>
             <span style={{ cursor: "pointer", color: t.textDim }}
               onClick={() => setShowAdmin(true)}
               onMouseEnter={e => e.currentTarget.style.color = t.accent}

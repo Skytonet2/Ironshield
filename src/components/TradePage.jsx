@@ -14,7 +14,7 @@ export default function TradePage() {
       <div style={{ textAlign: "center", marginBottom: 40 }}>
         <Badge color={t.amber}>⚠ TOKEN NOT YET LIVE</Badge>
         <h1 style={{ fontSize: 32, fontWeight: 700, color: t.white, marginTop: 12 }}>Buy & Sell $IRONCLAW</h1>
-        <p style={{ fontSize: 14, color: t.textMuted, marginTop: 6 }}>Token launch pending. Trading will be live on Ref Finance upon launch.</p>
+        <p style={{ fontSize: 14, color: t.textMuted, marginTop: 6 }}>Token launch pending. Trading will be live on Rhea Finance upon launch.</p>
       </div>
 
       <div className="grid-wrap-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>

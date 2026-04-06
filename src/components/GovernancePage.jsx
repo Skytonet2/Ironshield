@@ -136,7 +136,7 @@ export default function GovernancePage({ openWallet }) {
         proposal_id: proposalId,
         vote_for:    voteFor,
       }, "0");
-      showOk(`Vote cast: ${voteFor ? "FOR ✓" : "AGAINST ✗"}`);
+      showOk(`Vote cast: ${voteFor ? "FOR" : "AGAINST"}`);
       setUserVotes(prev => ({ ...prev, [proposalId]: voteFor }));
       await fetchProposals();
     } catch (err) {
@@ -192,7 +192,7 @@ export default function GovernancePage({ openWallet }) {
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
               {isHistory ? (
-                <Badge color={p.passed ? t.green : t.red}>{p.passed ? "✓ PASSED" : "✗ FAILED"}</Badge>
+                <Badge color={p.passed ? t.green : t.red}>{p.passed ? "PASSED" : "FAILED"}</Badge>
               ) : (
                 <>
                   {exp ? <Badge color={t.amber}>ENDED</Badge> : (
@@ -234,11 +234,11 @@ export default function GovernancePage({ openWallet }) {
             <div style={{ display: "flex", gap: 10 }}>
               <Btn primary onClick={() => handleVote(p.id, true)} disabled={txLoading}
                 style={{ flex: 1, justifyContent: "center", background: t.green }}>
-                {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "✓ Vote FOR"}
+                {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "Vote FOR"}
               </Btn>
               <Btn onClick={() => handleVote(p.id, false)} disabled={txLoading}
                 style={{ flex: 1, justifyContent: "center", background: `${t.red}22`, color: t.red, border: `1px solid ${t.red}44` }}>
-                {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "✗ Vote AGAINST"}
+                {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "Vote AGAINST"}
               </Btn>
             </div>
           )}
@@ -250,7 +250,7 @@ export default function GovernancePage({ openWallet }) {
           {!isHistory && exp && !p.executed && (
             <Btn primary onClick={() => handleExecute(p.id)} disabled={txLoading}
               style={{ width: "100%", justifyContent: "center", background: cfg.color }}>
-              {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "⚡ Execute Proposal"}
+              {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "Execute Proposal"}
             </Btn>
           )}
         </div>
@@ -305,8 +305,8 @@ export default function GovernancePage({ openWallet }) {
       </div>
 
       {/* Messages */}
-      {error && <div style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 20, color: t.red, fontSize: 13 }}>⚠ {error}</div>}
-      {success && <div style={{ background: `${t.green}18`, border: `1px solid ${t.green}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 20, color: t.green, fontSize: 13 }}>✓ {success}</div>}
+      {error && <div style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 20, color: t.red, fontSize: 13 }}>{error}</div>}
+      {success && <div style={{ background: `${t.green}18`, border: `1px solid ${t.green}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 20, color: t.green, fontSize: 13 }}>{success}</div>}
 
       {/* Create proposal */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -321,7 +321,7 @@ export default function GovernancePage({ openWallet }) {
       {showCreate && (
         <div style={{ background: t.bgCard, border: "1px solid rgba(155,93,229,0.3)", borderRadius: 14, padding: 28, marginBottom: 24 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 20 }}>New Proposal</div>
-          <div style={{ fontSize: 11, color: t.textDim, marginBottom: 16 }}>⚠ Requires minimum 1,000 staked $IRONCLAW to propose</div>
+          <div style={{ fontSize: 11, color: t.textDim, marginBottom: 16 }}>Requires minimum 1,000 staked $IRONCLAW to propose</div>
 
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 8 }}>Proposal Type</div>

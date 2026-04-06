@@ -188,12 +188,12 @@ export default function StakingPage({ openWallet }) {
       {/* Status messages */}
       {error && (
         <div style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 20, color: t.red, fontSize: 13 }}>
-          ⚠ {error}
+          {error}
         </div>
       )}
       {success && (
         <div style={{ background: `${t.green}18`, border: `1px solid ${t.green}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 20, color: t.green, fontSize: 13 }}>
-          ✓ {success}
+          {success}
         </div>
       )}
 
@@ -370,10 +370,10 @@ export default function StakingPage({ openWallet }) {
             </thead>
             <tbody>
               {[
-                { name: "⚡ Flex",    min: "1,000",  lock: "None",     apy: "12%", mult: "1.0x", gov: "1x vote",   exit: "Free",        color: t.textMuted },
-                { name: "🥈 Silver", min: "5,000",  lock: "30 days",  apy: "15%", mult: "1.25x",gov: "1.5x vote", exit: "2% penalty",  color: "#94a3b8" },
-                { name: "🥇 Gold",   min: "10,000", lock: "90 days",  apy: "18%", mult: "1.5x", gov: "2x vote",   exit: "5% penalty",  color: t.amber },
-                { name: "💎 Diamond",min: "25,000", lock: "180 days", apy: "24%", mult: "2.0x", gov: "3x vote",   exit: "10% penalty", color: t.accent },
+                { name: "Flex",    min: "1,000",  lock: "None",     apy: "12%", mult: "1.0x", gov: "1x vote",   exit: "Free",        color: t.textMuted },
+                { name: "Silver", min: "5,000",  lock: "30 days",  apy: "15%", mult: "1.25x",gov: "1.5x vote", exit: "2% penalty",  color: "#94a3b8" },
+                { name: "Gold",   min: "10,000", lock: "90 days",  apy: "18%", mult: "1.5x", gov: "2x vote",   exit: "5% penalty",  color: t.amber },
+                { name: "Diamond",min: "25,000", lock: "180 days", apy: "24%", mult: "2.0x", gov: "3x vote",   exit: "10% penalty", color: t.accent },
               ].map((row, i) => (
                 <tr key={i} style={{ borderBottom: `1px solid ${t.border}88`, background: selectedTier === i ? `${row.color}08` : "transparent" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 700, color: row.color }}>{row.name}</td>
@@ -390,15 +390,15 @@ export default function StakingPage({ openWallet }) {
         </div>
 
         <div style={{ marginTop: 28, background: t.bgSurface, borderRadius: 12, padding: 20, borderLeft: `3px solid ${t.green}` }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: t.white, marginBottom: 10 }}>📊 Example Calculation: Gold Tier</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: t.white, marginBottom: 10 }}>Example Calculation: Gold Tier</div>
           <div className="grid-wrap-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
             {[
               { label: "You stake",      value: "10,000 $IRONCLAW" },
               { label: "Lock period",    value: "90 days" },
               { label: "Base APY",       value: "18%" },
               { label: "Annual reward",  value: "1,800 $IRONCLAW" },
-              { label: "Daily reward",   value: "≈ 4.93 $IRONCLAW/day" },
-              { label: "After 90 days",  value: "≈ 444 $IRONCLAW earned" },
+              { label: "Daily reward",   value: "4.93 $IRONCLAW/day" },
+              { label: "After 90 days",  value: "444 $IRONCLAW earned" },
             ].map((item, i) => (
               <div key={i} style={{ background: t.bgCard, borderRadius: 8, padding: 12 }}>
                 <div style={{ fontSize: 11, color: t.textDim, marginBottom: 4 }}>{item.label}</div>
