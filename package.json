@@ -12,7 +12,8 @@
     "governance": "node backend/services/governanceListener.js",
     "jobs": "node -e \"require('./jobs/dailySummary.job'); require('./jobs/portfolioUpdate.job'); require('./jobs/alertTrigger.job');\"",
     "db:migrate": "node -e \"require('./backend/db/client').migrate().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\"",
-    "ironclaw": "concurrently \"npm run backend\" \"npm run bot\" \"npm run governance\" \"npm run jobs\"",
+    "autonomous": "node agent/autonomousLoop.js",
+    "ironclaw": "concurrently \"npm run backend\" \"npm run bot\" \"npm run governance\" \"npm run jobs\" \"npm run autonomous\"",
     "dev:all": "concurrently \"npm run dev\" \"npm run ironclaw\""
   },
   "dependencies": {

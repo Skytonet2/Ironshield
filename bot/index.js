@@ -12,11 +12,26 @@ const pumpMonitor     = require("./jobs/pumpMonitor");
 const dailyDigest     = require("./jobs/dailyDigest");
 const downtimeMonitor = require("./jobs/downtimeMonitor");
 
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TOKEN        = process.env.TELEGRAM_BOT_TOKEN;
+const USE_WEBHOOK  = process.env.BOT_MODE === "webhook";
+const WEBHOOK_URL  = process.env.WEBHOOK_URL || ""; // e.g. https://ironclaw.com/bot
+const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || "8443", 10);
+
 if (!TOKEN) { console.error("TELEGRAM_BOT_TOKEN not set"); process.exit(1); }
 
-const bot = new TelegramBot(TOKEN, { polling: true });
-console.log("IronClaw bot started (polling mode)");
+// Production uses webhook mode (no long-poll, Telegram pushes updates).
+// Dev falls back to polling so running the bot locally requires no
+// public URL. The monitor jobs + autonomous loop run regardless of mode
+// since they're timer-driven rather than update-driven.
+let bot;
+if (USE_WEBHOOK && WEBHOOK_URL) {
+  bot = new TelegramBot(TOKEN, { webHook: { port: WEBHOOK_PORT } });
+  bot.setWebHook(`${WEBHOOK_URL}/bot${TOKEN}`);
+  console.log(`IronClaw bot started (webhook mode → ${WEBHOOK_URL})`);
+} else {
+  bot = new TelegramBot(TOKEN, { polling: true });
+  console.log("IronClaw bot started (polling mode)");
+}
 
 bot.setMyCommands([
   { command: "start",        description: "Link your wallet & get started" },
