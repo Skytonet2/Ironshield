@@ -12,10 +12,11 @@ import EarnPage from "@/components/EarnPage";
 import RoadmapPage from "@/components/RoadmapPage";
 import EcosystemPage from "@/components/EcosystemPage";
 import AdminPanel from "@/components/AdminPanel";
+import GovernancePage from "@/components/GovernancePage";
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Roadmap", "Ecosystem"];
+const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Roadmap", "Ecosystem"];
 
 export default function App() {
   const { theme: t, isDark, setIsDark } = useThemeInfo();
@@ -39,14 +40,14 @@ export default function App() {
     setDragStart({ x: e.clientX - mascotPos.x, y: e.clientY - mascotPos.y });
     e.currentTarget.setPointerCapture(e.pointerId);
   };
-  
+
   const handlePointerMove = (e) => {
     if (isDraggingMascot) {
       setHasDragged(true);
       setMascotPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
     }
   };
-  
+
   const handlePointerUp = (e) => {
     setIsDraggingMascot(false);
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -65,14 +66,15 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case "Home": return <HomePage setPage={setPage} openWallet={openWallet} />;
-      case "Dashboard": return <DashboardPage openWallet={openWallet} />;
-      case "Staking": return <StakingPage openWallet={openWallet} />;
-      case "Trade": return <TradePage openWallet={openWallet} />;
-      case "Earn": return <EarnPage openWallet={openWallet} />;
-      case "Roadmap": return <RoadmapPage />;
-      case "Ecosystem": return <EcosystemPage />;
-      default: return <HomePage setPage={setPage} openWallet={openWallet} />;
+      case "Home":       return <HomePage setPage={setPage} openWallet={openWallet} />;
+      case "Dashboard":  return <DashboardPage openWallet={openWallet} />;
+      case "Staking":    return <StakingPage openWallet={openWallet} />;
+      case "Trade":      return <TradePage openWallet={openWallet} />;
+      case "Earn":       return <EarnPage openWallet={openWallet} />;
+      case "Governance": return <GovernancePage openWallet={openWallet} />;
+      case "Roadmap":    return <RoadmapPage />;
+      case "Ecosystem":  return <EcosystemPage />;
+      default:           return <HomePage setPage={setPage} openWallet={openWallet} />;
     }
   };
 
@@ -111,14 +113,14 @@ export default function App() {
             <Shield size={24} color={t.accent} />
             <span style={{ fontSize: 18, fontWeight: 800, color: t.white, letterSpacing: "-0.5px" }}>Iron<span style={{ color: t.accent }}>Shield</span></span>
           </div>
-          
+
           {/* Desktop Nav */}
           <div className="desktop-nav" style={{ display: "flex", gap: 4 }}>
             {pages.map(p => (
               <button key={p} onClick={() => setPage(p)} className="nav-link" style={{
-                background: page === p ? `${t.accent}18` : "transparent",
-                border: page === p ? `1px solid ${t.accent}44` : "1px solid transparent",
-                color: page === p ? t.accent : t.textMuted,
+                background: page === p ? `${p === "Governance" ? "#ff6b00" : t.accent}18` : "transparent",
+                border: page === p ? `1px solid ${p === "Governance" ? "#ff6b00" : t.accent}44` : "1px solid transparent",
+                color: page === p ? (p === "Governance" ? "#ff6b00" : t.accent) : t.textMuted,
                 padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}>{p}</button>
             ))}
@@ -140,14 +142,14 @@ export default function App() {
             ) : (
               <Btn primary onClick={openWallet} style={{ padding: "8px 18px", fontSize: 13 }}><Wallet size={13} /> Connect</Btn>
             )}
-            
+
             {/* Mobile Menu Toggle */}
             <button className="mobile-only" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ background: "none", border: "none", color: t.white, fontSize: 24, cursor: "pointer", display: "none" }}>
               ☰
             </button>
           </div>
         </div>
-        
+
         {/* Mobile Nav Drawer */}
         {mobileMenuOpen && (
           <div className="mobile-only" style={{ background: t.bgCard, borderBottom: `1px solid ${t.border}`, padding: "10px 24px", display: "none" }}>
