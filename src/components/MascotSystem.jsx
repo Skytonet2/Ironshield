@@ -321,7 +321,7 @@ function PeekerMascot() {
 
   return (
     <div style={{
-      position: "fixed", top: 0, left: "50%", zIndex: 95,
+      position: "fixed", top: 0, left: "50%", zIndex: 101,
       transform: `translateX(-50%) translateY(${slideY}px)`,
       transition: `transform ${CFG.peekerSlideSpeed}ms cubic-bezier(0.34, 1.56, 0.64, 1)`,
       display: "flex", flexDirection: "column", alignItems: "center",
