@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { Settings, X, Plus, Edit3, Trash2, Save, CheckCircle } from "lucide-react";
 import { Badge, Btn } from "./Primitives";
 import { useTheme } from "@/lib/contexts";
+import { DEFAULT_CONTESTS, getAdminContests, saveAdminContests, getScores, saveScores } from "@/lib/store";
 
 const ADMIN_PASSWORD = "ironshield_admin";
 
@@ -12,17 +13,15 @@ export default function AdminPanel({ onClose }) {
   const [pw, setPw] = useState(""); const [pwErr, setPwErr] = useState(false);
   const [adminTab, setAdminTab] = useState("contests");
   
-  const [contests, setContests] = useState([]);
+  // Admin-added extras (on top of baked-in DEFAULT_CONTESTS)
+  const [adminContests, setAdminContests] = useState([]);
+  // Combined view: defaults + admin extras
+  const allContests = [...DEFAULT_CONTESTS, ...adminContests];
   const [scores, setScores] = useState([]);
 
-  const getLocal = (key, def) => {
-    try { return JSON.parse(localStorage.getItem(key)) || def; } catch { return def; }
-  };
-  const setLocal = (key, val) => localStorage.setItem(key, JSON.stringify(val));
-
   useEffect(() => {
-    setContests(getLocal('ironshield_contests', []));
-    setScores(getLocal('ironshield_scores', []));
+    setAdminContests(getAdminContests());
+    setScores(getScores());
   }, []);
 
   const [editing, setEditing] = useState(null);
@@ -35,23 +34,27 @@ export default function AdminPanel({ onClose }) {
     else { setPwErr(true); setTimeout(() => setPwErr(false), 2000); }
   };
 
+  const isDefault = (id) => DEFAULT_CONTESTS.some(c => c.id === id);
+
   const addContest = () => {
     if (!newContest.title || !newContest.reward) return;
     const newEntry = { ...newContest, id: Date.now().toString() };
-    const updated = [...contests, newEntry];
-    setContests(updated); setLocal('ironshield_contests', updated);
+    const updated = [...adminContests, newEntry];
+    setAdminContests(updated); saveAdminContests(updated);
     setNewContest({ title: "", description: "", type: "Content", difficulty: "Medium", reward: "", deadline: "", emoji: "🎯" });
   };
 
   const saveEdit = () => {
-    const updated = contests.map(c => c.id === editing.id ? editing : c);
-    setContests(updated); setLocal('ironshield_contests', updated);
+    if (isDefault(editing.id)) return; // cannot edit baked-in defaults
+    const updated = adminContests.map(c => c.id === editing.id ? editing : c);
+    setAdminContests(updated); saveAdminContests(updated);
     setEditing(null);
   };
 
   const deleteContest = (id) => {
-    const updated = contests.filter(c => c.id !== id);
-    setContests(updated); setLocal('ironshield_contests', updated);
+    if (isDefault(id)) return; // cannot delete baked-in defaults
+    const updated = adminContests.filter(c => c.id !== id);
+    setAdminContests(updated); saveAdminContests(updated);
   };
 
   const submitScore = () => {
@@ -64,7 +67,7 @@ export default function AdminPanel({ onClose }) {
     } else {
       updated.push({ ...scoreEntry, ts: new Date().toLocaleDateString() });
     }
-    setScores(updated); setLocal('ironshield_scores', updated);
+    setScores(updated); saveScores(updated);
     setScoreMsg(`Score updated for ${scoreEntry.wallet}`);
     setScoreEntry({ wallet: "", points: "" });
     setTimeout(() => setScoreMsg(""), 3000);
@@ -72,7 +75,7 @@ export default function AdminPanel({ onClose }) {
 
   const deleteScore = (idx) => {
     const updated = scores.filter((_, i) => i !== idx);
-    setScores(updated); setLocal('ironshield_scores', updated);
+    setScores(updated); saveScores(updated);
   };
 
   if (!authed) return (
@@ -117,7 +120,7 @@ export default function AdminPanel({ onClose }) {
         <div style={{ overflowY: "auto", padding: 28, flex: 1 }}>
           {adminTab === "contests" && (
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 18 }}>Active Contests ({contests.length})</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 18 }}>Active Contests ({allContests.length})</div>
 
               <div style={{ background: t.bgSurface, borderRadius: 14, padding: 22, marginBottom: 22, border: `1px solid ${t.border}` }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 14 }}>+ Add New Contest</div>
@@ -158,8 +161,8 @@ export default function AdminPanel({ onClose }) {
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {contests.map(c => (
-                  <div key={c.id} style={{ background: t.bgSurface, borderRadius: 12, padding: 18, border: `1px solid ${t.border}` }}>
+                {allContests.map(c => (
+                  <div key={c.id} style={{ background: t.bgSurface, borderRadius: 12, padding: 18, border: `1px solid ${isDefault(c.id) ? t.green + '44' : t.border}` }}>
                     {editing?.id === c.id ? (
                       <div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
@@ -191,13 +194,19 @@ export default function AdminPanel({ onClose }) {
                             <span style={{ fontSize: 11, color: t.textDim }}>Reward: {c.reward} · Due: {c.deadline}</span>
                           </div>
                         </div>
-                        <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
-                          <button onClick={() => setEditing({ ...c })} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 12px", cursor: "pointer", color: t.textMuted, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
-                            <Edit3 size={12} /> Edit
-                          </button>
-                          <button onClick={() => deleteContest(c.id)} style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 8, padding: "7px 12px", cursor: "pointer", color: t.red, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
-                            <Trash2 size={12} /> Delete
-                          </button>
+                        <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16, alignItems: "center" }}>
+                          {isDefault(c.id) ? (
+                            <span style={{ fontSize: 11, color: t.green, fontWeight: 600 }}>Built-in</span>
+                          ) : (
+                            <>
+                              <button onClick={() => setEditing({ ...c })} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 12px", cursor: "pointer", color: t.textMuted, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                                <Edit3 size={12} /> Edit
+                              </button>
+                              <button onClick={() => deleteContest(c.id)} style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 8, padding: "7px 12px", cursor: "pointer", color: t.red, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                                <Trash2 size={12} /> Delete
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}

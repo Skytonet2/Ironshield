@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Shield, Sun, Moon, LogOut, Wallet } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -12,16 +12,39 @@ import EarnPage from "@/components/EarnPage";
 import RoadmapPage from "@/components/RoadmapPage";
 import EcosystemPage from "@/components/EcosystemPage";
 import AdminPanel from "@/components/AdminPanel";
+import LaunchPage from "@/components/LaunchPage";
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Roadmap", "Ecosystem"];
+const pages = ["Home", "Dashboard", "Staking", "Launch", "Trade", "Earn", "Roadmap", "Ecosystem"];
+
+function getPageFromHash() {
+  if (typeof window === "undefined") return "Home";
+  const hash = window.location.hash.replace("#/", "").replace("#", "");
+  if (!hash) return "Home";
+  const match = pages.find(p => p.toLowerCase() === hash.toLowerCase());
+  return match || "Home";
+}
 
 export default function App() {
   const { theme: t, isDark, setIsDark } = useThemeInfo();
   const { connected, address, balance, showModal, signOut } = useWallet();
 
-  const [page, setPage] = useState("Home");
+  const [page, setPageState] = useState("Home");
+
+  const navigate = useCallback((p) => {
+    setPageState(p);
+    window.location.hash = p === "Home" ? "/" : `/${p.toLowerCase()}`;
+    window.scrollTo(0, 0);
+  }, []);
+
+  // Read hash on mount + listen for back/forward
+  useEffect(() => {
+    setPageState(getPageFromHash());
+    const onHashChange = () => setPageState(getPageFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
   const [showAdmin, setShowAdmin] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -65,14 +88,15 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case "Home": return <HomePage setPage={setPage} openWallet={openWallet} />;
+      case "Home": return <HomePage setPage={navigate} openWallet={openWallet} />;
       case "Dashboard": return <DashboardPage openWallet={openWallet} />;
       case "Staking": return <StakingPage openWallet={openWallet} />;
+      case "Launch": return <LaunchPage openWallet={openWallet} />;
       case "Trade": return <TradePage openWallet={openWallet} />;
       case "Earn": return <EarnPage openWallet={openWallet} />;
       case "Roadmap": return <RoadmapPage />;
       case "Ecosystem": return <EcosystemPage />;
-      default: return <HomePage setPage={setPage} openWallet={openWallet} />;
+      default: return <HomePage setPage={navigate} openWallet={openWallet} />;
     }
   };
 
@@ -107,7 +131,7 @@ export default function App() {
 
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: t.navBg, backdropFilter: "blur(20px)", borderBottom: `1px solid ${t.border}` }}>
         <div style={{ maxWidth: 1600, margin: "0 auto", padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => setPage("Home")}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => navigate("Home")}>
             <Shield size={24} color={t.accent} />
             <span style={{ fontSize: 18, fontWeight: 800, color: t.white, letterSpacing: "-0.5px" }}>Iron<span style={{ color: t.accent }}>Shield</span></span>
           </div>
@@ -115,7 +139,7 @@ export default function App() {
           {/* Desktop Nav */}
           <div className="desktop-nav" style={{ display: "flex", gap: 4 }}>
             {pages.map(p => (
-              <button key={p} onClick={() => setPage(p)} className="nav-link" style={{
+              <button key={p} onClick={() => navigate(p)} className="nav-link" style={{
                 background: page === p ? `${t.accent}18` : "transparent",
                 border: page === p ? `1px solid ${t.accent}44` : "1px solid transparent",
                 color: page === p ? t.accent : t.textMuted,
@@ -153,7 +177,7 @@ export default function App() {
           <div className="mobile-only" style={{ background: t.bgCard, borderBottom: `1px solid ${t.border}`, padding: "10px 24px", display: "none" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {pages.map(p => (
-                <button key={p} onClick={() => { setPage(p); setMobileMenuOpen(false); }} style={{
+                <button key={p} onClick={() => { navigate(p); setMobileMenuOpen(false); }} style={{
                   background: page === p ? `${t.accent}18` : "transparent",
                   border: "none", color: page === p ? t.accent : t.textMuted,
                   padding: "12px", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", textAlign: "left"
@@ -178,7 +202,7 @@ export default function App() {
             <a href="https://docs.google.com/document/d/1xRiNukfCBmgmGatib_3xSMtI_GmTjWzN/edit?usp=sharing&ouid=102071430463828769085&rtpof=true&sd=true" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Docs</a>
             <a href="https://t.me/IronClawHQ" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Telegram</a>
             <a href="https://x.com/_IronClaw" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>X (Twitter)</a>
-            <a href="https://t.me/clawfadabot" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Admin Bot</a>
+            <a href="https://t.me/IronShieldCore_bot" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>IronShield Bot</a>
             <span style={{ cursor: "pointer", color: t.textDim }}
               onClick={() => setShowAdmin(true)}
               onMouseEnter={e => e.currentTarget.style.color = t.accent}

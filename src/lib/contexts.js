@@ -5,6 +5,7 @@ import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import * as nearAPI from "near-api-js";
 import { createContext, useContext, useState, useEffect } from "react";
+import { seedDefaults } from "./store";
 
 export const DARK = {
   bg: "#080b12", bgCard: "#0d1117", bgCardHover: "#111827", bgSurface: "#161b22",
@@ -53,6 +54,7 @@ export function WalletProvider({ children }) {
   const [balance, setBalance] = useState("0");
 
   useEffect(() => {
+    seedDefaults();
     const init = async () => {
       const _selector = await setupWalletSelector({
         network: "mainnet",
@@ -60,7 +62,7 @@ export function WalletProvider({ children }) {
       });
 
       const _modal = setupModal(_selector, {
-        contractId: "guest-book.near",
+        contractId: "ironshield.near",
       });
 
       const state = _selector.store.getState();

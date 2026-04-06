@@ -1,8 +1,9 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { Search, Trophy, Link2, Image as ImageIcon, X, Send, Lock } from "lucide-react";
+import { Search, Trophy, Link2, Image as ImageIcon, X, Send, Lock, Wallet } from "lucide-react";
 import { Section, Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
+import { getAllContests, getScores } from "@/lib/store";
 
 export default function EarnPage({ openWallet }) {
   const t = useTheme(); const { connected, address } = useWallet();
@@ -20,9 +21,9 @@ export default function EarnPage({ openWallet }) {
   const setLocal = (key, val) => localStorage.setItem(key, JSON.stringify(val));
 
   useEffect(() => {
-    setContests(getLocal('ironshield_contests', []));
+    setContests(getAllContests());
     setSubmitted(getLocal('ironshield_submissions', []));
-    const scores = getLocal('ironshield_scores', []);
+    const scores = getScores();
     const sorted = scores.sort((a,b) => b.points - a.points).map((s, i) => ({
       rank: i + 1, addr: s.wallet, pts: s.points, badge: i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : ""
     }));

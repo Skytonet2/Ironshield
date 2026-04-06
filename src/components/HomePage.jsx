@@ -1,5 +1,5 @@
 "use client";
-import { Shield, Wallet, Trophy, Lock, TrendingUp } from "lucide-react";
+import { Shield, Wallet, Trophy, Lock, TrendingUp, Rocket } from "lucide-react";
 import { Badge, Btn, Section } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
 
@@ -22,7 +22,8 @@ export default function HomePage({ setPage, openWallet }) {
               IronShield is an autonomous AI security agent protecting Telegram and Discord communities from scams, phishing, and rug pulls — powered by IronClaw on NEAR.
             </p>
             <div style={{ display: "flex", gap: 14, marginTop: 36, flexWrap: "wrap" }}>
-              <Btn primary onClick={() => setPage("Staking")} style={{ fontSize: 15, padding: "14px 32px" }}><Shield size={16} /> Stake & Earn</Btn>
+              <Btn primary onClick={() => setPage("Launch")} style={{ fontSize: 15, padding: "14px 32px" }}><Rocket size={16} /> Token Launch</Btn>
+              <Btn onClick={() => setPage("Staking")} style={{ fontSize: 15, padding: "14px 32px" }}><Shield size={16} /> Stake & Earn</Btn>
               {!connected
                 ? <Btn onClick={openWallet} style={{ fontSize: 15, padding: "14px 32px" }}><Wallet size={16} /> Connect Wallet</Btn>
                 : <Btn onClick={() => setPage("Earn")} style={{ fontSize: 15, padding: "14px 32px" }}><Trophy size={16} /> View Missions</Btn>
@@ -51,7 +52,7 @@ export default function HomePage({ setPage, openWallet }) {
             { icon: Shield, title: "AI Threat Detection", desc: "Real-time analysis of every message. Phishing, rugpulls, and impersonators blocked before they strike.", color: t.accent },
             { icon: Lock, title: "Stake & Govern", desc: "Lock your tokens to earn real protocol yield. Vote on AI behavior, treasury, and missions.", color: t.green },
             { icon: Trophy, title: "Earn Missions", desc: "Complete community tasks, submit proof-of-work, and earn $IRONCLAW directly to your wallet.", color: t.amber },
-            { icon: TrendingUp, title: "Buy & Sell", desc: "Trade $IRONCLAW on NEAR with deep liquidity through Ref Finance integration.", color: t.accent },
+            { icon: TrendingUp, title: "Buy & Sell", desc: "Trade $IRONCLAW on NEAR with deep liquidity through Rhea Finance integration.", color: t.accent },
           ].map((f, i) => (
             <div key={i} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14, padding: 28, transition: "all 0.3s" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = f.color; e.currentTarget.style.transform = "translateY(-4px)"; }}

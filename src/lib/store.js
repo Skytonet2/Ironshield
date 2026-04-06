@@ -11,7 +11,58 @@ export const initialScores = [
   { wallet: "builder99.near", points: 1500, ts: "Apr 2, 2026" },
 ];
 
-export const memoryStore = {
-  contests: [...DEFAULT_CONTESTS],
-  scores: [...initialScores]
-};
+/**
+ * Returns all contests: built-in defaults + any admin-added extras from localStorage.
+ * This ensures DEFAULT_CONTESTS are always visible to every user regardless of browser.
+ */
+export function getAllContests() {
+  if (typeof window === "undefined") return [...DEFAULT_CONTESTS];
+  try {
+    const extras = JSON.parse(localStorage.getItem("ironshield_admin_contests") || "[]");
+    return [...DEFAULT_CONTESTS, ...extras];
+  } catch {
+    return [...DEFAULT_CONTESTS];
+  }
+}
+
+/**
+ * Returns admin-added extras only (not the baked-in defaults).
+ */
+export function getAdminContests() {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("ironshield_admin_contests") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Saves admin-added contests (extras only, not defaults).
+ */
+export function saveAdminContests(contests) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("ironshield_admin_contests", JSON.stringify(contests));
+}
+
+export function getScores() {
+  if (typeof window === "undefined") return [...initialScores];
+  try {
+    const stored = JSON.parse(localStorage.getItem("ironshield_scores") || "null");
+    return stored || [...initialScores];
+  } catch {
+    return [...initialScores];
+  }
+}
+
+export function saveScores(scores) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("ironshield_scores", JSON.stringify(scores));
+}
+
+export function seedDefaults() {
+  if (typeof window === "undefined") return;
+  if (!localStorage.getItem("ironshield_scores")) {
+    localStorage.setItem("ironshield_scores", JSON.stringify(initialScores));
+  }
+}
