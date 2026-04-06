@@ -28,13 +28,18 @@ async function handle(bot, msg) {
     const json = await res.json();
     await bot.deleteMessage(chatId, waitMsg.message_id);
     if (json.success) {
-      await bot.sendMessage(chatId, formatter.formatVerify(json.data), { parse_mode: "Markdown" });
+      const formatted = formatter.formatVerify(json.data);
+      try {
+        await bot.sendMessage(chatId, formatted, { parse_mode: "Markdown" });
+      } catch {
+        await bot.sendMessage(chatId, formatted.replace(/[*_`]/g, ""));
+      }
     } else {
       await bot.sendMessage(chatId, `⚠️ ${json.error || "Verification failed."}`);
     }
   } catch (err) {
     await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
-    await bot.sendMessage(chatId, "⚠️ Verification failed. Please try again.");
+    await bot.sendMessage(chatId, "⚠️ Fact-check failed. Please try again.");
   }
 }
 

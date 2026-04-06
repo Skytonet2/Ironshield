@@ -123,22 +123,29 @@ module.exports = {
 
   formatVerify(data) {
     if (!data) return "⚠️ No verification data returned.";
-    const emoji = verdictEmoji(data.verdict);
+    const verdict = data.verdict || "INSUFFICIENT_EVIDENCE";
+    const emoji = verdict === "TRUE" ? "✅" : verdict === "FALSE" ? "❌" : verdict === "MISLEADING" ? "⚠️" : "❓";
     const conf  = data.overallConfidence ? `${Math.round(data.overallConfidence * 100)}%` : "—";
     const lines = [
-      `${emoji} *Claim Verification*`,
+      `${emoji} *Fact Check*`,
       `━━━━━━━━━━━━━━━━━━`,
-      `*Verdict: ${data.verdict || "UNVERIFIED"}*`,
+      `*Verdict: ${esc(verdict)}*`,
       `Confidence: ${conf}`,
-      ``,
     ];
 
+    if (data.explanation) {
+      lines.push(``);
+      lines.push(`${esc(data.explanation)}`);
+    }
+
     if (data.breakdown?.length) {
+      lines.push(``);
+      lines.push(`📋 *Breakdown*`);
       data.breakdown.forEach(b => {
-        const icon = b.result === "TRUE" || b.result === "VERIFIED" ? "✅" : b.result === "FALSE" ? "❌" : "⚠️";
-        lines.push(`${icon} *${b.claim}*`);
-        if (b.source) lines.push(`   Source: ${b.source}`);
-        if (b.detail) lines.push(`   ${b.detail}`);
+        const icon = b.result === "TRUE" ? "✅" : b.result === "FALSE" ? "❌" : b.result === "MISLEADING" ? "⚠️" : "❓";
+        lines.push(`${icon} *${esc(b.claim)}*`);
+        if (b.detail) lines.push(`   ${esc(b.detail)}`);
+        if (b.source) lines.push(`   Source: ${esc(b.source)}`);
         lines.push(``);
       });
     }

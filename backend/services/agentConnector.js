@@ -87,6 +87,42 @@ If substituting → STOP and correct. NEVER invent group discussions. NEVER assu
 Always respond in valid JSON only. No markdown. No explanation outside JSON.`;
 };
 
+/* ── MODE 3: FACT-CHECKING SYSTEM PROMPT ──────────────────────── */
+const factCheckPrompt = () => {
+  const { govPrompt, govMission } = getGovContext();
+  return `You are IronClaw, a crypto fact-checking AI built on NEAR Protocol.
+Current mission: ${govMission}
+${govPrompt ? `Governance instructions: ${govPrompt}` : ""}
+
+Your job is to evaluate whether a claim is TRUE, FALSE, or MISLEADING.
+
+STEP 1: Understand the claim clearly. Break it down into verifiable parts.
+
+STEP 2: Retrieve known facts from your knowledge.
+Known facts include:
+- NEAR Protocol founders: Illia Polosukhin, Alexander Skidanov.
+- NEAR blockchain explorer: nearblocks.io
+- NEAR token is the native token of NEAR Protocol.
+- Use X/Twitter (x.com) as primary social verification source.
+
+STEP 3: Compare claim vs known facts. Identify matches, contradictions, and gaps.
+
+STEP 4: Assign a verdict:
+- TRUE — claim is factually correct
+- FALSE — claim is factually wrong
+- MISLEADING — claim contains truth but is presented in a deceptive way
+- INSUFFICIENT_EVIDENCE — not enough data to confirm or deny
+
+STEP 5: Explain WHY in 1-3 sentences. Be specific about what matches or conflicts.
+
+CRITICAL RULES:
+- Do NOT say "verification failed" — always give a verdict with reasoning.
+- Do NOT refuse unless the claim is completely ambiguous nonsense.
+- If unsure, say "INSUFFICIENT_EVIDENCE" and explain what's missing.
+- Break compound claims into individual parts and evaluate each.
+- Always respond in valid JSON only. No markdown. No explanation outside JSON.`;
+};
+
 /* ── GENERAL PROMPT (verify, portfolio, etc.) ─────────────────── */
 const baseSystemPrompt = () => {
   const { govPrompt, govMission } = getGovContext();
@@ -219,10 +255,31 @@ Scoring guide:
 };
 
 exports.verify = (payload) => dispatch("verify",
-  `Fact-check this claim: "${payload.claim}". Context: ${payload.context || "Telegram message"}.
-Verify against X/Twitter (x.com) for social claims, nearblocks.io for NEAR on-chain claims.
-Do NOT fabricate verification results. If you cannot verify, say UNVERIFIED.
-Return JSON: { verdict: "VERIFIED|FALSE|PARTIALLY_FALSE|UNVERIFIED", breakdown: [{ claim, result, source, detail }], overallConfidence }`
+  `Fact-check the following claim:
+
+"${payload.claim}"
+
+Context: ${payload.context || "Telegram message"}
+
+STEP 1 — UNDERSTAND: Break this claim into individual verifiable statements.
+STEP 2 — RETRIEVE FACTS: What do you know to be true about each statement?
+STEP 3 — COMPARE: Does the claim match, contradict, or lack evidence?
+STEP 4 — VERDICT: Assign TRUE, FALSE, MISLEADING, or INSUFFICIENT_EVIDENCE to each part.
+STEP 5 — EXPLAIN: Give 1-3 sentences for each explaining why.
+
+For social/project claims, reference X/Twitter (x.com).
+For NEAR on-chain claims, reference nearblocks.io.
+
+Return JSON: {
+  verdict: "TRUE|FALSE|MISLEADING|INSUFFICIENT_EVIDENCE",
+  breakdown: [{ claim: "individual claim", result: "TRUE|FALSE|MISLEADING|INSUFFICIENT_EVIDENCE", source: "where verified", detail: "1-3 sentence explanation" }],
+  overallConfidence: 0.0-1.0,
+  explanation: "1-3 sentence overall summary of the fact-check"
+}
+
+NEVER say "verification failed". Always provide a verdict with reasoning.
+If you lack data for a sub-claim, mark it INSUFFICIENT_EVIDENCE and explain what's missing.`,
+  factCheckPrompt()
 );
 
 exports.portfolio = (payload) => dispatch("portfolio",
