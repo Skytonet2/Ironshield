@@ -70,11 +70,11 @@ export default function DocsPage() {
       icon: <Coins size={20} color={t.accent} />,
       title: "Staking & Yield",
       content: [
-        "IronShield uses a MasterChef-style staking mechanism deployed on NEAR Protocol (ironshield.near). Stakers earn real yield from protocol revenue — not inflation.",
+        "IronShield uses a MasterChef-style staking mechanism designed for NEAR Protocol. Once the $IRONCLAW token launches, stakers will earn real yield from protocol revenue — not inflation.",
         "Revenue from IronShield subscriptions, premium features, and ecosystem fees flows into the reward pool. Rewards are distributed per-block proportional to each staker's share of the pool. Stakers can also earn bonus points through contests and community participation.",
       ],
       stats: [
-        { label: "Contract", value: "ironshield.near (NEAR mainnet)" },
+        { label: "Contract", value: "TBA — will be deployed at launch" },
         { label: "Reward Source", value: "Protocol revenue (real yield, not inflation)" },
         { label: "Distribution", value: "Per-block, proportional to stake" },
         { label: "Governance Power", value: "Voting power = total staked across all pools" },
@@ -109,7 +109,7 @@ export default function DocsPage() {
         { label: "Database", value: "PostgreSQL — users, wallets, contests, submissions, proposals, votes, flagged URLs/wallets" },
         { label: "AI Engine", value: "NEAR AI Cloud API (cloud-api.near.ai) — LLaMA 3.1 70B for all agent tasks" },
         { label: "Telegram Bot", value: "node-telegram-bot-api — polling mode for dev, webhook for production" },
-        { label: "Smart Contract", value: "Rust (near-sdk v5.1.0) — MasterChef staking, NEP-141 rewards, on-chain governance" },
+        { label: "Smart Contract", value: "Rust (near-sdk v5.1.0) — MasterChef staking, NEP-141 rewards, on-chain governance (deploying at launch)" },
         { label: "Hosting", value: "IPFS via NEARFS, served at ironshield.near.page" },
         { label: "Governance Listener", value: "Polls chain for executed proposals, auto-updates agent prompt/mission" },
       ],
@@ -126,7 +126,7 @@ export default function DocsPage() {
         { label: "Standard", value: "NEP-141 (NEAR fungible token)" },
         { label: "Chain", value: "NEAR Protocol (mainnet)" },
         { label: "Utility", value: "Governance votes, staking yield, premium access" },
-        { label: "Contract", value: "ironshield.near" },
+        { label: "Contract", value: "TBA — deploying at token launch" },
       ],
     },
     {
