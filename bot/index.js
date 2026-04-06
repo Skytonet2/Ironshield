@@ -18,6 +18,7 @@ bot.setMyCommands([
   { command: "verify",    description: "Fact-check a claim" },
   { command: "scan",      description: "Scan a URL or wallet for threats" },
   { command: "summary",   description: "Summarize recent chat messages" },
+  { command: "trending",  description: "Live trending tokens and market signals" },
   { command: "alert",     description: "Set a price alert for a token" },
   { command: "portfolio", description: "View your tracked wallets" },
   { command: "report",    description: "Report a scam URL or wallet" },

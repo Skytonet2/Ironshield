@@ -1,8 +1,9 @@
 // backend/routes/chat.route.js
-const express     = require("express");
-const router      = express.Router();
-const agent       = require("../services/agentConnector");
-const tokenLookup = require("../services/tokenLookup");
+const express       = require("express");
+const router        = express.Router();
+const agent         = require("../services/agentConnector");
+const tokenLookup   = require("../services/tokenLookup");
+const socialMonitor = require("../services/socialMonitor");
 
 /**
  * Detect if the user message is asking about a specific token/crypto.
@@ -63,9 +64,16 @@ router.post("/", async (req, res) => {
       }
     }
 
-    const enrichedMessage = realDataContext
-      ? `${message}${realDataContext}`
-      : message;
+    // For trend/market questions, also inject live social intelligence
+    const trendWords = ["trending", "trend", "hot", "popular", "hype", "market", "what's moving", "whats moving", "movers", "gainers"];
+    let socialContext = "";
+    if (trendWords.some(w => message.toLowerCase().includes(w))) {
+      try {
+        socialContext = "\n\n" + await socialMonitor.getSocialContext();
+      } catch { /* non-critical */ }
+    }
+
+    const enrichedMessage = `${message}${realDataContext}${socialContext}`;
 
     const response = await agent.chat({ message: enrichedMessage, userId });
     res.json({ success: true, data: { reply: response } });

@@ -6,6 +6,7 @@ const portfolio = require("../commands/portfolio");
 const scan      = require("../commands/scan");
 const alert     = require("../commands/alert");
 const report    = require("../commands/report");
+const trending  = require("../commands/trending");
 
 // Escape ALL MarkdownV2 special characters
 function escapeMarkdownV2(text) {
@@ -21,6 +22,8 @@ const COMMANDS = {
   "/scan":      scan.handle,
   "/alert":     alert.handle,
   "/report":    report.handle,
+  "/trending":  trending.handle,
+  "/trends":    trending.handle,
   "/start":     startHandler,
   "/help":      helpHandler,
   "/status":    statusHandler,

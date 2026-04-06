@@ -7,6 +7,7 @@ const portfolio = require("../commands/portfolio");
 const scan      = require("../commands/scan");
 const alert     = require("../commands/alert");
 const report    = require("../commands/report");
+const trending  = require("../commands/trending");
 
 const BACKEND = process.env.BACKEND_URL || "http://localhost:3001";
 
@@ -19,6 +20,7 @@ const INTENTS = [
   { patterns: ["scan", "is this safe", "check this link", "check url"],            handler: scan.handle },
   { patterns: ["alert me", "notify me", "price alert", "set alert"],               handler: alert.handle },
   { patterns: ["report scam", "report this", "flag this", "scam alert"],           handler: report.handle },
+  { patterns: ["trending", "what's trending", "whats hot", "top movers", "market trends"], handler: trending.handle },
 ];
 
 async function handleDM(bot, msg) {
