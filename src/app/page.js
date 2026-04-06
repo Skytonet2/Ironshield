@@ -14,11 +14,12 @@ import EcosystemPage from "@/components/EcosystemPage";
 import AdminPanel from "@/components/AdminPanel";
 import GovernancePage from "@/components/GovernancePage";
 import LaunchPage from "@/components/LaunchPage";
+import DocsPage from "@/components/DocsPage";
 import MascotSystem from "@/components/MascotSystem";
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Launch", "Roadmap", "Ecosystem"];
+const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Launch", "Roadmap", "Ecosystem", "Docs"];
 
 /* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
 function getPageFromHash() {
@@ -86,6 +87,7 @@ export default function App() {
       case "Launch":     return <LaunchPage setPage={setPage} openWallet={openWallet} />;
       case "Roadmap":    return <RoadmapPage />;
       case "Ecosystem":  return <EcosystemPage />;
+      case "Docs":       return <DocsPage />;
       default:           return <HomePage setPage={setPage} openWallet={openWallet} />;
     }
   };
@@ -183,7 +185,7 @@ export default function App() {
             <span style={{ fontSize: 13, color: t.textMuted }}>IronShield — by <span style={{ color: t.white }}>IronClaw</span> on NEAR Protocol</span>
           </div>
           <div style={{ display: "flex", gap: 20, fontSize: 13, color: t.textDim, flexWrap: "wrap", alignItems: "center" }}>
-            <a href="https://docs.google.com/document/d/1xRiNukfCBmgmGatib_3xSMtI_GmTjWzN/edit?usp=sharing&ouid=102071430463828769085&rtpof=true&sd=true" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Docs</a>
+            <span onClick={() => setPage("Docs")} style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Docs</span>
             <a href="https://t.me/IronClawHQ" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Telegram</a>
             <a href="https://x.com/_IronClaw" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>X (Twitter)</a>
             <a href="https://t.me/IronShieldCore_bot" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>IronShield Bot</a>
