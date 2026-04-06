@@ -1,4 +1,4 @@
-use near_sdk::{near, env, AccountId, PanicOnDefault, Promise, PromiseOrValue, NearToken, assert_one_yocto};
+use near_sdk::{near, env, AccountId, PanicOnDefault};
 use near_sdk::store::{LookupMap, Vector};
 use near_sdk::json_types::U128;
 pub type Balance = u128;
@@ -7,6 +7,8 @@ mod pool;
 mod ft_callbacks;
 mod actions;
 mod admin;
+mod views;
+mod governance;
 
 pub type PoolId = u32;
 
@@ -39,24 +41,46 @@ pub struct PoolInfo {
     pub acc_reward_per_share: u128,
 }
 
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct Proposal {
+    pub id: u32,
+    pub title: String,
+    pub description: String,
+    pub proposal_type: String, // "Mission", "PromptUpdate", "RuleChange"
+    pub proposer: AccountId,
+    pub content: String,
+    pub votes_for: u128,
+    pub votes_against: u128,
+    pub status: String,    // "active", "passed", "rejected", "executed"
+    pub passed: bool,
+    pub executed: bool,
+    pub created_at: u64,
+    pub expires_at: u64,
+}
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct StakingContract {
     pub owner_id: AccountId,
     pub ironclaw_token_id: AccountId,
-    
+
     pub pools: Vector<PoolInfo>,
     /// Maps (AccountId, PoolId) string to UserInfo
     pub user_info: LookupMap<String, UserInfo>,
-    
+
     /// The global rate at which NEAR rewards are distributed per nanosecond.
     pub reward_per_ns: Balance,
     /// Timestamp of the last time rewards were updated across pools.
     pub last_reward_time: u64,
     /// Total allocation points. Must be the sum of all pools' multipliers.
     pub total_alloc_point: u32,
-    
+
     pub paused: bool,
+
+    // Governance
+    pub proposals: Vector<Proposal>,
+    pub votes: LookupMap<String, String>, // "proposalId:accountId" -> "for"|"against"
 }
 
 #[near]
@@ -73,6 +97,8 @@ impl StakingContract {
             last_reward_time: env::block_timestamp(),
             total_alloc_point: 0,
             paused: false,
+            proposals: Vector::new(b"g"),
+            votes: LookupMap::new(b"v"),
         }
     }
 }

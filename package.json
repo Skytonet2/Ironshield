@@ -11,6 +11,7 @@
     "backend": "node backend/server.js",
     "governance": "node backend/services/governanceListener.js",
     "jobs": "node -e \"require('./jobs/dailySummary.job'); require('./jobs/portfolioUpdate.job'); require('./jobs/alertTrigger.job');\"",
+    "db:migrate": "node -e \"require('./backend/db/client').migrate().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\"",
     "ironclaw": "concurrently \"npm run backend\" \"npm run bot\" \"npm run governance\" \"npm run jobs\"",
     "dev:all": "concurrently \"npm run dev\" \"npm run ironclaw\""
   },
@@ -29,6 +30,7 @@
     "node-cron": "^3.0.3",
     "node-fetch": "^2.7.0",
     "node-telegram-bot-api": "^0.64.0",
+    "pg": "^8.20.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

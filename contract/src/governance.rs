@@ -1,181 +1,151 @@
-// contract/src/governance.rs
-// Add this as a module in your existing contract.
-// In lib.rs add: pub mod governance;
-// and add GovernanceState fields to your main contract struct.
+use crate::*;
+use near_sdk::json_types::U128;
 
-use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{env, near_bindgen, AccountId, NearToken};
-use near_sdk::collections::UnorderedMap;
+const VOTING_PERIOD_NS: u64 = 72 * 60 * 60 * 1_000_000_000; // 72 hours in nanoseconds
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(crate = "near_sdk::serde")]
-pub enum ProposalType {
-    Mission,
-    PromptUpdate,
-    RuleChange,
-}
-
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
-#[serde(crate = "near_sdk::serde")]
-pub struct Proposal {
-    pub id:              u64,
-    pub proposer:        AccountId,
-    pub proposal_type:   String,
-    pub title:           String,
-    pub content:         String,
-    pub votes_for:       u128,
-    pub votes_against:   u128,
-    pub start_timestamp: u64,
-    pub end_timestamp:   u64,
-    pub executed:        bool,
-    pub passed:          bool,
-}
-
-// ── Add these fields to your main Contract struct ──────────────
-//
-// proposals:       Vector<Proposal>
-// proposal_count:  u64
-// user_votes:      UnorderedMap<String, bool>  // key = "proposal_id:account_id"
-//
-// ── Add these methods to your #[near_bindgen] impl Contract ───
-
-impl Contract {
-
-    // ── VIEW: get all proposals ─────────────────────────────────
-    pub fn get_proposals(&self) -> Vec<Proposal> {
-        self.proposals.to_vec()
-    }
-
-    // ── VIEW: get single proposal ───────────────────────────────
-    pub fn get_proposal(&self, id: u64) -> Option<Proposal> {
-        self.proposals.iter().find(|p| p.id == id)
-    }
-
-    // ── VIEW: get user's vote on a proposal ─────────────────────
-    pub fn get_user_vote(
-        &self,
-        proposal_id: u64,
-        account_id:  AccountId,
-    ) -> Option<bool> {
-        let key = format!("{}:{}", proposal_id, account_id);
-        self.user_votes.get(&key)
-    }
-
-    // ── CALL: create a proposal ─────────────────────────────────
+#[near]
+impl StakingContract {
+    /// Create a new governance proposal. Requires staked tokens.
     pub fn create_proposal(
         &mut self,
+        title: String,
+        description: String,
         proposal_type: String,
-        title:         String,
-        content:       String,
+        content: String,
     ) {
+        assert!(!self.paused, "Contract is paused");
         let proposer = env::predecessor_account_id();
 
-        // Require minimum 1000 IRONCLAW staked
-        let user = self.get_user(0, proposer.clone());
-        let staked = user.map(|u| u.amount).unwrap_or(0);
+        // Proposer must have staked tokens in at least one pool
+        let has_stake = (0..self.pools.len()).any(|pid| {
+            let key = get_user_key(&proposer, pid);
+            self.user_info.get(&key).map_or(false, |u| u.amount > 0)
+        });
+        assert!(has_stake, "Must have staked tokens to create a proposal");
+
         assert!(
-            staked >= 1_000 * 10u128.pow(24),
-            "Need at least 1000 staked IRONCLAW to propose"
+            ["Mission", "PromptUpdate", "RuleChange"].contains(&proposal_type.as_str()),
+            "Invalid proposal type"
         );
 
         let now = env::block_timestamp();
+        let id = self.proposals.len();
+
         let proposal = Proposal {
-            id:              self.proposal_count,
-            proposer:        proposer.clone(),
-            proposal_type,
+            id,
             title,
+            description,
+            proposal_type,
+            proposer,
             content,
-            votes_for:       0,
-            votes_against:   0,
-            start_timestamp: now,
-            end_timestamp:   now + 72 * 3_600 * 1_000_000_000, // 72h in nanoseconds
-            executed:        false,
-            passed:          false,
+            votes_for: 0,
+            votes_against: 0,
+            status: "active".to_string(),
+            passed: false,
+            executed: false,
+            created_at: now,
+            expires_at: now + VOTING_PERIOD_NS,
         };
 
-        self.proposals.push(&proposal);
-        self.proposal_count += 1;
+        self.proposals.push(proposal);
 
         env::log_str(&format!(
-            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"proposal_created\",\"data\":{{\"id\":{},\"title\":\"{}\"}}}}",
-            proposal.id, proposal.title
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"proposal_created\",\"data\":{{\"id\":{}}}}}",
+            id
         ));
     }
 
-    // ── CALL: vote on a proposal ────────────────────────────────
-    pub fn vote(&mut self, proposal_id: u64, vote_for: bool) {
+    /// Vote on a proposal. Voting power = total staked across all pools.
+    pub fn vote(&mut self, proposal_id: u32, vote: String) {
+        assert!(!self.paused, "Contract is paused");
+        assert!(vote == "for" || vote == "against", "Vote must be 'for' or 'against'");
+
         let voter = env::predecessor_account_id();
-        let key   = format!("{}:{}", proposal_id, voter);
+        let vote_key = format!("{}:{}", proposal_id, voter);
 
-        assert!(
-            self.user_votes.get(&key).is_none(),
-            "Already voted on this proposal"
-        );
+        assert!(self.votes.get(&vote_key).is_none(), "Already voted on this proposal");
 
-        let mut proposal = self
-            .proposals
-            .iter()
-            .find(|p| p.id == proposal_id)
-            .expect("Proposal not found");
+        let mut proposal = self.proposals.get(proposal_id).expect("Proposal not found").clone();
+        assert!(proposal.status == "active", "Proposal is not active");
+        assert!(env::block_timestamp() <= proposal.expires_at, "Voting period has ended");
 
-        assert!(
-            env::block_timestamp() < proposal.end_timestamp,
-            "Voting period has ended"
-        );
+        // Calculate voting power = sum of staked tokens across all pools
+        let power: u128 = (0..self.pools.len())
+            .map(|pid| {
+                let key = get_user_key(&voter, pid);
+                self.user_info.get(&key).map_or(0, |u| u.amount)
+            })
+            .sum();
+        assert!(power > 0, "Must have staked tokens to vote");
 
-        // Voting power = staked amount
-        let user   = self.get_user(0, voter.clone());
-        let power  = user.map(|u| u.amount).unwrap_or(0);
-        assert!(power > 0, "No staked tokens — no voting power");
-
-        if vote_for {
+        if vote == "for" {
             proposal.votes_for += power;
         } else {
             proposal.votes_against += power;
         }
 
-        // Update proposal in vector
-        let idx = self.proposals.iter().position(|p| p.id == proposal_id).unwrap();
-        self.proposals.replace(idx as u64, &proposal);
-
-        // Record vote
-        self.user_votes.insert(&key, &vote_for);
-
-        env::log_str(&format!(
-            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"voted\",\"data\":{{\"proposal_id\":{},\"voter\":\"{}\",\"vote_for\":{}}}}}",
-            proposal_id, voter, vote_for
-        ));
+        self.votes.insert(vote_key, vote);
+        self.proposals.replace(proposal_id, proposal);
     }
 
-    // ── CALL: execute a passed proposal ─────────────────────────
-    pub fn execute_proposal(&mut self, proposal_id: u64) {
-        let mut proposal = self
-            .proposals
-            .iter()
-            .find(|p| p.id == proposal_id)
-            .expect("Proposal not found");
-
+    /// Finalize a proposal after voting period ends
+    pub fn finalize_proposal(&mut self, proposal_id: u32) {
+        let mut proposal = self.proposals.get(proposal_id).expect("Proposal not found").clone();
+        assert!(proposal.status == "active", "Proposal already finalized");
         assert!(
-            env::block_timestamp() >= proposal.end_timestamp,
-            "Voting period not ended yet"
+            env::block_timestamp() > proposal.expires_at,
+            "Voting period has not ended yet"
         );
+
+        proposal.passed = proposal.votes_for > proposal.votes_against;
+        proposal.status = if proposal.passed { "passed".to_string() } else { "rejected".to_string() };
+
+        self.proposals.replace(proposal_id, proposal);
+    }
+
+    /// Execute a passed proposal (emits event for governance listener)
+    pub fn execute_proposal(&mut self, proposal_id: u32) {
+        let mut proposal = self.proposals.get(proposal_id).expect("Proposal not found").clone();
+        assert!(proposal.status == "passed", "Proposal must be passed to execute");
         assert!(!proposal.executed, "Already executed");
 
-        let passed = proposal.votes_for > proposal.votes_against;
         proposal.executed = true;
-        proposal.passed   = passed;
+        proposal.status = "executed".to_string();
 
-        let idx = self.proposals.iter().position(|p| p.id == proposal_id).unwrap();
-        self.proposals.replace(idx as u64, &proposal);
-
-        // Emit event — IronClaw backend listener reads this
         env::log_str(&format!(
-            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"proposal_executed\",\"data\":{{\"id\":{},\"type\":\"{}\",\"content\":\"{}\",\"passed\":{}}}}}",
-            proposal.id,
-            proposal.proposal_type,
-            proposal.content.replace('"', "\\\""),
-            passed
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"proposal_executed\",\"data\":{{\"id\":{},\"type\":\"{}\",\"title\":\"{}\"}}}}",
+            proposal.id, proposal.proposal_type, proposal.title
         ));
+
+        self.proposals.replace(proposal_id, proposal);
+    }
+
+    /// View: Get all proposals
+    pub fn get_proposals(&self) -> Vec<Proposal> {
+        (0..self.proposals.len())
+            .filter_map(|i| self.proposals.get(i).cloned())
+            .collect()
+    }
+
+    /// View: Get a single proposal
+    pub fn get_proposal(&self, proposal_id: u32) -> Option<Proposal> {
+        self.proposals.get(proposal_id).cloned()
+    }
+
+    /// View: Check if an account has voted on a proposal
+    pub fn get_vote(&self, proposal_id: u32, account_id: AccountId) -> Option<String> {
+        let key = format!("{}:{}", proposal_id, account_id);
+        self.votes.get(&key).cloned()
+    }
+
+    /// View: Get voting power for an account (sum of staked across all pools)
+    pub fn get_voting_power(&self, account_id: AccountId) -> U128 {
+        let power: u128 = (0..self.pools.len())
+            .map(|pid| {
+                let key = get_user_key(&account_id, pid);
+                self.user_info.get(&key).map_or(0, |u| u.amount)
+            })
+            .sum();
+        U128(power)
     }
 }

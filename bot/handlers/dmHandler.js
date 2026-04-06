@@ -3,6 +3,9 @@ const summary   = require("../commands/summary");
 const research  = require("../commands/research");
 const verify    = require("../commands/verify");
 const portfolio = require("../commands/portfolio");
+const scan      = require("../commands/scan");
+const alert     = require("../commands/alert");
+const report    = require("../commands/report");
 
 const INTENTS = [
   { patterns: ["summarize", "summary of", "what happened in", "tldr"],             handler: summary.handle },
@@ -10,6 +13,9 @@ const INTENTS = [
   { patterns: ["verify", "is this true", "fact check", "is it true"],              handler: verify.handle },
   { patterns: ["portfolio", "my wallet", "my balance", "how much", "net worth"],   handler: portfolio.handle },
   { patterns: ["add wallet", "track wallet"],                                       handler: portfolio.handleAdd },
+  { patterns: ["scan", "is this safe", "check this link", "check url"],            handler: scan.handle },
+  { patterns: ["alert me", "notify me", "price alert", "set alert"],               handler: alert.handle },
+  { patterns: ["report scam", "report this", "flag this", "scam alert"],           handler: report.handle },
 ];
 
 async function handleDM(bot, msg) {
@@ -19,7 +25,7 @@ async function handleDM(bot, msg) {
     await match.handler(bot, msg);
   } else {
     await bot.sendMessage(msg.chat.id,
-      `👋 I'm IronClaw. Here's what I can do:\n\n🔍 *Research a token* — "research PEPE" or "tell me about 0x..."\n📋 *Summarize a group* — "summarize @cryptoalpha"\n✅ *Fact-check* — "is this true: [claim]"\n💼 *Portfolio* — "my portfolio" or "add wallet 0x..."\n\nJust type naturally — no commands needed.`,
+      `👋 I'm IronClaw, your Web3 security assistant.\n\n🔍 *Research* — "research PEPE" or "tell me about 0x..."\n📋 *Summarize* — "summarize @cryptoalpha"\n✅ *Fact-check* — "is this true: [claim]"\n🛡️ *Scan* — "scan https://suspicious-site.com"\n💼 *Portfolio* — "my portfolio" or "add wallet 0x..."\n🔔 *Alerts* — "alert me when NEAR goes above $10"\n🚨 *Report* — "report scam https://fake-site.com"\n\nJust type naturally — no commands needed.`,
       { parse_mode: "Markdown" }
     );
   }
