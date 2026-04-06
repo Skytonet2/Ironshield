@@ -14,6 +14,7 @@ function escapeMarkdownV2(text) {
 
 const COMMANDS = {
   "/summary":   summary.handle,
+  "/summarize": summary.handle,
   "/research":  research.handle,
   "/verify":    verify.handle,
   "/portfolio": portfolio.handle,

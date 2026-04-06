@@ -5,7 +5,7 @@ const BACKEND = process.env.BACKEND_URL || "http://localhost:3001";
 async function handle(bot, msg) {
   const chatId = msg.chat.id;
   const text   = msg.text || "";
-  const target = text.replace(/^\/scan\s*/i, "").trim();
+  const target = text.replace(/^\/scan(@\w+)?\s*/i, "").trim();
 
   if (!target) {
     return bot.sendMessage(chatId, "Usage: /scan <url or wallet address>\n\nExamples:\n/scan https://suspicious-site.com\n/scan scammer.near");

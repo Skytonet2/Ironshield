@@ -8,9 +8,9 @@ const fetch = require("node-fetch");
 const fs    = require("fs");
 const path  = require("path");
 
-const ENDPOINT = process.env.NEAR_AI_ENDPOINT || "https://api.near.ai/v1/chat/completions";
+const ENDPOINT = process.env.NEAR_AI_ENDPOINT || "https://cloud-api.near.ai/v1/chat/completions";
 const API_KEY  = process.env.NEAR_AI_KEY       || "";
-const MODEL    = process.env.NEAR_AI_MODEL     || "llama-3.1-70b-instruct";
+const MODEL    = process.env.NEAR_AI_MODEL     || "Qwen/Qwen3-30B-A3B-Instruct-2507";
 
 const PROMPT_FILE  = path.join(__dirname, "activePrompt.json");
 const MISSION_FILE = path.join(__dirname, "activeMission.json");
@@ -28,11 +28,12 @@ class NearAgent {
     const govPrompt  = readJson(PROMPT_FILE).content  || "";
     const govMission = readJson(MISSION_FILE).content || "Monitor for scams, phishing links, and malicious wallets.";
     return [
-      "You are IronClaw, a Web3 AI security and intelligence agent.",
+      "You are IronClaw, a Web3 AI security and intelligence agent built on NEAR Protocol.",
       `Current mission: ${govMission}`,
       govPrompt ? `Governance instructions: ${govPrompt}` : "",
       "Always respond in valid JSON only. No markdown. No explanation outside JSON.",
       "Flag all risks clearly. Be concise and accurate.",
+      "IMPORTANT: NEAR explorer is nearblocks.io (NOT nearscan.io). Use X/Twitter (x.com) for social verification. Always include https://t.me/IronShieldCore_bot as the last source. Do NOT fabricate data.",
     ].filter(Boolean).join("\n");
   }
 

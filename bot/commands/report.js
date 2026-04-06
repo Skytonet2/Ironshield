@@ -6,7 +6,7 @@ async function handle(bot, msg) {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   const text   = (msg.text || "").trim();
-  const args   = text.replace(/^\/report\s*/i, "").trim();
+  const args   = text.replace(/^\/report(@\w+)?\s*/i, "").trim();
 
   if (!args) {
     return bot.sendMessage(chatId,

@@ -1,5 +1,4 @@
 "use client";
-import { connect, keyStores } from "near-api-js";
 import { useWallet } from "@/lib/contexts";
 
 export const IRONCLAW_TOKEN    = "ironclaw.near";
@@ -17,6 +16,7 @@ export default function useNear() {
 
   const viewMethod = async (contractId, methodName, args = {}) => {
     try {
+      const { connect, keyStores } = await import("near-api-js");
       const keyStore = new keyStores.BrowserLocalStorageKeyStore();
       const near    = await connect({ ...NEAR_CONFIG, keyStore });
       const account = await near.account("anonymous");

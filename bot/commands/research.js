@@ -10,9 +10,9 @@ async function handle(bot, msg) {
   const userId = msg.from.id.toString();
   const text   = msg.text || "";
 
-  // Extract query — works for both /research TOKEN and natural language
+  // Extract query — strip command, bot mention, and natural language prefixes
   const query = text
-    .replace(/^\/research\s*/i, "")
+    .replace(/^\/research(@\w+)?\s*/i, "")
     .replace(/^(research|analyse|analyze|check token|tell me about)\s*/i, "")
     .trim();
 

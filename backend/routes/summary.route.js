@@ -6,8 +6,12 @@ const cache   = require("../services/cacheService");
 const limiter = require("../services/rateLimiter");
 
 router.post("/", async (req, res) => {
-  const { source, identifier, range, userId, requestedVia } = req.body;
+  const { identifier, range, userId, transcript, messageCount, requestedVia } = req.body;
   if (!userId) return res.status(400).json({ success: false, error: "userId required" });
+
+  if (!transcript || !transcript.trim()) {
+    return res.status(400).json({ success: false, error: "No message transcript provided" });
+  }
 
   const limit = limiter.check(userId, "summary");
   if (!limit.allowed) return res.status(429).json({ success: false, error: `Rate limit hit. Retry in ${limit.retryAfter}s` });
@@ -18,7 +22,7 @@ router.post("/", async (req, res) => {
 
   limiter.consume(userId, "summary");
   try {
-    const data = await agent.summarize({ source, identifier, range });
+    const data = await agent.summarize({ identifier, range, transcript, messageCount });
     cache.set(key, data, 1800);
     res.json({ success: true, cached: false, data });
   } catch (err) {

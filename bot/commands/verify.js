@@ -9,7 +9,7 @@ async function handle(bot, msg) {
   const text   = msg.text || "";
 
   const claim = text
-    .replace(/^\/verify\s*/i, "")
+    .replace(/^\/verify(@\w+)?\s*/i, "")
     .replace(/^(verify|is this true|fact check|is it true)[:\s]*/i, "")
     .trim();
 

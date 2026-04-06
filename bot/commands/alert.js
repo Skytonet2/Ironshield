@@ -16,7 +16,7 @@ async function handle(bot, msg) {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
   const text   = (msg.text || "").trim();
-  const args   = text.replace(/^\/alert\s*/i, "").trim();
+  const args   = text.replace(/^\/alert(@\w+)?\s*/i, "").trim();
 
   // /alert list
   if (args === "list" || !args) {

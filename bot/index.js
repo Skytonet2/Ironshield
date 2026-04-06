@@ -4,6 +4,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const { handleCommand }  = require("./handlers/commandHandler");
 const { handleMessage }  = require("./handlers/messageHandler");
 const { handleDM }       = require("./handlers/dmHandler");
+const { recordMessage }  = require("./commands/summary");
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!TOKEN) { console.error("TELEGRAM_BOT_TOKEN not set"); process.exit(1); }
@@ -13,8 +14,12 @@ console.log("IronClaw bot started (polling mode)");
 
 bot.on("message", async (msg) => {
   try {
+    console.log(`[MSG] chat=${msg.chat.id} type=${msg.chat.type} from=${msg.from?.username || msg.from?.id} text="${(msg.text || "").slice(0, 60)}"`);
     const isGroup   = msg.chat.type !== "private";
     const isCommand = msg.text?.startsWith("/");
+
+    // Record all non-command messages for /summary context
+    if (!isCommand && msg.text) recordMessage(msg);
 
     if (isCommand) {
       await handleCommand(bot, msg);
