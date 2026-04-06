@@ -21,6 +21,7 @@ const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "L
 
 /* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
 function getPageFromHash() {
+  if (typeof window === "undefined") return "Home";
   const raw = window.location.hash.replace("#/", "").replace("#", "").toLowerCase();
   const match = pages.find(p => p.toLowerCase() === raw);
   return match || "Home";
@@ -30,11 +31,15 @@ function navigate(page) {
   window.location.hash = "#/" + page;
 }
 
+// Read hash once at module load (client-only) to avoid flash
+const initialPage = typeof window !== "undefined" ? getPageFromHash() : "Home";
+
 export default function App() {
   const { theme: t, isDark, setIsDark } = useThemeInfo();
   const { connected, address, balance, showModal, signOut } = useWallet();
 
-  const [page, setPageState] = useState("Home");
+  const [mounted, setMounted] = useState(false);
+  const [page, setPageState] = useState(initialPage);
   const [showAdmin, setShowAdmin] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -52,8 +57,9 @@ export default function App() {
     window.scrollTo(0, 0);
   }, []);
 
-  // Sync page from hash on mount and on hash change
+  // Hydration guard + hash listener
   useEffect(() => {
+    setMounted(true);
     setPageState(getPageFromHash());
     const onHash = () => setPageState(getPageFromHash());
     window.addEventListener("hashchange", onHash);
@@ -89,6 +95,18 @@ export default function App() {
   };
 
   const openWallet = () => showModal();
+
+  // Prevent blank flash during SSR hydration
+  if (!mounted) {
+    return (
+      <div style={{ background: "#080b12", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <Shield size={40} color="#3b82f6" style={{ marginBottom: 12 }} />
+          <div style={{ color: "#94a3b8", fontSize: 14 }}>Loading IronShield...</div>
+        </div>
+      </div>
+    );
+  }
 
   const renderPage = () => {
     switch (page) {

@@ -47,46 +47,56 @@ export const WalletCtx = createContext({
 export const useWallet = () => useContext(WalletCtx);
 
 export function WalletProvider({ children }) {
+  const [mounted, setMounted] = useState(false);
   const [selector, setSelector] = useState(null);
   const [modal, setModal] = useState(null);
   const [address, setAddress] = useState(null);
   const [balance, setBalance] = useState("0");
 
+  // Hydration guard — render children immediately but defer wallet init
+  useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
+    if (!mounted) return;
+    let subscription;
     const init = async () => {
-      const _selector = await setupWalletSelector({
-        network: "mainnet",
-        modules: [setupMeteorWallet()],
-      });
+      try {
+        const _selector = await setupWalletSelector({
+          network: "mainnet",
+          modules: [setupMeteorWallet()],
+        });
 
-      const _modal = setupModal(_selector, {
-        contractId: "ironshield.near",
-      });
+        const _modal = setupModal(_selector, {
+          contractId: "ironshield.near",
+        });
 
-      const state = _selector.store.getState();
-      const accounts = state.accounts;
+        const state = _selector.store.getState();
+        const accounts = state.accounts;
 
-      if (accounts.length > 0) {
-        setAddress(accounts[0].accountId);
-        fetchBalance(accounts[0].accountId);
-      }
-
-      setSelector(_selector);
-      setModal(_modal);
-
-      const subscription = _selector.store.observable.subscribe((state) => {
-        if (state.accounts.length > 0) {
-          setAddress(state.accounts[0].accountId);
-          fetchBalance(state.accounts[0].accountId);
-        } else {
-          setAddress(null);
-          setBalance("0");
+        if (accounts.length > 0) {
+          setAddress(accounts[0].accountId);
+          fetchBalance(accounts[0].accountId);
         }
-      });
-      return () => subscription.unsubscribe();
+
+        setSelector(_selector);
+        setModal(_modal);
+
+        subscription = _selector.store.observable.subscribe((state) => {
+          if (state.accounts.length > 0) {
+            setAddress(state.accounts[0].accountId);
+            fetchBalance(state.accounts[0].accountId);
+          } else {
+            setAddress(null);
+            setBalance("0");
+          }
+        });
+      } catch (err) {
+        console.warn("Wallet selector init failed, app continues without wallet:", err);
+      }
     };
     init();
-  }, []);
+    return () => { if (subscription) subscription.unsubscribe(); };
+  }, [mounted]);
 
   const fetchBalance = async (accountId) => {
     try {
