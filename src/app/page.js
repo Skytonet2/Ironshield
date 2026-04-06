@@ -1,21 +1,23 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { Shield, Sun, Moon, LogOut, Wallet, MessageCircle } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
 
 import HomePage from "@/components/HomePage";
-import DashboardPage from "@/components/DashboardPage";
-import StakingPage from "@/components/StakingPage";
-import TradePage from "@/components/TradePage";
-import EarnPage from "@/components/EarnPage";
-import RoadmapPage from "@/components/RoadmapPage";
-import EcosystemPage from "@/components/EcosystemPage";
-import AdminPanel from "@/components/AdminPanel";
-import GovernancePage from "@/components/GovernancePage";
-import LaunchPage from "@/components/LaunchPage";
-import DocsPage from "@/components/DocsPage";
-import MascotSystem from "@/components/MascotSystem";
+
+/* Lazy-load all secondary pages — only fetched when user navigates to them */
+const DashboardPage  = lazy(() => import("@/components/DashboardPage"));
+const StakingPage    = lazy(() => import("@/components/StakingPage"));
+const TradePage      = lazy(() => import("@/components/TradePage"));
+const EarnPage       = lazy(() => import("@/components/EarnPage"));
+const RoadmapPage    = lazy(() => import("@/components/RoadmapPage"));
+const EcosystemPage  = lazy(() => import("@/components/EcosystemPage"));
+const AdminPanel     = lazy(() => import("@/components/AdminPanel"));
+const GovernancePage = lazy(() => import("@/components/GovernancePage"));
+const LaunchPage     = lazy(() => import("@/components/LaunchPage"));
+const DocsPage       = lazy(() => import("@/components/DocsPage"));
+const MascotSystem   = lazy(() => import("@/components/MascotSystem"));
 
 const MASCOT_IMG = "/mascot.png";
 
@@ -102,7 +104,9 @@ export default function App() {
 
       <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "90vw", maxWidth: 500, height: 500, opacity: t.watermarkOpacity, backgroundImage: `url(${MASCOT_IMG})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center", pointerEvents: "none", zIndex: 0 }} />
 
-      <MascotSystem onSecretFound={() => setShowSurprise(true)} />
+      <Suspense fallback={null}>
+        <MascotSystem onSecretFound={() => setShowSurprise(true)} />
+      </Suspense>
 
       {showSurprise && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowSurprise(false)}>
@@ -175,7 +179,9 @@ export default function App() {
       </nav>
 
       <div style={{ position: "relative", zIndex: 1, minHeight: "80vh" }}>
-        {renderPage()}
+        <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}><Shield size={32} color={t.accent} style={{ animation: "spin 1.5s linear infinite" }} /></div>}>
+          {renderPage()}
+        </Suspense>
       </div>
 
       <div style={{ borderTop: `1px solid ${t.border}`, padding: "36px 24px", position: "relative", zIndex: 1, marginTop: 40 }}>
@@ -198,7 +204,7 @@ export default function App() {
         </div>
       </div>
 
-      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+      {showAdmin && <Suspense fallback={null}><AdminPanel onClose={() => setShowAdmin(false)} /></Suspense>}
 
       {/* Floating Telegram Bot Launcher */}
       <a
