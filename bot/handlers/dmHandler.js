@@ -1,4 +1,5 @@
-// bot/handlers/dmHandler.js — natural language DM mode
+// bot/handlers/dmHandler.js — natural language DM mode with IronClaw AI
+const fetch     = require("node-fetch");
 const summary   = require("../commands/summary");
 const research  = require("../commands/research");
 const verify    = require("../commands/verify");
@@ -6,6 +7,8 @@ const portfolio = require("../commands/portfolio");
 const scan      = require("../commands/scan");
 const alert     = require("../commands/alert");
 const report    = require("../commands/report");
+
+const BACKEND = process.env.BACKEND_URL || "http://localhost:3001";
 
 const INTENTS = [
   { patterns: ["summarize", "summary of", "what happened in", "tldr"],             handler: summary.handle },
@@ -21,13 +24,36 @@ const INTENTS = [
 async function handleDM(bot, msg) {
   const text  = (msg.text || "").toLowerCase();
   const match = INTENTS.find(i => i.patterns.some(p => text.includes(p)));
+
   if (match) {
     await match.handler(bot, msg);
-  } else {
-    await bot.sendMessage(msg.chat.id,
-      `👋 I'm IronClaw, your Web3 security assistant.\n\n🔍 *Research* — "research PEPE" or "tell me about 0x..."\n📋 *Summarize* — "summarize @cryptoalpha"\n✅ *Fact-check* — "is this true: [claim]"\n🛡️ *Scan* — "scan https://suspicious-site.com"\n💼 *Portfolio* — "my portfolio" or "add wallet 0x..."\n🔔 *Alerts* — "alert me when NEAR goes above $10"\n🚨 *Report* — "report scam https://fake-site.com"\n\nJust type naturally — no commands needed.`,
-      { parse_mode: "Markdown" }
-    );
+    return;
+  }
+
+  // No specific intent matched — use IronClaw general AI
+  const typingInterval = setInterval(() => {
+    bot.sendChatAction(msg.chat.id, "typing").catch(() => {});
+  }, 3000);
+  bot.sendChatAction(msg.chat.id, "typing").catch(() => {});
+
+  try {
+    const res = await fetch(`${BACKEND}/api/chat`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ message: msg.text, userId: msg.from.id.toString() }),
+    });
+    const json = await res.json();
+    clearInterval(typingInterval);
+
+    if (json.success && json.data?.reply) {
+      await bot.sendMessage(msg.chat.id, json.data.reply);
+    } else {
+      await bot.sendMessage(msg.chat.id, "I couldn't process that right now. Try a specific command like /research or /verify, or rephrase your question.");
+    }
+  } catch (err) {
+    clearInterval(typingInterval);
+    console.error("[DM] Chat error:", err.message);
+    await bot.sendMessage(msg.chat.id, "Something went wrong. Try again or use /help to see available commands.");
   }
 }
 

@@ -123,7 +123,66 @@ CRITICAL RULES:
 - Always respond in valid JSON only. No markdown. No explanation outside JSON.`;
 };
 
-/* ── GENERAL PROMPT (verify, portfolio, etc.) ─────────────────── */
+/* ── MODE 4: SECURITY SCAN SYSTEM PROMPT ──────────────────────── */
+const securityScanPrompt = () => {
+  const { govPrompt, govMission } = getGovContext();
+  return `You are IronClaw, an advanced AI security agent built on NEAR Protocol.
+Current mission: ${govMission}
+${govPrompt ? `Governance instructions: ${govPrompt}` : ""}
+
+You analyze links, contracts, and wallets for security threats.
+
+ANALYSIS STEPS:
+1. Identify what was submitted (URL, contract address, wallet address).
+2. Analyze for: phishing patterns, fake/typosquatted domains, suspicious contract structure, known scam patterns, honeypot indicators.
+3. Cross-reference: Is the domain mimicking a known project? Is the contract a known proxy/clone?
+4. Assign risk level: LOW / MEDIUM / HIGH / CRITICAL
+5. Explain reasoning in 1-3 sentences.
+
+RULES:
+- NEAR blockchain explorer is nearblocks.io.
+- Do NOT fabricate scan results. If you cannot determine risk, say "UNKNOWN — manual review recommended".
+- Always respond in valid JSON only. No markdown. No explanation outside JSON.`;
+};
+
+/* ── MODE 5: GENERAL AI (DM conversations, knowledge) ─────────── */
+const generalAIPrompt = () => {
+  const { govPrompt, govMission } = getGovContext();
+  return `You are IronClaw — an advanced AI agent for research, reasoning, and real-world intelligence. Built on NEAR Protocol.
+Current mission: ${govMission}
+${govPrompt ? `Governance instructions: ${govPrompt}` : ""}
+
+You do NOT blindly respond. You THINK before answering.
+
+INTENT DETECTION — Automatically classify and route:
+1. GENERAL_AI → everyday questions, explanations, knowledge
+2. RESEARCH → crypto/projects/data analysis
+3. FACT_CHECK → verifying a claim
+4. SECURITY → links, contracts, scam detection
+
+RESPONSE RULES:
+- Be direct and clear. Avoid repeating menus or instructions.
+- Explain reasoning briefly when needed.
+- Sound intelligent, not robotic.
+- If unsure → say "I'm not fully certain" (no guessing).
+- NEVER hallucinate missing data.
+- NEVER treat inconsistent data as fact.
+- ALWAYS prefer correctness over completeness.
+
+VALIDATION — Before responding, check:
+- Does this answer match the user's question?
+- Is the data logically consistent?
+- Would an expert trust this answer? If NO → improve before sending.
+
+NEAR ecosystem knowledge:
+- NEAR Protocol founders: Illia Polosukhin, Alexander Skidanov.
+- NEAR blockchain explorer: nearblocks.io
+- IronShield/IronClaw: AI security agent on NEAR, governed by $IRONCLAW token holders.
+
+Respond naturally in plain text. Be helpful, concise, and accurate.`;
+};
+
+/* ── BASE PROMPT (portfolio, fallback) ────────────────────────── */
 const baseSystemPrompt = () => {
   const { govPrompt, govMission } = getGovContext();
   return `You are IronClaw, a Web3 AI security and intelligence agent built on NEAR Protocol.
@@ -286,3 +345,52 @@ exports.portfolio = (payload) => dispatch("portfolio",
   `Analyze these wallets: ${JSON.stringify(payload.wallets)}.
    Return JSON: { totalNetWorthUSD, change24hUSD, change24hPct, wallets: [{ address, chain, balanceUSD, tokens: [{ symbol, amount, valueUSD }], riskFlags: [] }] }`
 );
+
+exports.scan = (payload) => dispatch("scan",
+  `Security scan the following target: "${payload.target}"
+Type: ${payload.type || "auto-detect"}
+Context: ${payload.context || "User submitted for analysis"}
+
+Analyze for: phishing, fake domains, suspicious contract patterns, honeypot indicators, known scam signatures.
+
+Return JSON: {
+  target: "${payload.target}",
+  type: "url|contract|wallet",
+  riskLevel: "LOW|MEDIUM|HIGH|CRITICAL|UNKNOWN",
+  threats: [{ type: "phishing|fake_domain|honeypot|rug_pull|suspicious_permissions|clean", detail: "explanation" }],
+  recommendation: "1-2 sentence action recommendation",
+  safe: true|false
+}
+
+If you cannot determine risk, set riskLevel to "UNKNOWN" and recommend manual review.`,
+  securityScanPrompt()
+);
+
+exports.chat = (payload) => {
+  const controller = new AbortController();
+  const timeout    = setTimeout(() => controller.abort(), 30000);
+  return (async () => {
+    try {
+      const res = await fetch(ENDPOINT, {
+        method:  "POST",
+        signal:  controller.signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 600,
+          messages: [
+            { role: "system", content: generalAIPrompt() },
+            { role: "user",   content: payload.message },
+          ],
+        }),
+      });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`NEAR AI returned ${res.status}: ${await res.text()}`);
+      const json = await res.json();
+      return json.choices?.[0]?.message?.content || "I couldn't process that. Try rephrasing your question.";
+    } catch (err) {
+      clearTimeout(timeout);
+      throw new Error(`Agent chat failed: ${err.message}`);
+    }
+  })();
+};
