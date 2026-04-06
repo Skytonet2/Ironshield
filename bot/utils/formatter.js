@@ -63,13 +63,38 @@ module.exports = {
   formatSummary(data) {
     if (!data) return "⚠️ No summary data returned.";
     const lines = [
-      `📋 *${data.title || "Summary"}*`,
+      `📋 *${esc(data.title || "Group Analysis")}*`,
       `━━━━━━━━━━━━━━━━━━`,
     ];
+
+    // Group overview (new intelligence fields)
+    const go = data.groupOverview;
+    if (go) {
+      lines.push(`📊 *Group Overview*`);
+      if (go.activityLevel) lines.push(`• Activity: ${esc(go.activityLevel)}`);
+      if (go.signalQuality) lines.push(`• Signal Quality: ${esc(go.signalQuality)}`);
+      if (go.keyParticipants?.length) lines.push(`• Key Voices: ${go.keyParticipants.map(p => esc(p)).join(", ")}`);
+      lines.push(``);
+    }
 
     if (data.keyPoints?.length) {
       lines.push(`📌 *Key Points*`);
       data.keyPoints.slice(0, 5).forEach(p => lines.push(`• ${esc(p)}`));
+      lines.push(``);
+    }
+
+    if (data.keyNarratives?.length) {
+      lines.push(`🧭 *Key Narratives:* ${data.keyNarratives.map(n => esc(n)).join(", ")}`);
+      lines.push(``);
+    }
+
+    // Alpha findings (new intelligence fields)
+    if (data.alphaFindings?.length) {
+      lines.push(`🎯 *Alpha Findings*`);
+      data.alphaFindings.slice(0, 5).forEach(a => {
+        const conv = a.conviction ? ` (${esc(a.conviction)})` : "";
+        lines.push(`• ${esc(a.token || a)}${conv}${a.why ? " — " + esc(a.why) : ""}`);
+      });
       lines.push(``);
     }
 
@@ -86,6 +111,11 @@ module.exports = {
     if (data.actionableInsights?.length) {
       lines.push(`⚡ *Insights*`);
       data.actionableInsights.forEach(i => lines.push(`• ${esc(i)}`));
+    }
+
+    if (data.confidenceLevel) {
+      lines.push(``);
+      lines.push(`🔒 *Confidence:* ${esc(data.confidenceLevel)}`);
     }
 
     return lines.join("\n");

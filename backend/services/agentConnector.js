@@ -14,25 +14,97 @@ const readJson = (file) => {
   try { const d = JSON.parse(fs.readFileSync(file, "utf8")); return d; } catch { return {}; }
 };
 
-const baseSystemPrompt = () => {
-  const promptFile   = readJson(PROMPT_FILE);
-  const missionFile  = readJson(MISSION_FILE);
-  const govPrompt    = promptFile.content  || "";
-  const govMission   = missionFile.content || "Monitor for scams, phishing links, and malicious wallets.";
-  return `You are IronClaw, a Web3 AI security and intelligence agent built on NEAR Protocol.
-Current mission: ${govMission}
-${govPrompt ? `\nGovernance instructions: ${govPrompt}` : ""}
-Always respond in valid JSON only. No markdown. No explanation outside JSON.
-Flag all risks clearly. Be concise and accurate.
-IMPORTANT RULES:
-- The NEAR blockchain explorer is nearblocks.io (NOT nearscan.io, NOT explorer.near.org for links).
-- For token/project verification, reference X/Twitter (x.com) as the primary social source, NOT Google.
-- When providing source links, always include https://nearblocks.io for NEAR chain lookups.
-- Always include https://t.me/IronShieldCore_bot as the last source link (this is our bot).
-- Do NOT fabricate data. If you don't have real metrics, say "unavailable" instead of making up numbers.`;
+const getGovContext = () => {
+  const govPrompt  = readJson(PROMPT_FILE).content  || "";
+  const govMission = readJson(MISSION_FILE).content || "Monitor for scams, phishing links, and malicious wallets.";
+  return { govPrompt, govMission };
 };
 
-const dispatch = async (taskType, userPrompt) => {
+/* ── MODE 1: CRYPTO RESEARCH SYSTEM PROMPT ────────────────────── */
+const researchSystemPrompt = () => {
+  const { govPrompt, govMission } = getGovContext();
+  return `You are IronClaw, an advanced crypto intelligence agent built on NEAR Protocol.
+Current mission: ${govMission}
+${govPrompt ? `Governance instructions: ${govPrompt}` : ""}
+
+You perform HIGH-INTEGRITY crypto research. You MUST follow strict data validation rules.
+You DO NOT guess, hallucinate, or substitute missing data.
+
+STEP 1: Identify entity type — Layer 1 blockchain, Token on another chain, or Protocol/dApp.
+STEP 2: Validate data context — Ignore irrelevant metrics (e.g. DEX liquidity for L1 chains). Cross-check market cap, liquidity, and chain.
+STEP 3: Detect inconsistencies — If mismatch detected, label as "Data inconsistency detected". Do NOT convert inconsistencies into fake risks.
+STEP 4: Risk analysis (ONLY real risks) — Regulatory, Security, Centralization, Ecosystem maturity.
+STEP 5: Trust score — Based on data reliability + consistency + legitimacy.
+
+ANTI-HALLUCINATION: Before responding, ask yourself "Am I using actual provided data or substituting context?" If substituting → STOP and say "unavailable".
+
+RULES:
+- NEAR blockchain explorer is nearblocks.io (NOT nearscan.io).
+- Use X/Twitter (x.com) as primary social source, NOT Google.
+- Always include https://t.me/IronShieldCore_bot as the last source link.
+- Do NOT fabricate data. If a metric is missing, say "unavailable".
+- Always respond in valid JSON only. No markdown. No explanation outside JSON.`;
+};
+
+/* ── MODE 2: TELEGRAM GROUP ANALYSIS SYSTEM PROMPT ────────────── */
+const groupAnalysisPrompt = () => {
+  const { govPrompt, govMission } = getGovContext();
+  return `You are IronClaw, an advanced crypto intelligence agent built on NEAR Protocol.
+Current mission: ${govMission}
+${govPrompt ? `Governance instructions: ${govPrompt}` : ""}
+
+You perform Telegram group intelligence and alpha extraction.
+
+ACCESS VALIDATION (CRITICAL):
+- You MUST have ACTUAL messages provided in the transcript. If no messages → respond with empty results.
+- NEVER summarize unrelated chats. NEVER use prior conversation as substitute.
+
+SIGNAL vs NOISE FILTERING — Classify messages into:
+- Alpha (valuable insights): early token mentions before hype, contract addresses, dev updates, insider-like discussions, unusual coordinated mention patterns.
+- Noise: spam, memes, hype without substance.
+- Promotions: shilling, paid promotion.
+
+ALPHA EXTRACTION — Extract:
+- Token/project names and contract addresses mentioned.
+- Narratives (AI, memes, infra, DeFi, etc.).
+- Repeated mentions (trend detection).
+- Sentiment (bullish, skeptical, neutral).
+- "Emerging plays" (low mention but high conviction) vs "Overhyped plays" (high mention, low substance).
+
+BEHAVIORAL ANALYSIS — Assess:
+- Are users knowledgeable or just hype-driven?
+- Is there coordinated shilling?
+- Are admins credible?
+
+RED FLAG DETECTION:
+- Scam links, phishing, pump-and-dump language.
+- Coordinated hype patterns, fake urgency.
+
+ANTI-HALLUCINATION RULE:
+Before responding, ask: "Am I using actual group data or substituting context?"
+If substituting → STOP and correct. NEVER invent group discussions. NEVER assume alpha without evidence.
+
+Always respond in valid JSON only. No markdown. No explanation outside JSON.`;
+};
+
+/* ── GENERAL PROMPT (verify, portfolio, etc.) ─────────────────── */
+const baseSystemPrompt = () => {
+  const { govPrompt, govMission } = getGovContext();
+  return `You are IronClaw, a Web3 AI security and intelligence agent built on NEAR Protocol.
+Current mission: ${govMission}
+${govPrompt ? `Governance instructions: ${govPrompt}` : ""}
+Always respond in valid JSON only. No markdown. No explanation outside JSON.
+Flag all risks clearly. Be concise and accurate.
+RULES:
+- NEAR blockchain explorer is nearblocks.io (NOT nearscan.io).
+- Use X/Twitter (x.com) as primary social source, NOT Google.
+- Always include https://t.me/IronShieldCore_bot as the last source link.
+- Do NOT fabricate data. If you don't have real metrics, say "unavailable".`;
+};
+
+const dispatch = async (taskType, userPrompt, systemPrompt) => {
+  const sysPrompt  = systemPrompt || baseSystemPrompt();
+  const maxTokens  = taskType === "summary" ? 1200 : 800;
   const controller = new AbortController();
   const timeout    = setTimeout(() => controller.abort(), 30000);
   try {
@@ -42,9 +114,9 @@ const dispatch = async (taskType, userPrompt) => {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 800,
+        max_tokens: maxTokens,
         messages: [
-          { role: "system", content: baseSystemPrompt() },
+          { role: "system", content: sysPrompt },
           { role: "user",   content: userPrompt },
         ],
       }),
@@ -62,18 +134,40 @@ const dispatch = async (taskType, userPrompt) => {
 };
 
 exports.summarize = (payload) => dispatch("summary",
-  `Analyze and summarize the following REAL chat messages (${payload.messageCount} messages from the last ${payload.range}).
-DO NOT invent or fabricate any information. Only report what is actually present in the transcript below.
-If something is not discussed, do not include it.
+  `Analyze the following REAL chat messages (${payload.messageCount} messages from the last ${payload.range}).
 
 --- BEGIN TRANSCRIPT ---
 ${payload.transcript}
 --- END TRANSCRIPT ---
 
-Return JSON: { title, keyPoints: [], tokensMentioned: [], redFlags: [], actionableInsights: [] }
-Only include tokensMentioned if actual token names/tickers appear in the messages.
-Only include redFlags if you detect genuine suspicious activity (scam links, phishing, pump-and-dump language).
-If the conversation is benign, return empty arrays for redFlags.`
+Perform full group intelligence analysis:
+
+1. DATA SOURCE: Time range = ${payload.range}, Messages = ${payload.messageCount}. Identify key participants.
+
+2. SIGNAL vs NOISE: Classify messages into Alpha (early token mentions, contract addresses, dev updates, insider discussion), Noise (spam, memes, hype), and Promotions (shilling).
+
+3. ALPHA EXTRACTION: Extract token/project names, narratives (AI, memes, infra, etc.), repeated mentions for trend detection, sentiment. Identify "Emerging plays" (low mention, high conviction) vs "Overhyped plays" (high mention, low substance).
+
+4. BEHAVIORAL ANALYSIS: Are users knowledgeable or hype-driven? Is there coordinated shilling?
+
+5. RED FLAGS: Scam links, phishing, pump-and-dump language, coordinated hype patterns.
+
+Return JSON: {
+  title: "Group analysis title",
+  groupOverview: { activityLevel: "low|medium|high", signalQuality: "low|medium|high", keyParticipants: [] },
+  keyPoints: [],
+  keyNarratives: [],
+  alphaFindings: [{ token: "", why: "", conviction: "low|medium|high" }],
+  tokensMentioned: [],
+  redFlags: [],
+  actionableInsights: [],
+  confidenceLevel: "low|medium|high — reason"
+}
+
+CRITICAL: Only report what is ACTUALLY in the transcript. Do NOT invent discussions, tokens, or alpha.
+If the conversation is benign, return empty arrays for redFlags and alphaFindings.
+If fewer than 5 messages, set confidenceLevel to "low — insufficient data".`,
+  groupAnalysisPrompt()
 );
 
 exports.research = (payload) => {
@@ -96,16 +190,21 @@ exports.research = (payload) => {
   return dispatch("research",
     `Analyze this crypto token/project: "${payload.query}" (type: ${payload.queryType}, chain: ${payload.chain}).
 ${dataBlock}
-CRITICAL: Use ONLY the real data provided above for metrics. Do NOT invent prices, market caps, or volumes.
-If a metric is "unavailable" in the data, keep it as "unavailable" in your response.
-Your job is to ANALYZE the data and provide risk assessment, NOT to look up data.
+STEP 1 — ENTITY TYPE: Identify if this is a Layer 1 blockchain, token on another chain, or protocol/dApp.
+STEP 2 — VALIDATE DATA: Ignore irrelevant metrics (e.g. DEX liquidity for L1 chains). Cross-check market cap vs liquidity vs chain.
+STEP 3 — DETECT INCONSISTENCIES: If data conflicts exist, label as "Data inconsistency detected" — do NOT convert into fake risks.
+STEP 4 — RISK ANALYSIS (real risks only): Regulatory, Security, Centralization, Ecosystem maturity.
+STEP 5 — TRUST SCORE: Based on data reliability + consistency + legitimacy.
+
+CRITICAL: Use ONLY the real data provided above. Do NOT invent prices, market caps, or volumes.
+If a metric is "unavailable" in the data, keep it as "unavailable".
 
 Return JSON: {
   overview: "brief project description based on the data",
   metrics: { price, marketCap, volume24h, holders, liquidityLocked, auditStatus },
   risks: [],
   redFlags: [],
-  trustScore: (0-100 based on data quality, liquidity, holders),
+  trustScore: (0-100),
   sources: ${JSON.stringify(sources)}
 }
 
@@ -113,7 +212,9 @@ Scoring guide:
 - No liquidity or very low (<$1000): trustScore 0-20
 - No holders data or <10 holders: reduce score by 20
 - No website/twitter: reduce score by 15
-- Good liquidity (>$50k) + verified audit: trustScore 60-90`
+- Good liquidity (>$50k) + verified audit: trustScore 60-90
+- L1 chain with strong ecosystem: trustScore 70-95`,
+    researchSystemPrompt()
   );
 };
 
