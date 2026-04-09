@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Shield, Zap, FileText, ToggleLeft, Clock, ChevronDown, ChevronUp, Loader, Plus, X } from "lucide-react";
+import { Shield, Zap, FileText, ToggleLeft, Clock, ChevronDown, ChevronUp, Loader, Plus, X, Award, UserPlus, CheckCircle } from "lucide-react";
 import { Section, Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useNear, { STAKING_CONTRACT } from "@/hooks/useNear";
@@ -63,6 +63,19 @@ export default function GovernancePage({ openWallet }) {
     content: "",
   });
 
+  // Pre-token governance state
+  const [pretokenMode, setPretokenMode]         = useState(false);
+  const [myPower, setMyPower]                   = useState(null); // null=unknown, 0/1/2 in pretoken mode, staked in post-token
+  const [isContributor, setIsContributor]       = useState(false);
+  const [isVanguard, setIsVanguard]             = useState(false);
+  const [showContribForm, setShowContribForm]   = useState(false);
+  const [showVanguardForm, setShowVanguardForm] = useState(false);
+  const [contribForm, setContribForm]           = useState({ telegram: "", reason: "" });
+  const [vanguardForm, setVanguardForm]         = useState({ nftContract: "nearlegion.nfts.tg", tokenId: "" });
+  const [vanguardNftContracts, setVanguardNftContracts] = useState([]);
+  const [vanguardTokenIdMax, setVanguardTokenIdMax]     = useState(1000);
+  const [hasPendingApp, setHasPendingApp]       = useState(false);
+
   // ── Fetch proposals ──────────────────────────────────────────
   const fetchProposals = useCallback(async () => {
     setLoading(true);
@@ -85,21 +98,68 @@ export default function GovernancePage({ openWallet }) {
     }
   }, [viewMethod]);
 
-  // Fetch user's votes for active proposals
+  // ── Fetch governance mode + caller's eligibility ─────────────
+  const fetchMode = useCallback(async () => {
+    try {
+      const [mode, max, nftContracts] = await Promise.all([
+        viewMethod(STAKING_CONTRACT, "get_pretoken_mode", {}),
+        viewMethod(STAKING_CONTRACT, "get_vanguard_token_id_max", {}),
+        viewMethod(STAKING_CONTRACT, "get_vanguard_nft_contracts", {}),
+      ]);
+      if (mode !== null) setPretokenMode(!!mode);
+      if (max  !== null) setVanguardTokenIdMax(Number(max) || 1000);
+      if (Array.isArray(nftContracts) && nftContracts.length) {
+        setVanguardNftContracts(nftContracts);
+        setVanguardForm(f => f.nftContract ? f : { ...f, nftContract: nftContracts[0] });
+      }
+    } catch (err) {
+      console.warn("fetchMode:", err?.message || err);
+    }
+  }, [viewMethod]);
+
+  const fetchEligibility = useCallback(async () => {
+    if (!address) {
+      setMyPower(null); setIsContributor(false); setIsVanguard(false); setHasPendingApp(false);
+      return;
+    }
+    try {
+      if (pretokenMode) {
+        const [contrib, vg, pending] = await Promise.all([
+          viewMethod(STAKING_CONTRACT, "is_contributor",  { account_id: address }),
+          viewMethod(STAKING_CONTRACT, "is_vanguard",     { account_id: address }),
+          viewMethod(STAKING_CONTRACT, "get_pending_applications", {}),
+        ]);
+        setIsContributor(!!contrib);
+        setIsVanguard(!!vg);
+        setHasPendingApp(Array.isArray(pending) && pending.some(a => a.account_id === address));
+        setMyPower(vg ? 2 : (contrib ? 1 : 0));
+      } else {
+        const power = await viewMethod(STAKING_CONTRACT, "get_voting_power", { account_id: address });
+        setMyPower(power?.toString ? power.toString() : (power ?? "0"));
+        setIsContributor(false); setIsVanguard(false); setHasPendingApp(false);
+      }
+    } catch (err) {
+      console.warn("fetchEligibility:", err?.message || err);
+    }
+  }, [address, pretokenMode, viewMethod]);
+
+  // Fetch user's votes for active proposals. Contract stores "for"/"against" strings.
   const fetchUserVotes = useCallback(async () => {
     if (!address || proposals.length === 0) return;
     const votes = {};
     for (const p of proposals) {
-      const vote = await viewMethod(STAKING_CONTRACT, "get_user_vote", {
+      const v = await viewMethod(STAKING_CONTRACT, "get_vote", {
         proposal_id: p.id,
         account_id:  address,
       });
-      if (vote !== null) votes[p.id] = vote; // true=for, false=against
+      if (v === "for" || v === "against") votes[p.id] = (v === "for");
     }
     setUserVotes(votes);
   }, [address, proposals, viewMethod]);
 
   useEffect(() => { fetchProposals(); }, [fetchProposals]);
+  useEffect(() => { fetchMode(); }, [fetchMode]);
+  useEffect(() => { fetchEligibility(); }, [fetchEligibility]);
   useEffect(() => { fetchUserVotes(); }, [fetchUserVotes]);
 
   const showErr = (msg) => { setError(msg);   setTimeout(() => setError(""),   4000); };
@@ -114,6 +174,7 @@ export default function GovernancePage({ openWallet }) {
       await callMethod(STAKING_CONTRACT, "create_proposal", {
         proposal_type: newProposal.type,
         title:         newProposal.title,
+        description:   newProposal.title, // contract requires a description; reuse title
         content:       newProposal.content,
       }, "0");
       showOk("Proposal created! Voting window is now open for 72 hours.");
@@ -134,7 +195,7 @@ export default function GovernancePage({ openWallet }) {
     try {
       await callMethod(STAKING_CONTRACT, "vote", {
         proposal_id: proposalId,
-        vote_for:    voteFor,
+        vote:        voteFor ? "for" : "against",
       }, "0");
       showOk(`Vote cast: ${voteFor ? "FOR" : "AGAINST"}`);
       setUserVotes(prev => ({ ...prev, [proposalId]: voteFor }));
@@ -160,7 +221,59 @@ export default function GovernancePage({ openWallet }) {
     }
   };
 
-  const isExpired = (p) => Date.now() > p.end_timestamp / 1_000_000;
+  // ── Contributor application ─────────────────────────────────
+  const handleContribApply = async () => {
+    if (!connected) return openWallet();
+    if (!contribForm.telegram.trim() || !contribForm.reason.trim()) return showErr("Telegram and reason are required");
+    if (contribForm.telegram.length > 64) return showErr("Telegram handle too long (max 64)");
+    if (contribForm.reason.length > 500)  return showErr("Reason too long (max 500)");
+    setTxLoading(true);
+    try {
+      await callMethod(STAKING_CONTRACT, "request_contributor", {
+        telegram: contribForm.telegram,
+        reason:   contribForm.reason,
+      }, "0");
+      showOk("Application submitted. An admin will review it shortly.");
+      setShowContribForm(false);
+      setContribForm({ telegram: "", reason: "" });
+      await fetchEligibility();
+    } catch (err) {
+      showErr(err.message || "Application failed");
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  // ── Vanguard NFT claim ──────────────────────────────────────
+  const handleVanguardClaim = async () => {
+    if (!connected) return openWallet();
+    if (!vanguardForm.nftContract.trim() || !vanguardForm.tokenId.trim()) return showErr("NFT contract and token ID are required");
+    const idNum = parseInt(vanguardForm.tokenId, 10);
+    if (Number.isNaN(idNum) || idNum < 1 || idNum > vanguardTokenIdMax) {
+      return showErr(`Token ID must be between 1 and ${vanguardTokenIdMax}`);
+    }
+    setTxLoading(true);
+    try {
+      await callMethod(STAKING_CONTRACT, "register_vanguard", {
+        nft_contract: vanguardForm.nftContract,
+        token_id:     vanguardForm.tokenId,
+      }, "0");
+      showOk("Vanguard claim submitted. Ownership will be verified on-chain.");
+      setShowVanguardForm(false);
+      setVanguardForm({ nftContract: vanguardNftContracts[0] || "nearlegion.nfts.tg", tokenId: "" });
+      // Callback is async — give it a moment then refresh
+      setTimeout(() => fetchEligibility(), 4000);
+    } catch (err) {
+      showErr(err.message || "Vanguard claim failed");
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  const canPropose = pretokenMode ? (isContributor || isVanguard) : true; // post-token: contract will reject if no stake
+  const canVote    = pretokenMode ? (isContributor || isVanguard) : true;
+
+  const isExpired = (p) => Date.now() > p.expires_at / 1_000_000;
 
   // ── Proposal card ───────────────────────────────────────────
   const ProposalCard = ({ p, isHistory = false }) => {
@@ -197,7 +310,7 @@ export default function GovernancePage({ openWallet }) {
                 <>
                   {exp ? <Badge color={t.amber}>ENDED</Badge> : (
                     <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: t.textMuted }}>
-                      <Clock size={11} /> {timeLeft(p.end_timestamp)}
+                      <Clock size={11} /> {timeLeft(p.expires_at)}
                     </div>
                   )}
                   {hasVoted && <Badge color={myVote ? t.green : t.red}>{myVote ? "YOU VOTED FOR" : "YOU VOTED AGAINST"}</Badge>}
@@ -264,7 +377,7 @@ export default function GovernancePage({ openWallet }) {
       <div style={{
         background: "linear-gradient(135deg, rgba(255,107,0,0.08), rgba(155,93,229,0.08))",
         border: "1px solid rgba(255,107,0,0.25)",
-        borderRadius: 14, padding: "16px 24px", marginBottom: 40,
+        borderRadius: 14, padding: "16px 24px", marginBottom: 24,
         display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -274,8 +387,123 @@ export default function GovernancePage({ openWallet }) {
             <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3 }}>Current mission: {activeMission}</div>
           </div>
         </div>
-        <Badge color="#ff6b00">Governed by token holders</Badge>
+        <Badge color={pretokenMode ? "#9b5de5" : "#ff6b00"}>
+          {pretokenMode ? "Pre-token: Contributors + Vanguards" : "Governed by $IRONCLAW holders"}
+        </Badge>
       </div>
+
+      {/* Pre-token eligibility banner */}
+      {pretokenMode && (
+        <div style={{
+          background: t.bgCard,
+          border: "1px solid rgba(155,93,229,0.35)",
+          borderRadius: 14, padding: "18px 24px", marginBottom: 40,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
+            <div style={{ maxWidth: 620 }}>
+              <div style={{ fontSize: 11, color: "#9b5de5", fontWeight: 700, letterSpacing: "0.16em", marginBottom: 6 }}>PRE-TOKEN GOVERNANCE</div>
+              <div style={{ fontSize: 14, color: t.white, fontWeight: 600, marginBottom: 4 }}>
+                $IRONCLAW hasn't launched yet — voting runs on trusted identity.
+              </div>
+              <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6 }}>
+                Verified <strong>Vanguards</strong> (NEAR Legion NFT #1–{vanguardTokenIdMax}) get 2× voting power. Approved <strong>Contributors</strong> get 1×. Both can create proposals and vote.
+              </div>
+            </div>
+            {connected && (
+              <div style={{ textAlign: "right", minWidth: 200 }}>
+                <div style={{ fontSize: 10, color: t.textDim, letterSpacing: "0.12em", marginBottom: 6 }}>YOUR STATUS</div>
+                {isVanguard ? (
+                  <Badge color="#ffb300"><Award size={11} /> VANGUARD · 2× POWER</Badge>
+                ) : isContributor ? (
+                  <Badge color="#9b5de5"><CheckCircle size={11} /> CONTRIBUTOR · 1× POWER</Badge>
+                ) : hasPendingApp ? (
+                  <Badge color={t.amber}>APPLICATION PENDING</Badge>
+                ) : (
+                  <Badge color={t.textDim}>NOT REGISTERED</Badge>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action buttons for unverified wallets */}
+          {connected && !isVanguard && !isContributor && (
+            <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
+              <Btn onClick={() => { setShowVanguardForm(v => !v); setShowContribForm(false); }}
+                style={{ background: "rgba(255,179,0,0.15)", color: "#ffb300", border: "1px solid rgba(255,179,0,0.35)" }}>
+                <Award size={14} /> {showVanguardForm ? "Cancel" : "Claim Vanguard NFT"}
+              </Btn>
+              {!hasPendingApp && (
+                <Btn onClick={() => { setShowContribForm(v => !v); setShowVanguardForm(false); }}
+                  style={{ background: "rgba(155,93,229,0.15)", color: "#9b5de5", border: "1px solid rgba(155,93,229,0.35)" }}>
+                  <UserPlus size={14} /> {showContribForm ? "Cancel" : "Apply as Contributor"}
+                </Btn>
+              )}
+            </div>
+          )}
+          {!connected && (
+            <div style={{ marginTop: 18 }}>
+              <Btn primary onClick={openWallet}>Connect wallet to check status</Btn>
+            </div>
+          )}
+
+          {/* Vanguard claim form */}
+          {showVanguardForm && (
+            <div style={{ marginTop: 18, background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 4 }}>Claim Vanguard Status</div>
+              <div style={{ fontSize: 11, color: t.textDim, marginBottom: 14, lineHeight: 1.6 }}>
+                Prove ownership of an NFT in the whitelisted contracts below. Only token IDs 1–{vanguardTokenIdMax} qualify. Ownership is verified on-chain against the NFT contract.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 5 }}>NFT Contract</div>
+                  {vanguardNftContracts.length > 1 ? (
+                    <select value={vanguardForm.nftContract} onChange={e => setVanguardForm(f => ({ ...f, nftContract: e.target.value }))}
+                      style={{ width: "100%", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none" }}>
+                      {vanguardNftContracts.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  ) : (
+                    <input value={vanguardForm.nftContract} onChange={e => setVanguardForm(f => ({ ...f, nftContract: e.target.value }))}
+                      style={{ width: "100%", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none", fontFamily: "'JetBrains Mono', monospace" }} />
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 5 }}>Token ID (1–{vanguardTokenIdMax})</div>
+                  <input value={vanguardForm.tokenId} onChange={e => setVanguardForm(f => ({ ...f, tokenId: e.target.value }))} placeholder="e.g. 42"
+                    style={{ width: "100%", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none" }} />
+                </div>
+              </div>
+              <Btn primary onClick={handleVanguardClaim} disabled={txLoading} style={{ background: "#ffb300", color: "#1a1a1a" }}>
+                {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : <><Award size={14} /> Verify Ownership</>}
+              </Btn>
+            </div>
+          )}
+
+          {/* Contributor application form */}
+          {showContribForm && (
+            <div style={{ marginTop: 18, background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 4 }}>Apply to become a Contributor</div>
+              <div style={{ fontSize: 11, color: t.textDim, marginBottom: 14, lineHeight: 1.6 }}>
+                Admins review applications. Approved contributors get 1× voting power and can create governance proposals.
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 5 }}>Telegram Handle (max 64 chars)</div>
+                <input value={contribForm.telegram} onChange={e => setContribForm(f => ({ ...f, telegram: e.target.value }))} placeholder="@yourhandle"
+                  style={{ width: "100%", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none" }} />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 5 }}>
+                  Why should you be approved? ({contribForm.reason.length}/500)
+                </div>
+                <textarea value={contribForm.reason} onChange={e => setContribForm(f => ({ ...f, reason: e.target.value.slice(0, 500) }))} rows={4} placeholder="Share your background, contributions, and how you plan to help shape IronClaw."
+                  style={{ width: "100%", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
+              </div>
+              <Btn primary onClick={handleContribApply} disabled={txLoading} style={{ background: "#9b5de5" }}>
+                {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : <><UserPlus size={14} /> Submit Application</>}
+              </Btn>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
@@ -311,8 +539,12 @@ export default function GovernancePage({ openWallet }) {
       {/* Create proposal */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: t.white }}>Active Proposals ({proposals.length})</div>
-        <Btn primary onClick={() => connected ? setShowCreate(!showCreate) : openWallet()}
-          style={{ fontSize: 13 }}>
+        <Btn primary onClick={() => {
+            if (!connected) return openWallet();
+            if (pretokenMode && !canPropose) return showErr("Pre-token mode: only approved contributors or verified vanguards may propose. Apply above.");
+            setShowCreate(!showCreate);
+          }}
+          style={{ fontSize: 13, opacity: pretokenMode && connected && !canPropose ? 0.5 : 1 }}>
           {showCreate ? <><X size={14} /> Cancel</> : <><Plus size={14} /> Create Proposal</>}
         </Btn>
       </div>
@@ -321,7 +553,11 @@ export default function GovernancePage({ openWallet }) {
       {showCreate && (
         <div style={{ background: t.bgCard, border: "1px solid rgba(155,93,229,0.3)", borderRadius: 14, padding: 28, marginBottom: 24 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 20 }}>New Proposal</div>
-          <div style={{ fontSize: 11, color: t.textDim, marginBottom: 16 }}>Requires minimum 1,000 staked $IRONCLAW to propose</div>
+          <div style={{ fontSize: 11, color: t.textDim, marginBottom: 16 }}>
+            {pretokenMode
+              ? "Pre-token mode: approved contributors or verified vanguards can propose."
+              : "Requires staked $IRONCLAW in at least one pool to propose."}
+          </div>
 
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 8 }}>Proposal Type</div>

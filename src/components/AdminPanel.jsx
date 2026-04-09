@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Settings, X, Plus, Edit3, Trash2, Save, CheckCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Settings, X, Plus, Edit3, Trash2, Save, CheckCircle, Shield, Award, UserPlus, Loader, ToggleLeft, ToggleRight, UserMinus } from "lucide-react";
 import { Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { memoryStore } from "@/lib/store";
+import useGovernance from "@/hooks/useGovernance";
 
 // Admin wallet — only this address can access the panel
 const ADMIN_WALLET = "ironshield.near";
@@ -21,6 +22,108 @@ export default function AdminPanel({ onClose }) {
   const [scores, setScores]     = useState([...memoryStore.scores]);
   const [editing, setEditing]   = useState(null);
   const [scoreMsg, setScoreMsg] = useState("");
+
+  // ── Governance state ──────────────────────────────────────────
+  const gov = useGovernance();
+  const [pretokenMode, setPretokenMode]       = useState(false);
+  const [pendingApps, setPendingApps]         = useState([]);
+  const [contributors, setContributors]       = useState([]);
+  const [nftContracts, setNftContracts]       = useState([]);
+  const [tokenIdMax, setTokenIdMax]           = useState(1000);
+  const [govLoading, setGovLoading]           = useState(false);
+  const [govBusy, setGovBusy]                 = useState(null); // tracks which row is processing
+  const [govMsg, setGovMsg]                   = useState("");
+  const [govErr, setGovErr]                   = useState("");
+  const [newNftContract, setNewNftContract]   = useState("");
+  const [newTokenIdMax, setNewTokenIdMax]     = useState("");
+
+  const refreshGov = useCallback(async () => {
+    setGovLoading(true);
+    try {
+      const [mode, apps, list, nfts, max] = await Promise.all([
+        gov.getPretokenMode(),
+        gov.getPendingApplications(),
+        gov.getContributors(),
+        gov.getVanguardNftContracts(),
+        gov.getVanguardTokenIdMax(),
+      ]);
+      setPretokenMode(!!mode);
+      setPendingApps(Array.isArray(apps) ? apps : []);
+      setContributors(Array.isArray(list) ? list : []);
+      setNftContracts(Array.isArray(nfts) ? nfts : []);
+      setTokenIdMax(Number(max) || 1000);
+    } catch (err) {
+      console.warn("refreshGov:", err?.message || err);
+    } finally {
+      setGovLoading(false);
+    }
+  }, [gov]);
+
+  useEffect(() => {
+    if (authed && adminTab === "governance") refreshGov();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, adminTab]);
+
+  const govOk  = (m) => { setGovMsg(m); setTimeout(() => setGovMsg(""), 3500); };
+  const govBad = (m) => { setGovErr(m); setTimeout(() => setGovErr(""), 4500); };
+
+  const withBusy = async (key, fn) => {
+    setGovBusy(key);
+    try { await fn(); } finally { setGovBusy(null); }
+  };
+
+  const handleToggleMode = () => withBusy("mode", async () => {
+    try {
+      await gov.setPretokenMode(!pretokenMode);
+      govOk(`Pre-token mode ${!pretokenMode ? "enabled" : "disabled"}.`);
+      await refreshGov();
+    } catch (err) { govBad(err.message || "Failed to toggle mode"); }
+  });
+
+  const handleApprove = (accountId) => withBusy("app:" + accountId, async () => {
+    try {
+      await gov.approveContributor(accountId);
+      govOk(`Approved ${accountId}.`);
+      await refreshGov();
+    } catch (err) { govBad(err.message || "Approve failed"); }
+  });
+
+  const handleReject = (accountId) => withBusy("app:" + accountId, async () => {
+    try {
+      await gov.rejectContributor(accountId);
+      govOk(`Rejected ${accountId}.`);
+      await refreshGov();
+    } catch (err) { govBad(err.message || "Reject failed"); }
+  });
+
+  const handleRevoke = (accountId) => withBusy("contrib:" + accountId, async () => {
+    try {
+      await gov.revokeContributor(accountId);
+      govOk(`Revoked ${accountId}.`);
+      await refreshGov();
+    } catch (err) { govBad(err.message || "Revoke failed"); }
+  });
+
+  const handleAddNft = () => withBusy("addnft", async () => {
+    if (!newNftContract.trim()) return;
+    try {
+      await gov.addVanguardNftContract(newNftContract.trim());
+      govOk(`Whitelisted ${newNftContract.trim()}.`);
+      setNewNftContract("");
+      await refreshGov();
+    } catch (err) { govBad(err.message || "Add failed"); }
+  });
+
+  const handleSetMax = () => withBusy("setmax", async () => {
+    const n = parseInt(newTokenIdMax, 10);
+    if (Number.isNaN(n) || n <= 0) return govBad("Must be a positive integer");
+    try {
+      await gov.setVanguardTokenIdMax(n);
+      govOk(`Vanguard token-id max set to ${n}.`);
+      setNewTokenIdMax("");
+      await refreshGov();
+    } catch (err) { govBad(err.message || "Update failed"); }
+  });
 
   const [newContest, setNewContest] = useState({
     title: "", description: "", type: "Content",
@@ -127,7 +230,11 @@ export default function AdminPanel({ onClose }) {
 
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 6, padding: "14px 28px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
-          {[{ key: "contests", label: "Contests" }, { key: "scores", label: "Score Users" }].map(tab => (
+          {[
+            { key: "contests",   label: "Contests" },
+            { key: "scores",     label: "Score Users" },
+            { key: "governance", label: "Governance" },
+          ].map(tab => (
             <button key={tab.key} onClick={() => setAdminTab(tab.key)} style={{
               padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none",
               background: adminTab === tab.key ? t.accent : t.bgSurface,
@@ -229,6 +336,151 @@ export default function AdminPanel({ onClose }) {
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Governance tab ── */}
+          {adminTab === "governance" && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: t.white, display: "flex", alignItems: "center", gap: 8 }}>
+                  <Shield size={16} color={t.accent} /> Governance Control
+                </div>
+                <Btn onClick={refreshGov} disabled={govLoading} style={{ fontSize: 12 }}>
+                  {govLoading ? <Loader size={12} style={{ animation: "spin 1s linear infinite" }} /> : "Refresh"}
+                </Btn>
+              </div>
+
+              {govMsg && (
+                <div style={{ background: `${t.green}18`, border: `1px solid ${t.green}44`, borderRadius: 10, padding: "10px 14px", marginBottom: 14, color: t.green, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+                  <CheckCircle size={14} /> {govMsg}
+                </div>
+              )}
+              {govErr && (
+                <div style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 10, padding: "10px 14px", marginBottom: 14, color: t.red, fontSize: 13 }}>
+                  {govErr}
+                </div>
+              )}
+
+              {/* Mode toggle */}
+              <div style={{ background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 22, marginBottom: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ maxWidth: 440 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 4 }}>Pre-token Mode</div>
+                    <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.6 }}>
+                      On: voting weight comes from contributor (1×) and vanguard (2×) status.
+                      Off: voting weight comes from staked $IRONCLAW across all pools.
+                    </div>
+                  </div>
+                  <Btn primary onClick={handleToggleMode} disabled={govBusy === "mode"}
+                    style={{ background: pretokenMode ? "#9b5de5" : t.bgCard, color: pretokenMode ? "#fff" : t.textMuted, border: `1px solid ${pretokenMode ? "#9b5de5" : t.border}` }}>
+                    {govBusy === "mode"
+                      ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} />
+                      : pretokenMode ? <><ToggleRight size={14} /> PRE-TOKEN ON</> : <><ToggleLeft size={14} /> PRE-TOKEN OFF</>}
+                  </Btn>
+                </div>
+              </div>
+
+              {/* Pending applications */}
+              <div style={{ background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 22, marginBottom: 18 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <UserPlus size={14} color="#9b5de5" /> Pending Contributor Applications ({pendingApps.length})
+                </div>
+                {pendingApps.length === 0 ? (
+                  <div style={{ fontSize: 12, color: t.textMuted, padding: "8px 0" }}>No pending applications.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {pendingApps.map(app => {
+                      const busy = govBusy === "app:" + app.account_id;
+                      return (
+                        <div key={app.account_id} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                            <div style={{ flex: 1, minWidth: 240 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: t.white, fontFamily: "'JetBrains Mono', monospace" }}>{app.account_id}</div>
+                              <div style={{ fontSize: 11, color: t.textDim, marginTop: 3 }}>Telegram: {app.telegram || "—"}</div>
+                              <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 1.6 }}>{app.reason}</div>
+                            </div>
+                            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                              <button onClick={() => handleApprove(app.account_id)} disabled={busy}
+                                style={{ background: `${t.green}18`, border: `1px solid ${t.green}55`, borderRadius: 8, padding: "7px 12px", cursor: "pointer", color: t.green, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                                {busy ? <Loader size={12} style={{ animation: "spin 1s linear infinite" }} /> : <><CheckCircle size={12} /> Approve</>}
+                              </button>
+                              <button onClick={() => handleReject(app.account_id)} disabled={busy}
+                                style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 8, padding: "7px 12px", cursor: "pointer", color: t.red, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                                <X size={12} /> Reject
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Approved contributors */}
+              <div style={{ background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 22, marginBottom: 18 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <CheckCircle size={14} color={t.green} /> Approved Contributors ({contributors.length})
+                </div>
+                {contributors.length === 0 ? (
+                  <div style={{ fontSize: 12, color: t.textMuted, padding: "8px 0" }}>No contributors yet.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {contributors.map(([acc, info]) => {
+                      const busy = govBusy === "contrib:" + acc;
+                      return (
+                        <div key={acc} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ fontSize: 13, color: t.white, fontFamily: "'JetBrains Mono', monospace" }}>{acc}</div>
+                            <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Telegram: {info?.telegram || "—"}</div>
+                          </div>
+                          <button onClick={() => handleRevoke(acc)} disabled={busy}
+                            style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: t.red, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                            {busy ? <Loader size={12} style={{ animation: "spin 1s linear infinite" }} /> : <><UserMinus size={12} /> Revoke</>}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Vanguard NFT management */}
+              <div style={{ background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 22 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <Award size={14} color="#ffb300" /> Vanguard NFT Rules
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6 }}>Token ID Max (top-N rule — currently {tokenIdMax})</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={newTokenIdMax} onChange={e => setNewTokenIdMax(e.target.value)} placeholder={String(tokenIdMax)} type="number"
+                      style={{ flex: 1, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none" }} />
+                    <Btn primary onClick={handleSetMax} disabled={govBusy === "setmax"} style={{ fontSize: 12 }}>
+                      {govBusy === "setmax" ? <Loader size={12} style={{ animation: "spin 1s linear infinite" }} /> : <><Save size={12} /> Update</>}
+                    </Btn>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6 }}>Whitelisted NFT Contracts ({nftContracts.length})</div>
+                  {nftContracts.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                      {nftContracts.map(c => (
+                        <div key={c} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: t.text, fontFamily: "'JetBrains Mono', monospace" }}>{c}</div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={newNftContract} onChange={e => setNewNftContract(e.target.value)} placeholder="contract.nfts.tg"
+                      style={{ flex: 1, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none", fontFamily: "'JetBrains Mono', monospace" }} />
+                    <Btn primary onClick={handleAddNft} disabled={govBusy === "addnft"} style={{ fontSize: 12 }}>
+                      {govBusy === "addnft" ? <Loader size={12} style={{ animation: "spin 1s linear infinite" }} /> : <><Plus size={12} /> Whitelist</>}
+                    </Btn>
+                  </div>
+                </div>
               </div>
             </div>
           )}
