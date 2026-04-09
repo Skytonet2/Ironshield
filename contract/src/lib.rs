@@ -1,5 +1,5 @@
 use near_sdk::{near, env, AccountId, PanicOnDefault};
-use near_sdk::store::{LookupMap, Vector};
+use near_sdk::store::{IterableMap, LookupMap, LookupSet, Vector};
 use near_sdk::json_types::U128;
 pub type Balance = u128;
 
@@ -9,6 +9,9 @@ mod actions;
 mod admin;
 mod views;
 mod governance;
+mod pretoken;
+
+pub use pretoken::{ContributorApplication, ContributorInfo};
 
 pub type PoolId = u32;
 
@@ -81,6 +84,16 @@ pub struct StakingContract {
     // Governance
     pub proposals: Vector<Proposal>,
     pub votes: LookupMap<String, String>, // "proposalId:accountId" -> "for"|"against"
+
+    // Pre-token governance: contributors + vanguards vote before $IRONCLAW launches
+    pub pretoken_mode:          bool,
+    pub contributors:           IterableMap<AccountId, ContributorInfo>,
+    pub pending_applications:   IterableMap<AccountId, ContributorApplication>,
+    pub vanguard_nft_contracts: Vector<AccountId>,
+    pub vanguard_verified:      LookupSet<AccountId>,
+    /// Top-N rule: token IDs in [1, vanguard_token_id_max] count as Vanguard.
+    /// Default 1000 = top 30% of NEAR Legion's 3,333 supply.
+    pub vanguard_token_id_max:  u64,
 }
 
 #[near]
@@ -88,6 +101,10 @@ impl StakingContract {
     #[init]
     pub fn new(owner_id: AccountId, ironclaw_token_id: AccountId, reward_per_ns: U128) -> Self {
         assert!(!env::state_exists(), "Already initialized");
+        let mut vanguard_nft_contracts = Vector::new(b"n");
+        // Seed the whitelist with NEAR Legion (HOT Protocol).
+        vanguard_nft_contracts.push("nearlegion.nfts.tg".parse().unwrap());
+
         Self {
             owner_id,
             ironclaw_token_id,
@@ -99,6 +116,14 @@ impl StakingContract {
             paused: false,
             proposals: Vector::new(b"g"),
             votes: LookupMap::new(b"v"),
+
+            // Pre-token governance defaults
+            pretoken_mode:          true, // ON until $IRONCLAW launches
+            contributors:           IterableMap::new(b"c"),
+            pending_applications:   IterableMap::new(b"a"),
+            vanguard_nft_contracts,
+            vanguard_verified:      LookupSet::new(b"V"),
+            vanguard_token_id_max:  1000, // top 30% of 3,333
         }
     }
 }

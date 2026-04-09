@@ -1,11 +1,10 @@
 use crate::*;
-use near_sdk::Promise;
 
 #[near]
 impl StakingContract {
 
     /// Reverts if the caller is not the owner
-    fn assert_owner(&self) {
+    pub(crate) fn assert_owner(&self) {
         assert_eq!(
             env::predecessor_account_id(),
             self.owner_id,

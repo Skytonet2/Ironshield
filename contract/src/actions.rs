@@ -1,6 +1,6 @@
 use crate::*;
 use crate::pool::U256;
-use near_sdk::{ext_contract, Gas, NearToken};
+use near_sdk::{ext_contract, Gas, NearToken, Promise};
 
 const GAS_FOR_FT_TRANSFER: Gas = Gas::from_tgas(10); // 10 TGas
 
