@@ -1,5 +1,5 @@
 use near_sdk::{near, env, AccountId, PanicOnDefault};
-use near_sdk::store::{IterableMap, LookupMap, LookupSet, Vector};
+use near_sdk::store::{UnorderedMap, LookupMap, LookupSet, Vector};
 use near_sdk::json_types::U128;
 pub type Balance = u128;
 
@@ -9,7 +9,11 @@ mod actions;
 mod admin;
 mod views;
 mod governance;
+mod treasury;
+mod missions;
+mod web4;
 mod pretoken;
+mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
 
@@ -62,6 +66,21 @@ pub struct Proposal {
     pub expires_at: u64,
 }
 
+/// Off-chain mission execution result, reported by the orchestrator after
+/// NEAR AI IronClaw finishes a task. Stored in a separate LookupMap keyed
+/// by proposal_id so we don't have to migrate the existing Proposal struct.
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct MissionResult {
+    pub proposal_id: u32,
+    pub result_hash: String,
+    pub result_cid: String,
+    pub attestation: String,
+    pub success: bool,
+    pub session_id: String,
+    pub completed_at: u64,
+}
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct StakingContract {
@@ -81,14 +100,33 @@ pub struct StakingContract {
 
     pub paused: bool,
 
-    // Governance
+    // ── Governance ──────────────────────────────────────────────
     pub proposals: Vector<Proposal>,
     pub votes: LookupMap<String, String>, // "proposalId:accountId" -> "for"|"against"
 
-    // Pre-token governance: contributors + vanguards vote before $IRONCLAW launches
+    // ── Mission execution ───────────────────────────────────────
+    /// Off-chain mission results reported by the orchestrator, keyed by proposal id.
+    pub mission_results: LookupMap<u32, MissionResult>,
+    /// Authorized orchestrator account that may call submit_mission_result.
+    pub orchestrator_id: AccountId,
+
+    // ── Treasury ────────────────────────────────────────────────
+    pub total_revenue: Balance,
+    pub distributed_revenue: Balance,
+    pub staker_share_bps: u32,
+    pub contributor_share_bps: u32,
+    pub reserve_share_bps: u32,
+    pub proposer_share_bps: u32,
+    pub contributor_wallet: AccountId,
+    pub reserve_wallet: AccountId,
+    pub proposer_wallet: AccountId,
+
+    // ── Pre-token governance (Phase 2) ──────────────────────────
+    /// When true, voting power comes from contributor/vanguard registry instead
+    /// of $IRONCLAW staked balance. Flips off automatically once token launches.
     pub pretoken_mode:          bool,
-    pub contributors:           IterableMap<AccountId, ContributorInfo>,
-    pub pending_applications:   IterableMap<AccountId, ContributorApplication>,
+    pub contributors:           UnorderedMap<AccountId, ContributorInfo>,
+    pub pending_applications:   UnorderedMap<AccountId, ContributorApplication>,
     pub vanguard_nft_contracts: Vector<AccountId>,
     pub vanguard_verified:      LookupSet<AccountId>,
     /// Top-N rule: token IDs in [1, vanguard_token_id_max] count as Vanguard.
@@ -102,11 +140,10 @@ impl StakingContract {
     pub fn new(owner_id: AccountId, ironclaw_token_id: AccountId, reward_per_ns: U128) -> Self {
         assert!(!env::state_exists(), "Already initialized");
         let mut vanguard_nft_contracts = Vector::new(b"n");
-        // Seed the whitelist with NEAR Legion (HOT Protocol).
         vanguard_nft_contracts.push("nearlegion.nfts.tg".parse().unwrap());
 
         Self {
-            owner_id,
+            owner_id: owner_id.clone(),
             ironclaw_token_id,
             pools: Vector::new(b"p"),
             user_info: LookupMap::new(b"u"),
@@ -117,13 +154,28 @@ impl StakingContract {
             proposals: Vector::new(b"g"),
             votes: LookupMap::new(b"v"),
 
-            // Pre-token governance defaults
-            pretoken_mode:          true, // ON until $IRONCLAW launches
-            contributors:           IterableMap::new(b"c"),
-            pending_applications:   IterableMap::new(b"a"),
+            // Mission execution
+            mission_results: LookupMap::new(b"mr".to_vec()),
+            orchestrator_id: owner_id.clone(),
+
+            // Treasury
+            total_revenue: 0,
+            distributed_revenue: 0,
+            staker_share_bps: 4_000,
+            contributor_share_bps: 2_500,
+            reserve_share_bps: 2_000,
+            proposer_share_bps: 1_500,
+            contributor_wallet: owner_id.clone(),
+            reserve_wallet: owner_id.clone(),
+            proposer_wallet: owner_id,
+
+            // Pre-token governance
+            pretoken_mode:          true,
+            contributors:           UnorderedMap::new(b"c"),
+            pending_applications:   UnorderedMap::new(b"a"),
             vanguard_nft_contracts,
             vanguard_verified:      LookupSet::new(b"V"),
-            vanguard_token_id_max:  1000, // top 30% of 3,333
+            vanguard_token_id_max:  1000,
         }
     }
 }

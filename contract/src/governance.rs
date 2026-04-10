@@ -5,9 +5,10 @@ const VOTING_PERIOD_NS: u64 = 72 * 60 * 60 * 1_000_000_000; // 72 hours in nanos
 
 #[near]
 impl StakingContract {
-    /// Create a new governance proposal.
-    /// - Pre-token mode: any approved contributor or verified vanguard may propose.
-    /// - Post-token mode: must have staked $IRONCLAW in at least one pool.
+    /// Create a new governance proposal. Requires staked tokens — UNLESS the
+    /// caller is the configured `orchestrator_id` (the autonomous agent), in
+    /// which case it may file proposals on behalf of the DAO without holding
+    /// stake itself. Holders still vote normally.
     pub fn create_proposal(
         &mut self,
         title: String,
@@ -18,12 +19,10 @@ impl StakingContract {
         assert!(!self.paused, "Contract is paused");
         let proposer = env::predecessor_account_id();
 
-        if self.pretoken_mode {
-            let allowed = self.contributors.contains_key(&proposer)
-                       || self.vanguard_verified.contains(&proposer);
-            assert!(allowed, "Pre-token mode: only approved contributors or verified vanguards may propose");
-        } else {
-            // Proposer must have staked tokens in at least one pool
+        // The orchestrator (autonomous agent) is allowed to propose without stake.
+        // Everyone else must have staked tokens in at least one pool.
+        let is_orchestrator = proposer == self.orchestrator_id;
+        if !is_orchestrator {
             let has_stake = (0..self.pools.len()).any(|pid| {
                 let key = get_user_key(&proposer, pid);
                 self.user_info.get(&key).map_or(false, |u| u.amount > 0)
@@ -77,29 +76,14 @@ impl StakingContract {
         assert!(proposal.status == "active", "Proposal is not active");
         assert!(env::block_timestamp() <= proposal.expires_at, "Voting period has ended");
 
-        // Voting power depends on the mode.
-        //   pretoken_mode == true  → vanguard = 2, contributor = 1, else 0
-        //   pretoken_mode == false → sum of staked $IRONCLAW across all pools
-        let power: u128 = if self.pretoken_mode {
-            if self.vanguard_verified.contains(&voter) {
-                2
-            } else if self.contributors.contains_key(&voter) {
-                1
-            } else {
-                0
-            }
-        } else {
-            (0..self.pools.len())
-                .map(|pid| {
-                    let key = get_user_key(&voter, pid);
-                    self.user_info.get(&key).map_or(0, |u| u.amount)
-                })
-                .sum()
-        };
-        assert!(
-            power > 0,
-            "No voting power. Pre-token mode: become a contributor or vanguard. Post-token: stake $IRONCLAW."
-        );
+        // Calculate voting power = sum of staked tokens across all pools
+        let power: u128 = (0..self.pools.len())
+            .map(|pid| {
+                let key = get_user_key(&voter, pid);
+                self.user_info.get(&key).map_or(0, |u| u.amount)
+            })
+            .sum();
+        assert!(power > 0, "Must have staked tokens to vote");
 
         if vote == "for" {
             proposal.votes_for += power;

@@ -57,4 +57,13 @@ impl StakingContract {
         self.assert_owner();
         self.paused = paused;
     }
+
+    /// Admin: Point the contract at the real $IRONCLAW FT once it's been
+    /// deployed. The contract is initialized with a placeholder token id
+    /// (no FT deployed yet on the target account) so stakes are blocked
+    /// until the owner sets the real token here.
+    pub fn set_ironclaw_token(&mut self, new_token_id: AccountId) {
+        self.assert_owner();
+        self.ironclaw_token_id = new_token_id;
+    }
 }
