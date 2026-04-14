@@ -21,6 +21,11 @@ app.use("/api/contests",    require("./routes/contests.route"));
 app.use("/api/leaderboard", require("./routes/leaderboard.route"));
 app.use("/api/governance",  require("./routes/governance.route"));
 
+// Root
+app.get("/", (req, res) => {
+  res.json({ service: "IronClaw API", version: "1.0.0", docs: "/health" });
+});
+
 // Health check
 app.get("/health", async (req, res) => {
   try {

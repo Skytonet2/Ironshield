@@ -1,78 +1,73 @@
 "use client";
-import { Shield, Wallet, Trophy, Lock, TrendingUp, Zap, Brain, Vote } from "lucide-react";
+import { Shield, Wallet, Vote, Cpu, Coins } from "lucide-react";
 import { Badge, Btn, Section } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
+
+import {
+  IlliaQuote,
+  WhatIsIronClaw,
+  FinalCTA,
+} from "./IronClawSections";
 
 export default function HomePage({ setPage, openWallet }) {
   const t = useTheme();
   const { connected } = useWallet();
 
+  /* Hero stat counters — mirror the thesis: autonomous, token-governed, revenue-generating. */
   const stats = [
-    { n: "2,800+", l: "Communities Powered" },
-    { n: "24/7",   l: "Autonomous Operation" },
-    { n: "$NEAR",  l: "Real Yield to Stakers" },
-    { n: "100%",   l: "On-Chain Governance" },
+    { n: "24/7",  l: "Autonomous Operation" },
+    { n: "100%",  l: "On-Chain Governance" },
+    { n: "$NEAR", l: "Real Revenue to Stakers" },
+    { n: "1 BN",  l: "Fixed $IRONCLAW Supply" },
   ];
 
-  const features = [
-    {
-      icon: Brain,
-      title: "AI Agent Intelligence",
-      desc: "IronClaw operates autonomously inside Telegram and Discord — summarizing alpha, researching tokens, verifying claims, and monitoring your portfolio in real time.",
-      color: t.accent,
-    },
-    {
-      icon: Shield,
-      title: "Community Protection",
-      desc: "Every message scanned. Phishing links, impersonators, and coordinated attacks stopped before they reach your community — without lifting a finger.",
-      color: t.green,
-    },
-    {
-      icon: Vote,
-      title: "Token Holder Governance",
-      desc: "Stake $IRONCLAW and vote on IronClaw's missions, AI prompts, and capabilities. The community controls the agent — fully on-chain, fully autonomous.",
-      color: "#ff6b00",
-    },
-    {
-      icon: TrendingUp,
-      title: "Stake & Earn Real Yield",
-      desc: "Protocol revenue from IronShield subscriptions flows directly to stakers. No inflation — real fees, real yield, distributed every block.",
-      color: t.amber,
-    },
+  /* Three badges capture the core product thesis per the IronClaw spec. */
+  const heroBadges = [
+    { label: "Autonomous",         color: t.accent,  icon: Cpu },
+    { label: "Token Governed",     color: "#9b5de5", icon: Vote },
+    { label: "Revenue Generating", color: t.green,   icon: Coins },
   ];
 
   return (
     <div>
-      {/* ── Hero ─────────────────────────────────────────────── */}
+      {/* ─────────────────────────────────────────────
+          HERO  —  community-governed autonomous agent
+          ───────────────────────────────────────────── */}
       <div style={{
         minHeight: "92vh", display: "flex", alignItems: "center", position: "relative",
         background: `radial-gradient(ellipse at 20% 0%, ${t.accent}14 0%, transparent 55%),
-                     radial-gradient(ellipse at 80% 100%, #ff6b0009 0%, transparent 50%)`,
+                     radial-gradient(ellipse at 80% 100%, #9b5de509 0%, transparent 50%)`,
       }}>
         <Section style={{ padding: "130px 24px 80px" }}>
-          <div style={{ maxWidth: 720 }}>
+          <div style={{ maxWidth: 780 }}>
             <Badge color={t.green}>LIVE ON NEAR PROTOCOL</Badge>
 
             <h1 style={{ fontSize: 58, fontWeight: 800, color: t.white, lineHeight: 1.08, marginTop: 20, letterSpacing: "-1.5px" }}>
-              The AI Agent<br />
-              <span style={{ color: t.accent }}>Built for Web3</span><br />
-              Communities.
+              IronClaw —<br />
+              <span style={{ color: t.accent }}>Community-Governed</span><br />
+              Autonomous Agent.
             </h1>
 
-            <p style={{ fontSize: 17, color: t.textMuted, marginTop: 20, lineHeight: 1.7, maxWidth: 560 }}>
-              IronClaw is an autonomous AI agent that lives inside your Telegram and Discord.
-              It protects, researches, summarizes, and executes — governed entirely by $IRONCLAW token holders on NEAR Protocol.
+            <p style={{ fontSize: 18, color: t.textMuted, marginTop: 22, lineHeight: 1.7, maxWidth: 620 }}>
+              The NEAR ecosystem's AI agent. <span style={{ color: t.white, fontWeight: 600 }}>Governed by holders.</span>{" "}
+              <span style={{ color: t.white, fontWeight: 600 }}>Funded by missions.</span>{" "}
+              <span style={{ color: t.white, fontWeight: 600 }}>Defended by data.</span>
             </p>
 
-            {/* Capability pills */}
-            <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
-              {["Security", "Alpha Research", "Token Analysis", "Portfolio Tracking", "Claim Verification", "Community Governance"].map((pill, i) => (
-                <span key={i} style={{
-                  fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20,
-                  background: i === 5 ? "rgba(255,107,0,0.12)" : `${t.accent}12`,
-                  border: `1px solid ${i === 5 ? "rgba(255,107,0,0.3)" : t.accent + "30"}`,
-                  color: i === 5 ? "#ff6b00" : t.accent,
-                }}>{pill}</span>
+            {/* Thesis badges */}
+            <div style={{ display: "flex", gap: 10, marginTop: 26, flexWrap: "wrap" }}>
+              {heroBadges.map((b, i) => (
+                <div key={i} style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  background: `${b.color}14`,
+                  border: `1px solid ${b.color}44`,
+                  color: b.color,
+                  padding: "8px 16px", borderRadius: 999,
+                  fontSize: 13, fontWeight: 700, letterSpacing: 0.3,
+                }}>
+                  <b.icon size={14} />
+                  {b.label}
+                </div>
               ))}
             </div>
 
@@ -84,14 +79,14 @@ export default function HomePage({ setPage, openWallet }) {
                 ? <Btn onClick={openWallet} style={{ fontSize: 15, padding: "14px 32px" }}>
                     <Wallet size={16} /> Connect Wallet
                   </Btn>
-                : <Btn onClick={() => setPage("Governance")} style={{ fontSize: 15, padding: "14px 32px", borderColor: "#ff6b0044", color: "#ff6b00" }}>
+                : <Btn onClick={() => setPage("Governance")} style={{ fontSize: 15, padding: "14px 32px", borderColor: "#9b5de544", color: "#9b5de5" }}>
                     <Vote size={16} /> Vote on Missions
                   </Btn>
               }
             </div>
           </div>
 
-          {/* Stats */}
+          {/* Stats rail */}
           <div style={{ marginTop: 64, display: "flex", gap: 32, flexWrap: "wrap" }}>
             {stats.map((s, i) => (
               <div key={i} style={{ borderLeft: `2px solid ${t.accent}33`, paddingLeft: 18 }}>
@@ -103,94 +98,17 @@ export default function HomePage({ setPage, openWallet }) {
         </Section>
       </div>
 
-      {/* ── What IronClaw Does ────────────────────────────────── */}
-      <Section>
-        <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <Badge>PLATFORM</Badge>
-          <h2 style={{ fontSize: 34, fontWeight: 700, color: t.white, marginTop: 12 }}>One Agent. Every Use Case.</h2>
-          <p style={{ fontSize: 15, color: t.textMuted, marginTop: 8, maxWidth: 480, margin: "8px auto 0" }}>
-            IronClaw operates across security, intelligence, and governance — all inside the chats you already use.
-          </p>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20 }}>
-          {features.map((f, i) => (
-            <div key={i}
-              style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14, padding: 28, transition: "all 0.3s" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = f.color; e.currentTarget.style.transform = "translateY(-4px)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = ""; }}
-            >
-              <div style={{ background: `${f.color}18`, borderRadius: 10, width: 46, height: 46, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-                <f.icon size={22} color={f.color} />
-              </div>
-              <div style={{ fontSize: 17, fontWeight: 600, color: t.white, marginBottom: 8 }}>{f.title}</div>
-              <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.65 }}>{f.desc}</div>
-            </div>
-          ))}
-        </div>
-      </Section>
+      {/* ─── Illia quote — anchors the entire thesis ─── */}
+      <IlliaQuote />
 
-      {/* ── How It Works ─────────────────────────────────────── */}
-      <Section style={{ borderTop: `1px solid ${t.border}` }}>
-        <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <Badge color="#ff6b00">AUTONOMOUS GOVERNANCE</Badge>
-          <h2 style={{ fontSize: 34, fontWeight: 700, color: t.white, marginTop: 12 }}>You Control the Agent</h2>
-          <p style={{ fontSize: 15, color: t.textMuted, marginTop: 8, maxWidth: 500, margin: "8px auto 0" }}>
-            Token holders vote on what IronClaw does. Winning proposals update the AI automatically — no team intervention needed.
-          </p>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-          {[
-            { step: "01", title: "Stake $IRONCLAW",    desc: "Lock tokens to earn yield and gain voting power proportional to your stake.", color: t.accent },
-            { step: "02", title: "Submit a Proposal",  desc: "Propose a new mission, AI prompt update, or capability change for IronClaw.", color: "#9b5de5" },
-            { step: "03", title: "Community Votes",    desc: "72-hour voting window. Voting power equals staked amount. 51% to pass.", color: "#ff6b00" },
-            { step: "04", title: "IronClaw Executes",  desc: "Passed proposals update IronClaw's behavior automatically, on-chain, no middlemen.", color: t.green },
-          ].map((s, i) => (
-            <div key={i} style={{ background: t.bgCard, border: `1px solid ${s.color}22`, borderLeft: `3px solid ${s.color}`, borderRadius: 12, padding: 24 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: s.color, letterSpacing: 2, marginBottom: 10 }}>STEP {s.step}</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 8 }}>{s.title}</div>
-              <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6 }}>{s.desc}</div>
-            </div>
-          ))}
-        </div>
+      {/* ─── What Is IronClaw — 3 principles + 6 specializations ─── */}
+      <WhatIsIronClaw />
 
-        {/* CTA */}
-        <div style={{ textAlign: "center", marginTop: 40 }}>
-          <Btn primary onClick={() => setPage("Governance")} style={{ fontSize: 15, padding: "14px 36px", background: "#ff6b00" }}>
-            <Vote size={16} /> Open Governance
-          </Btn>
-        </div>
-      </Section>
-
-      {/* ── IronClaw Commands ─────────────────────────────────── */}
-      <Section style={{ borderTop: `1px solid ${t.border}` }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <Badge color={t.accent}>TELEGRAM + DISCORD</Badge>
-          <h2 style={{ fontSize: 34, fontWeight: 700, color: t.white, marginTop: 12 }}>Ask IronClaw Anything</h2>
-          <p style={{ fontSize: 15, color: t.textMuted, marginTop: 8 }}>Works inside your existing chats. No app switching required.</p>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
-          {[
-            { cmd: "/research PEPE",        desc: "Full token report — metrics, risks, trust score, red flags", color: t.accent },
-            { cmd: "/summary @alphacalls",  desc: "Summarize any public Telegram group in 30 seconds", color: t.green },
-            { cmd: "/verify [claim]",       desc: "Fact-check any claim made in your chat against live data", color: t.amber },
-            { cmd: "/portfolio",            desc: "View your multi-wallet portfolio with 24h P&L", color: "#9b5de5" },
-            { cmd: "Auto: link scanning",   desc: "Every URL in protected groups scanned silently in real time", color: t.accent },
-            { cmd: "Auto: wallet alerts",   desc: "Flagged wallet addresses detected and warned before any funds move", color: t.green },
-          ].map((c, i) => (
-            <div key={i} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 12, padding: 20, display: "flex", gap: 14, alignItems: "flex-start" }}>
-              <div style={{ background: `${c.color}15`, borderRadius: 8, padding: "6px 10px", flexShrink: 0 }}>
-                <Zap size={14} color={c.color} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: c.color, fontFamily: "'JetBrains Mono', monospace", marginBottom: 5 }}>{c.cmd}</div>
-                <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>{c.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ── Tokenomics ───────────────────────────────────────── */}
+      {/* ─────────────────────────────────────────────
+          TOKENOMICS OVERVIEW  —  supply split + donut
+          Deep-dive (fees, staking tiers, governance params)
+          lives on the Staking page.
+          ───────────────────────────────────────────── */}
       <Section style={{ borderTop: `1px solid ${t.border}` }}>
         <div style={{ textAlign: "center", marginBottom: 48 }}>
           <Badge color={t.accent}>TOKENOMICS</Badge>
@@ -244,11 +162,21 @@ export default function HomePage({ setPage, openWallet }) {
           ].map((c, i) => (
             <div key={i} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, textAlign: "center" }}>
               <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8, fontWeight: 600, letterSpacing: 1 }}>{c.label}</div>
-              <div style={{ fontSize: c.mono ? 20 : 20, fontWeight: 800, color: t.white, fontFamily: c.mono ? "'JetBrains Mono', monospace" : "inherit" }}>{c.value}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: t.white, fontFamily: c.mono ? "'JetBrains Mono', monospace" : "inherit" }}>{c.value}</div>
             </div>
           ))}
         </div>
+
+        {/* Pointer: deep-dive lives on Staking page */}
+        <div style={{ textAlign: "center", marginTop: 32 }}>
+          <Btn onClick={() => setPage("Staking")} style={{ fontSize: 13, padding: "10px 22px" }}>
+            View Full Tokenomics on Staking →
+          </Btn>
+        </div>
       </Section>
+
+      {/* ─── Final CTA — join the community, launch the bot ─── */}
+      <FinalCTA />
     </div>
   );
 }

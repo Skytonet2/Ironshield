@@ -1,14 +1,11 @@
 "use client";
-import { Buffer } from "buffer";
 import { useWallet, getReadAccount } from "@/lib/contexts";
 
-export const IRONCLAW_TOKEN    = "ironclaw.near";
+export const IRONCLAW_TOKEN    = "claw.ironshield.near";
 export const STAKING_CONTRACT  = "ironshield.near";
 
 export default function useNear() {
   const { connected, address, selector } = useWallet();
-
-  const encodeArgs = (args = {}) => Buffer.from(JSON.stringify(args ?? {})).toString("base64");
 
   const viewMethod = async (contractId, methodName, args = {}) => {
     try {
@@ -45,7 +42,7 @@ export default function useNear() {
           type: "FunctionCall",
           params: {
             methodName,
-            args: encodeArgs(args),
+            args,
             gas:     "30000000000000",
             deposit: depositYocto,
           },

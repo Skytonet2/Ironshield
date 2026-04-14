@@ -4,6 +4,7 @@ import { Coins, TrendingUp, Users, Flame, Target, Lock, CheckCircle, Loader } fr
 import { Section, Badge, StatCard, WalletGate, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useNear, { IRONCLAW_TOKEN, STAKING_CONTRACT } from "@/hooks/useNear";
+import { TokenomicsDeep } from "./IronClawSections";
 
 // ── Amount helpers ──────────────────────────────────────────────
 const toYocto = (amount) => {
@@ -178,6 +179,7 @@ export default function StakingPage({ openWallet }) {
   const hasPending  = parseFloat(pendingNEAR) > 0;
 
   return (
+    <>
     <Section style={{ paddingTop: 100 }}>
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <Badge color={t.green}>LIVE</Badge>
@@ -414,5 +416,9 @@ export default function StakingPage({ openWallet }) {
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </Section>
+
+    {/* ─── Tokenomics deep dive — fee model, staking tiers, governance params, burns ─── */}
+    <TokenomicsDeep />
+    </>
   );
 }

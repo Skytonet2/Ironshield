@@ -2,6 +2,7 @@
 import { Badge, Section } from "./Primitives";
 import { useTheme } from "@/lib/contexts";
 import { Shield, Bot, Lock, Vote, Coins, BarChart3, AlertTriangle, Zap, Globe, Users } from "lucide-react";
+import { TechArchitecture } from "./IronClawSections";
 
 const MASCOT_IMG = "/mascot.png";
 
@@ -147,6 +148,7 @@ export default function DocsPage() {
   ];
 
   return (
+    <>
     <Section style={{ paddingTop: 100, paddingBottom: 60 }}>
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: 48 }}>
@@ -296,5 +298,9 @@ export default function DocsPage() {
         ))}
       </div>
     </Section>
+
+    {/* ─── Tech architecture — governance, agent core, revenue layers ─── */}
+    <TechArchitecture />
+    </>
   );
 }

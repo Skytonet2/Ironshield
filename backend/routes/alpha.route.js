@@ -54,7 +54,7 @@ async function fetchFeed() {
         max_tokens: 3000,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: `Current UTC time: ${new Date().toISOString()}. Give me the latest crypto alpha feed.` },
+          { role: "user", content: `Current UTC time: ${new Date().toISOString()}. Give me the latest crypto alpha feed. /no_think` },
         ],
       }),
     });

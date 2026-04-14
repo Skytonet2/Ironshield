@@ -191,11 +191,18 @@ function getWeekProgress() {
   return { pct, countdown: `${dLeft}d ${hLeft}h` };
 }
 
-// Derive current week number (1–7) from epoch (phase started Week of Apr 7, 2026)
+// Program starts Sunday April 20 2026, 00:00 UTC. Auto-kicks off — no manual trigger.
+const PROGRAM_START = new Date("2026-04-20T00:00:00Z").getTime();
+
+function isProgramLive() {
+  return Date.now() >= PROGRAM_START;
+}
+
+// Derive current week number (1–7) from start date
 function getCurrentWeek() {
-  const start = new Date("2026-04-12T21:00:00Z").getTime();
-  const now   = Date.now();
-  const week  = Math.min(WEEKS_TOTAL, Math.max(1, Math.floor((now - start) / (7 * 86400000)) + 1));
+  const now = Date.now();
+  if (now < PROGRAM_START) return 0; // not started yet
+  const week = Math.min(WEEKS_TOTAL, Math.max(1, Math.floor((now - PROGRAM_START) / (7 * 86400000)) + 1));
   return week;
 }
 
@@ -523,7 +530,7 @@ export default function EarnPage({ openWallet }) {
   const { connected, address }                   = useWallet();
   const { proposals, loading: proposalsLoading } = useProposals();
 
-  const [activeTab, setActiveTab]     = useState("missions");
+  const [activeTab, setActiveTab]     = useState(isProgramLive() ? "missions" : "daily");
   const [submitting, setSubmitting]   = useState(null); // task object
   const [searchQ, setSearchQ]         = useState("");
   const [submitted, setSubmitted]     = useState([]);
@@ -609,11 +616,13 @@ export default function EarnPage({ openWallet }) {
   const userPoints   = userRankData?.total ?? 0;
   const userRank     = userRankData?.rank ?? null;
 
+  const live = isProgramLive();
+
   const TABS = [
-    { key: "missions",    label: "Missions",          icon: <Star size={13} /> },
+    ...(live ? [{ key: "missions", label: "Missions", icon: <Star size={13} /> }] : []),
     { key: "daily",       label: "Daily Rituals",      icon: <Sun size={13} /> },
-    { key: "leaderboard", label: "Leaderboard",        icon: <Trophy size={13} /> },
-    { key: "submissions", label: `My Submissions (${submitted.length})`, icon: <CheckCircle size={13} /> },
+    ...(live ? [{ key: "leaderboard", label: "Leaderboard", icon: <Trophy size={13} /> }] : []),
+    ...(live ? [{ key: "submissions", label: `My Submissions (${submitted.length})`, icon: <CheckCircle size={13} /> }] : []),
   ];
 
   return (
@@ -631,6 +640,27 @@ export default function EarnPage({ openWallet }) {
           <strong style={{ color: t.green }}>22,000,000 pt</strong> total pool over 7 weeks.
         </p>
       </div>
+
+      {/* ── Pre-launch countdown banner ─────────────────────────────────────── */}
+      {!live && (() => {
+        const msLeft = PROGRAM_START - Date.now();
+        const d = Math.floor(msLeft / 86400000);
+        const h = Math.floor((msLeft % 86400000) / 3600000);
+        return (
+          <div style={{
+            background: `linear-gradient(135deg, ${t.accent}18, ${t.amber}18)`,
+            border: `1px solid ${t.amber}44`, borderRadius: 14,
+            padding: "20px 24px", marginBottom: 28, textAlign: "center",
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: t.amber, marginBottom: 6 }}>
+              Points Season Starts Sunday, April 20
+            </div>
+            <div style={{ fontSize: 14, color: t.textMuted }}>
+              Launches in <strong style={{ color: t.white }}>{d}d {h}h</strong> — Daily rituals are live now. Missions + leaderboard activate at launch.
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Stats bar ────────────────────────────────────────────────────────── */}
       <div style={{
@@ -653,9 +683,9 @@ export default function EarnPage({ openWallet }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Calendar size={15} color={t.accent} />
             <span style={{ fontSize: 13, fontWeight: 700, color: t.white }}>
-              Week {currentWeek} of {WEEKS_TOTAL}
+              {live ? `Week ${currentWeek} of ${WEEKS_TOTAL}` : "Pre-Season"}
             </span>
-            <Badge color={t.accent}>Active</Badge>
+            <Badge color={live ? t.accent : t.amber}>{live ? "Active" : "Starts Apr 20"}</Badge>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Clock size={13} color={t.textDim} />

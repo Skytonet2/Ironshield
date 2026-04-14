@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Rocket, Clock, Shield, Coins, Users, Lock, CheckCircle, AlertTriangle, Flame, TrendingUp, Wallet } from "lucide-react";
 import { Section, Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
+import { LaunchScope } from "./IronClawSections";
 
 const LAUNCH_DATE = new Date("2026-05-01T14:00:00Z");
 
@@ -80,6 +81,7 @@ export default function LaunchPage({ openWallet }) {
   );
 
   return (
+    <>
     <Section style={{ paddingTop: 100 }}>
       {/* Hero */}
       <div style={{ textAlign: "center", marginBottom: 56, position: "relative" }}>
@@ -335,5 +337,9 @@ export default function LaunchPage({ openWallet }) {
         </div>
       </div>
     </Section>
+
+    {/* ─── Launch scope — what ships on day one ─── */}
+    <LaunchScope />
+    </>
   );
 }
