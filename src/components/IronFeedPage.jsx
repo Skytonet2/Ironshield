@@ -448,6 +448,24 @@ function ProfileModal({ wallet, viewerWallet, viewerSelector, onClose, onOpenDM,
   const [editing, setEditing] = useState(false);
   const [recruited, setRecruited] = useState(false);
   const [form, setForm] = useState({ displayName: "", bio: "", pfpUrl: "", bannerUrl: "" });
+  const [uploadKind, setUploadKind] = useState(null); // "pfp" | "banner" | null
+  const pfpFileRef = useRef(null);
+  const bannerFileRef = useRef(null);
+
+  const uploadImage = async (e, kind) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploadKind(kind);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const r = await fetch(`${API}/api/media/upload`, { method: "POST", body: fd, headers: { "x-wallet": viewerWallet || "" } });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.error || "upload failed");
+      setForm(fm => ({ ...fm, [kind === "pfp" ? "pfpUrl" : "bannerUrl"]: d.url }));
+    } catch (err) { alert(`Upload failed: ${err.message}`); }
+    finally { setUploadKind(null); e.target.value = ""; }
+  };
 
   useEffect(() => {
     api(`/api/profile/${wallet}`).then(r => {
@@ -505,8 +523,22 @@ function ProfileModal({ wallet, viewerWallet, viewerSelector, onClose, onOpenDM,
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
           <input placeholder="Display name" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} style={inputStyle(t)} />
           <textarea placeholder="Bio" value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} style={{ ...inputStyle(t), minHeight: 70 }} />
-          <input placeholder="Avatar URL" value={form.pfpUrl} onChange={e => setForm({ ...form, pfpUrl: e.target.value })} style={inputStyle(t)} />
-          <input placeholder="Banner URL" value={form.bannerUrl} onChange={e => setForm({ ...form, bannerUrl: e.target.value })} style={inputStyle(t)} />
+          <input ref={pfpFileRef} type="file" accept="image/*" onChange={e => uploadImage(e, "pfp")} style={{ display: "none" }} />
+          <input ref={bannerFileRef} type="file" accept="image/*" onChange={e => uploadImage(e, "banner")} style={{ display: "none" }} />
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <Avatar user={{ pfp_url: form.pfpUrl, username: "?" }} size={48} />
+            <Btn onClick={() => pfpFileRef.current?.click()} disabled={uploadKind === "pfp"}>
+              {uploadKind === "pfp" ? "Uploading..." : "Choose avatar"}
+            </Btn>
+            {form.pfpUrl && <Btn onClick={() => setForm(f => ({ ...f, pfpUrl: "" }))}>Clear</Btn>}
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ width: 80, height: 40, borderRadius: 6, background: form.bannerUrl ? `url(${form.bannerUrl}) center/cover` : t.bgSurface, border: `1px solid ${t.border}` }} />
+            <Btn onClick={() => bannerFileRef.current?.click()} disabled={uploadKind === "banner"}>
+              {uploadKind === "banner" ? "Uploading..." : "Choose banner"}
+            </Btn>
+            {form.bannerUrl && <Btn onClick={() => setForm(f => ({ ...f, bannerUrl: "" }))}>Clear</Btn>}
+          </div>
           <Btn primary onClick={save}>Save</Btn>
         </div>
       )}
@@ -866,16 +898,24 @@ function DMsModal({ wallet, onClose, initialPeer }) {
           {!active ? <p style={{ color: t.textDim, padding: 20 }}>Select or start a conversation.</p> : (
             <>
               <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-                {messages.map(m => (
-                  <div key={m.id} style={{ display: "flex", justifyContent: m.from_id === active.peer.id ? "flex-start" : "flex-end", marginBottom: 6 }}>
-                    <div style={{
-                      background: m.from_id === active.peer.id ? t.bgSurface : t.accent,
-                      color: m.from_id === active.peer.id ? t.text : "#fff",
-                      padding: "8px 12px", borderRadius: 14, maxWidth: "75%", fontSize: 14,
-                      whiteSpace: "pre-wrap", wordBreak: "break-word",
-                    }}>{decode(m)}</div>
-                  </div>
-                ))}
+                {messages.map(m => {
+                  const mine = m.from_id !== active.peer.id;
+                  const ts = m.created_at ? new Date(m.created_at) : null;
+                  const timeStr = ts ? ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+                  return (
+                    <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", marginBottom: 8 }}>
+                      <div style={{
+                        background: mine ? t.accent : t.bgSurface,
+                        color: mine ? "#fff" : t.text,
+                        padding: "8px 12px", borderRadius: 14, maxWidth: "75%", fontSize: 14,
+                        whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      }}>{decode(m)}</div>
+                      <div style={{ fontSize: 10, color: t.textDim, marginTop: 2, padding: "0 4px" }}>
+                        {timeStr}{mine ? " · sent" : ""}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               <div style={{ display: "flex", gap: 6, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
                 <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
@@ -1038,8 +1078,12 @@ export default function IronFeedPage({ openWallet }) {
       const params = new URLSearchParams(q);
       const profile = params.get("profile");
       const invite = params.get("invite");
+      const dms = params.get("dms");
+      const notifs = params.get("notifs");
       if (profile) setOpenProfile(profile);
       if (invite && wallet) { setDmPeer(invite); setOpenDMs(true); }
+      if (dms && wallet) setOpenDMs(true);
+      if (notifs && wallet) setOpenNotifs(true);
     };
     parse();
     window.addEventListener("hashchange", parse);
@@ -1073,19 +1117,23 @@ export default function IronFeedPage({ openWallet }) {
         .ix-feed-wrap { display: grid; gap: 0; }
         .ix-feed-wrap.rail-on  { grid-template-columns: minmax(0,1fr) 340px; }
         .ix-feed-wrap.rail-off { grid-template-columns: minmax(0,1fr); }
-        .ix-feed-col { border-left: 1px solid ${t.border}; border-right: 1px solid ${t.border}; min-height: 100vh; }
+        .ix-feed-col { border-left: 1px solid ${t.border}; border-right: 1px solid ${t.border}; min-height: 100vh; min-width: 0; }
         .ix-feed-header { position: sticky; top: 0; z-index: 5; background: ${t.bg}cc; backdrop-filter: blur(8px); border-bottom: 1px solid ${t.border}; }
-        .ix-right-col { padding: 8px 16px 40px; }
+        .ix-right-col {
+          padding: 8px 16px 40px;
+          position: sticky; top: 0; align-self: start;
+          max-height: 100vh; overflow-y: auto;
+        }
         .ix-rail-toggle {
-          position: fixed; top: 12px; right: 12px; z-index: 20;
-          width: 40px; height: 40px; border-radius: 50%;
+          position: absolute; top: 10px; right: 10px; z-index: 6;
+          width: 34px; height: 34px; border-radius: 50%;
           background: ${t.bgCard}; border: 1px solid ${t.border};
           display: inline-flex; align-items: center; justify-content: center;
           cursor: pointer; color: ${t.text};
         }
         @media (max-width: 960px) {
           .ix-feed-wrap.rail-on, .ix-feed-wrap.rail-off { grid-template-columns: 1fr; }
-          .ix-right-col { display: none; }
+          .ix-right-col, .ix-rail-toggle { display: none; }
         }
         @media (max-width: 640px) {
           .ix-feed-col { border-left: none; border-right: none; }

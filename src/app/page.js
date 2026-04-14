@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import {
   Shield, Sun, Moon, LogOut, Wallet, Home as HomeIcon, Hash, Bell,
   Mail, Bookmark, Users, User, MoreHorizontal, Feather, Rocket, Coins,
-  Vote, Sparkles, Network, BookOpen, Bot, Zap,
+  Vote, Sparkles, Network, BookOpen, Bot, Zap, MessageSquare,
 } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -44,7 +44,8 @@ const PAGE_KEYS = PRIMARY.map(p => p.key);
 function getPageFromHash() {
   if (typeof window === "undefined") return "Home";
   const raw = window.location.hash.replace("#/", "").replace("#", "").toLowerCase();
-  const match = PAGE_KEYS.find(p => p.toLowerCase() === raw);
+  const key = raw.split("?")[0];
+  const match = PAGE_KEYS.find(p => p.toLowerCase() === key);
   return match || "Home";
 }
 function navigate(page) { window.location.hash = "#/" + page; }
@@ -123,28 +124,21 @@ export default function App() {
           .ix-nav-label, .ix-wallet-text, .ix-post-cta-label, .ix-brand-text { display: none; }
           .ix-post-cta { width: 48px; height: 48px; border-radius: 50%; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
         }
+        .ix-mobile-bar { display: none; }
         @media (max-width: 640px) {
           .ix-shell { grid-template-columns: 1fr; }
-          .ix-sidebar {
-            position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%;
-            height: 60px; flex-direction: row; justify-content: space-around;
-            align-items: stretch; border-right: none; border-top: 1px solid ${t.border};
-            padding: 0; z-index: 100; background: ${t.bg};
+          .ix-sidebar { display: none; }
+          .ix-mobile-bar {
+            display: flex; position: fixed; bottom: 0; left: 0; right: 0;
+            height: 60px; background: ${t.bg}; border-top: 1px solid ${t.border};
+            z-index: 100; align-items: stretch; justify-content: space-around;
           }
-          .ix-sidebar nav {
-            flex-direction: row; flex: 1; justify-content: space-around;
-            align-items: center; margin: 0; gap: 0;
+          .ix-mobile-bar button {
+            flex: 1 1 0; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 3px; background: none; border: none;
+            cursor: pointer; color: ${t.text}; font-size: 10px; font-weight: 600;
+            padding: 4px 2px;
           }
-          .ix-sidebar .ix-brand, .ix-sidebar .ix-post-cta, .ix-sidebar .ix-wallet-row { display: none; }
-          .ix-sidebar .ix-nav-btn {
-            flex: 1 1 0; min-width: 0; padding: 8px 4px; border-radius: 0;
-            justify-content: center; align-items: center; flex-direction: column;
-            gap: 2px; font-size: 10px;
-          }
-          .ix-sidebar .ix-nav-btn .ix-nav-label {
-            display: block; font-size: 10px; font-weight: 600; white-space: nowrap;
-          }
-          .ix-nav-btn.mobile-hide { display: none !important; }
           .ix-main-wrap { padding-bottom: 72px; }
         }
       `}</style>
@@ -219,7 +213,12 @@ export default function App() {
                 background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
                 padding: 6, boxShadow: "0 12px 40px rgba(0,0,0,.5)", zIndex: 20,
               }} onMouseLeave={() => setWalletMenu(false)}>
-                <MenuItem t={t} onClick={() => { setPage("Feed"); window.location.hash = `#/Feed?profile=${address}`; }}>
+                <MenuItem t={t} onClick={() => {
+                  setPageState("Feed");
+                  window.location.hash = `#/Feed?profile=${encodeURIComponent(address)}`;
+                  window.scrollTo(0, 0);
+                  setWalletMenu(false);
+                }}>
                   <User size={16} /> View profile
                 </MenuItem>
                 <MenuItem t={t} onClick={() => { setIsDark(!isDark); }}>
@@ -258,6 +257,42 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Mobile bottom tab bar: Profile | Agent | Home | Notifications | Messages */}
+      <nav className="ix-mobile-bar">
+        <button onClick={() => {
+          if (!connected) return openWallet();
+          setPageState("Feed");
+          window.location.hash = `#/Feed?profile=${encodeURIComponent(address)}`;
+        }}>
+          <User size={22} color={t.text} />
+          <span>Profile</span>
+        </button>
+        <button onClick={() => setPage("Agent")}>
+          <Bot size={22} color={page === "Agent" ? t.accent : t.text} />
+          <span style={{ color: page === "Agent" ? t.accent : t.text }}>Agent</span>
+        </button>
+        <button onClick={() => setPage("Home")}>
+          <HomeIcon size={22} color={page === "Home" ? t.accent : t.text} />
+          <span style={{ color: page === "Home" ? t.accent : t.text }}>Home</span>
+        </button>
+        <button onClick={() => {
+          if (!connected) return openWallet();
+          setPageState("Feed");
+          window.location.hash = `#/Feed?notifs=1`;
+        }}>
+          <Bell size={22} color={t.text} />
+          <span>Alerts</span>
+        </button>
+        <button onClick={() => {
+          if (!connected) return openWallet();
+          setPageState("Feed");
+          window.location.hash = `#/Feed?dms=1`;
+        }}>
+          <MessageSquare size={22} color={t.text} />
+          <span>Messages</span>
+        </button>
+      </nav>
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
     </div>
