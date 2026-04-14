@@ -34,6 +34,18 @@ router.get("/conversations", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/dm/search?q=wallet.near — look up a user to DM
+router.get("/search", requireWallet, async (req, res, next) => {
+  try {
+    const q = String(req.query.q || "").toLowerCase().trim();
+    if (!q) return res.json({ user: null });
+    const r = await db.query(
+      "SELECT id, wallet_address, username, display_name, pfp_url, account_type FROM feed_users WHERE LOWER(wallet_address)=$1 OR LOWER(username)=$1 LIMIT 1",
+      [q]);
+    res.json({ user: r.rows[0] || null, registered: !!r.rows[0] });
+  } catch (e) { next(e); }
+});
+
 // POST /api/dm/conversation  body: { peerWallet }
 router.post("/conversation", requireWallet, async (req, res, next) => {
   try {

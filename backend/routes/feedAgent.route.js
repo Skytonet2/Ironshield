@@ -3,19 +3,23 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { verifyTransfer } = require("../services/txVerify");
 
-// POST /api/feed-agent/deploy  body: { paymentTxHash }
+// POST /api/feed-agent/deploy  body: { paymentTxHash, postStyle, personality, postSchedule, commentRules, repostRules }
 router.post("/deploy", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
-    const { paymentTxHash } = req.body || {};
+    const { paymentTxHash, postStyle = "", personality = [], postSchedule = "", commentRules = "", repostRules = "" } = req.body || {};
     if (!paymentTxHash) return res.status(400).json({ error: "paymentTxHash required" });
-    // TODO: verify on-chain 10N transfer. For now trust + record.
+
+    const check = await verifyTransfer({ txHash: paymentTxHash, signerId: req.wallet, minAmountNear: 10 });
+    if (!check.ok) return res.status(402).json({ error: `Payment verification failed: ${check.reason}` });
+
     const expires = new Date(Date.now() + 30 * 86400_000);
     const r = await db.query(
-      `INSERT INTO feed_ironclaw_agents (owner_id, expires_at, monthly_fee_tx, active)
-       VALUES ($1,$2,$3,TRUE) RETURNING *`,
-      [user.id, expires, paymentTxHash]);
+      `INSERT INTO feed_ironclaw_agents (owner_id, expires_at, monthly_fee_tx, post_style, personality, post_schedule, comment_rules, repost_rules, active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE) RETURNING *`,
+      [user.id, expires, paymentTxHash, postStyle, personality, postSchedule, commentRules, repostRules]);
     await db.query("UPDATE feed_users SET account_type='AGENT' WHERE id=$1", [user.id]);
     res.json({ agent: r.rows[0] });
   } catch (e) { next(e); }

@@ -1,13 +1,13 @@
 "use client";
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
-import { Shield, Sun, Moon, LogOut, Wallet, MessageCircle } from "lucide-react";
+import {
+  Shield, Sun, Moon, LogOut, Wallet, Home as HomeIcon, Hash, Bell,
+  Mail, Bookmark, Users, User, MoreHorizontal, Feather, Rocket, Coins,
+  Vote, Sparkles, Network, BookOpen, Bot, Zap,
+} from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
 
-/* Home is the only page that's eagerly imported — everything else is lazy
-   so the initial bundle stays tiny and the page stops feeling laggy. We're
-   on Cloudflare Pages now (not NEARFS), so multiple chunks are perfectly
-   fine and actually preferred. */
 import HomePage       from "@/components/HomePage";
 import AdminPanel     from "@/components/AdminPanel";
 import MascotSystem   from "@/components/MascotSystem";
@@ -24,21 +24,30 @@ const AgentPage      = lazy(() => import("@/components/AgentPage"));
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Staking", "Feed", "Alpha", "Earn", "Governance", "Agent", "Launch", "Ecosystem", "Docs"];
+/* Primary nav = what lives in the X-style left rail */
+const PRIMARY = [
+  { key: "Home",        label: "Home",       Icon: HomeIcon },
+  { key: "Feed",        label: "IronFeed",   Icon: Feather },
+  { key: "Alpha",       label: "Alpha",      Icon: Sparkles },
+  { key: "Staking",     label: "Staking",    Icon: Coins },
+  { key: "Earn",        label: "Earn",       Icon: Rocket },
+  { key: "Governance",  label: "Governance", Icon: Vote },
+  { key: "Launch",      label: "Launch",     Icon: Zap },
+  { key: "Agent",       label: "Agent",      Icon: Bot },
+  { key: "Ecosystem",   label: "Ecosystem",  Icon: Network },
+  { key: "Docs",        label: "Docs",       Icon: BookOpen },
+];
+const PAGE_KEYS = PRIMARY.map(p => p.key);
 
-/* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
+/* ── Hash-based routing ──────────────────────── */
 function getPageFromHash() {
   if (typeof window === "undefined") return "Home";
   const raw = window.location.hash.replace("#/", "").replace("#", "").toLowerCase();
-  const match = pages.find(p => p.toLowerCase() === raw);
+  const match = PAGE_KEYS.find(p => p.toLowerCase() === raw);
   return match || "Home";
 }
+function navigate(page) { window.location.hash = "#/" + page; }
 
-function navigate(page) {
-  window.location.hash = "#/" + page;
-}
-
-// Read hash once at module load (client-only) to avoid flash
 const initialPage = typeof window !== "undefined" ? getPageFromHash() : "Home";
 
 export default function App() {
@@ -48,17 +57,16 @@ export default function App() {
   const [mounted, setMounted] = useState(false);
   const [page, setPageState] = useState(initialPage);
   const [showAdmin, setShowAdmin] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
+  const [walletMenu, setWalletMenu] = useState(false);
   const [showSurprise, setShowSurprise] = useState(false);
 
   const setPage = useCallback((p) => {
     setPageState(p);
     navigate(p);
     window.scrollTo(0, 0);
+    setWalletMenu(false);
   }, []);
 
-  // Hydration guard + hash listener
   useEffect(() => {
     setMounted(true);
     setPageState(getPageFromHash());
@@ -69,49 +77,63 @@ export default function App() {
 
   const openWallet = () => showModal();
 
-  // Pre-hydration: render nothing — the inline pre-loader in layout.js owns
-  // the loading UI and removes itself when the real <nav> appears below.
   if (!mounted) return null;
 
   const fallback = (
-    <div style={{ padding: "120px 24px", textAlign: "center", color: t.textMuted, fontSize: 13 }}>
-      Loading…
-    </div>
+    <div style={{ padding: "120px 24px", textAlign: "center", color: t.textMuted, fontSize: 13 }}>Loading…</div>
   );
 
+  const isHome = page === "Home";
+
   const renderPage = () => {
-    let inner;
     switch (page) {
       case "Home":       return <HomePage setPage={setPage} openWallet={openWallet} />;
-      case "Staking":    inner = <StakingPage openWallet={openWallet} />; break;
-      case "Alpha":      inner = <AlphaFeedPage openWallet={openWallet} />; break;
-      case "Feed":       inner = <IronFeedPage openWallet={openWallet} />; break;
-      case "Earn":       inner = <EarnPage openWallet={openWallet} />; break;
-      case "Governance": inner = <GovernancePage openWallet={openWallet} />; break;
-      case "Agent":      inner = <AgentPage openWallet={openWallet} />; break;
-      case "Launch":     inner = <LaunchPage setPage={setPage} openWallet={openWallet} />; break;
-      case "Ecosystem":  inner = <EcosystemPage />; break;
-      case "Docs":       inner = <DocsPage />; break;
+      case "Feed":       return <Suspense fallback={fallback}><IronFeedPage openWallet={openWallet} setPage={setPage} /></Suspense>;
+      case "Alpha":      return <Suspense fallback={fallback}><AlphaFeedPage openWallet={openWallet} /></Suspense>;
+      case "Staking":    return <Suspense fallback={fallback}><StakingPage openWallet={openWallet} /></Suspense>;
+      case "Earn":       return <Suspense fallback={fallback}><EarnPage openWallet={openWallet} /></Suspense>;
+      case "Governance": return <Suspense fallback={fallback}><GovernancePage openWallet={openWallet} /></Suspense>;
+      case "Agent":      return <Suspense fallback={fallback}><AgentPage openWallet={openWallet} /></Suspense>;
+      case "Launch":     return <Suspense fallback={fallback}><LaunchPage setPage={setPage} openWallet={openWallet} /></Suspense>;
+      case "Ecosystem":  return <Suspense fallback={fallback}><EcosystemPage /></Suspense>;
+      case "Docs":       return <Suspense fallback={fallback}><DocsPage /></Suspense>;
       default:           return <HomePage setPage={setPage} openWallet={openWallet} />;
     }
-    return <Suspense fallback={fallback}>{inner}</Suspense>;
   };
+
+  const short = address && address.length > 14 ? `${address.slice(0,6)}…${address.slice(-4)}` : address;
 
   return (
     <div style={{
-      background: t.bg,
-      backgroundImage: `radial-gradient(${isDark ? "rgba(59,130,246,0.09)" : "rgba(37,99,235,0.12)"} 1px, transparent 1px)`,
-      backgroundSize: "24px 24px", minHeight: "100vh", color: t.text,
-      fontFamily: "'Outfit', -apple-system, sans-serif", position: "relative", overflowX: "hidden"
+      background: t.bg, minHeight: "100vh", color: t.text,
+      fontFamily: "'Outfit', -apple-system, sans-serif",
     }}>
-
-      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "90vw", maxWidth: 500, height: 500, opacity: t.watermarkOpacity, backgroundImage: `url(${MASCOT_IMG})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center", pointerEvents: "none", zIndex: 0 }} />
-
-      {/* Mascot RAF + mousemove listeners are heavy — keep them on Home only. */}
-      {page === "Home" && <MascotSystem onSecretFound={() => setShowSurprise(true)} />}
+      <style>{`
+        .ix-shell { display: grid; grid-template-columns: 275px 1fr; min-height: 100vh; }
+        .ix-sidebar { position: sticky; top: 0; height: 100vh; padding: 12px 12px 16px; display: flex; flex-direction: column; border-right: 1px solid ${t.border}; background: ${t.bg}; }
+        .ix-nav-btn { display: flex; align-items: center; gap: 16px; padding: 10px 14px; border-radius: 999px; border: none; background: transparent; color: ${t.text}; font-size: 17px; font-weight: 500; cursor: pointer; text-align: left; width: 100%; transition: background .15s; }
+        .ix-nav-btn:hover { background: ${t.bgSurface}; }
+        .ix-nav-btn.active { font-weight: 800; }
+        .ix-post-cta { margin: 14px 4px 0; padding: 13px 0; border-radius: 999px; border: none; background: ${t.accent}; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+        .ix-wallet-row { margin-top: auto; position: relative; }
+        @media (max-width: 960px) {
+          .ix-shell { grid-template-columns: 72px 1fr; }
+          .ix-sidebar { padding: 10px 8px; }
+          .ix-nav-label, .ix-wallet-text, .ix-post-cta-label, .ix-brand-text { display: none; }
+          .ix-post-cta { width: 48px; height: 48px; border-radius: 50%; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+        }
+        @media (max-width: 640px) {
+          .ix-shell { grid-template-columns: 1fr; }
+          .ix-sidebar { position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%; height: 56px; flex-direction: row; justify-content: space-around; border-right: none; border-top: 1px solid ${t.border}; padding: 6px 10px; align-items: center; z-index: 100; }
+          .ix-sidebar .ix-brand, .ix-sidebar .ix-secondary, .ix-sidebar .ix-post-cta { display: none; }
+          .ix-nav-btn { padding: 8px; }
+          .ix-wallet-row { margin: 0; }
+          .ix-main-wrap { padding-bottom: 60px; }
+        }
+      `}</style>
 
       {showSurprise && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowSurprise(false)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowSurprise(false)}>
           <div style={{ background: t.bgCard, border: `2px solid ${t.accent}`, borderRadius: 24, padding: 40, textAlign: "center", maxWidth: 400 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
             <h2 style={{ fontSize: 24, fontWeight: 800, color: t.white, marginBottom: 12 }}>You found the secret!</h2>
@@ -121,111 +143,120 @@ export default function App() {
         </div>
       )}
 
-      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: t.navBg, borderBottom: `1px solid ${t.border}` }}>
-        <div style={{ maxWidth: 1600, margin: "0 auto", padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => setPage("Home")}>
-            <Shield size={24} color={t.accent} />
-            <span style={{ fontSize: 18, fontWeight: 800, color: t.white, letterSpacing: "-0.5px" }}>Iron<span style={{ color: t.accent }}>Shield</span></span>
+      <div className="ix-shell">
+        {/* Left rail (X-style) */}
+        <aside className="ix-sidebar">
+          <div className="ix-brand" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", cursor: "pointer" }} onClick={() => setPage("Home")}>
+            <Shield size={26} color={t.accent} />
+            <span className="ix-brand-text" style={{ fontSize: 18, fontWeight: 800, color: t.white, letterSpacing: "-0.5px" }}>
+              Iron<span style={{ color: t.accent }}>Shield</span>
+            </span>
           </div>
 
-          {/* Desktop Nav */}
-          <div className="desktop-nav" style={{ display: "flex", gap: 4 }}>
-            {pages.map(p => (
-              <button key={p} onClick={() => setPage(p)} className="nav-link" style={{
-                background: page === p ? `${p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent}18` : "transparent",
-                border: page === p ? `1px solid ${p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent}44` : "1px solid transparent",
-                color: page === p ? (p === "Governance" ? "#ff6b00" : p === "Launch" ? "#9b5de5" : t.accent) : t.textMuted,
-                padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-              }}>{p}</button>
+          <nav style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
+            {PRIMARY.map(({ key, label, Icon }) => (
+              <button key={key} onClick={() => setPage(key)} className={`ix-nav-btn ${page === key ? "active" : ""}`}>
+                <Icon size={24} color={page === key ? t.accent : t.text} strokeWidth={page === key ? 2.5 : 2} />
+                <span className="ix-nav-label" style={{ color: page === key ? t.white : t.text }}>{label}</span>
+              </button>
             ))}
-          </div>
+          </nav>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={() => setIsDark(!isDark)} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${t.border}`, background: t.bgSurface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {isDark ? <Sun size={17} color={t.amber} /> : <Moon size={17} color={t.accent} />}
-            </button>
+          <button className="ix-post-cta" onClick={() => setPage("Feed")}>
+            <span className="ix-post-cta-label">Post</span>
+            <Feather size={20} className="ix-post-cta-icon" style={{ display: "none" }} />
+          </button>
+
+          {/* Wallet / profile row at bottom */}
+          <div className="ix-wallet-row">
             {connected ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.bgSurface, border: `1px solid ${t.green}44`, borderRadius: 10, padding: "8px 14px" }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.green }} />
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: t.white, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.1 }}>{address.length > 14 ? address.substring(0,6)+"..."+address.substring(address.length-4) : address}</span>
-                  <span style={{ fontSize: 10, color: t.textDim, fontFamily: "'JetBrains Mono', monospace" }}>{balance} NEAR</span>
+              <button onClick={() => setWalletMenu(v => !v)} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: 10,
+                width: "100%", border: "none", background: "transparent", borderRadius: 999,
+                cursor: "pointer",
+              }}
+                onMouseEnter={e => e.currentTarget.style.background = t.bgSurface}
+                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg, ${t.accent}, #0ea5e9)`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800 }}>
+                  {address?.[0]?.toUpperCase() || "I"}
                 </div>
-                <button onClick={signOut} style={{ background: "none", border: "none", cursor: "pointer", color: t.textDim, display: "flex", marginLeft: 4 }}><LogOut size={13} /></button>
-              </div>
+                <div className="ix-wallet-text" style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: t.white, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{short}</div>
+                  <div style={{ fontSize: 12, color: t.textDim }}>{balance} NEAR</div>
+                </div>
+                <MoreHorizontal size={16} color={t.textDim} className="ix-wallet-text" />
+              </button>
             ) : (
-              <Btn primary onClick={openWallet} style={{ padding: "8px 18px", fontSize: 13 }}><Wallet size={13} /> Connect</Btn>
+              <button onClick={openWallet} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                width: "100%", border: `1px solid ${t.border}`, background: t.bgSurface, borderRadius: 999,
+                cursor: "pointer", color: t.white, fontWeight: 700,
+              }}>
+                <Wallet size={18} color={t.accent} /> <span className="ix-wallet-text">Connect Wallet</span>
+              </button>
             )}
 
-            {/* Mobile Menu Toggle */}
-            <button className="mobile-only" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ background: "none", border: "none", color: t.white, fontSize: 24, cursor: "pointer", display: "none" }}>
-              ☰
-            </button>
+            {walletMenu && connected && (
+              <div style={{
+                position: "absolute", bottom: 64, left: 0, right: 0,
+                background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
+                padding: 6, boxShadow: "0 12px 40px rgba(0,0,0,.5)", zIndex: 20,
+              }} onMouseLeave={() => setWalletMenu(false)}>
+                <MenuItem t={t} onClick={() => { setPage("Feed"); window.location.hash = `#/Feed?profile=${address}`; }}>
+                  <User size={16} /> View profile
+                </MenuItem>
+                <MenuItem t={t} onClick={() => { setIsDark(!isDark); }}>
+                  {isDark ? <Sun size={16} /> : <Moon size={16} />} Toggle theme
+                </MenuItem>
+                <MenuItem t={t} onClick={() => setShowAdmin(true)}>
+                  <Hash size={16} /> Dashboard settings
+                </MenuItem>
+                <MenuItem t={t} onClick={signOut} color={t.red}>
+                  <LogOut size={16} /> Disconnect
+                </MenuItem>
+              </div>
+            )}
           </div>
-        </div>
+        </aside>
 
-        {/* Mobile Nav Drawer */}
-        {mobileMenuOpen && (
-          <div className="mobile-only" style={{ background: t.bgCard, borderBottom: `1px solid ${t.border}`, padding: "10px 24px", display: "none" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {pages.map(p => (
-                <button key={p} onClick={() => { setPage(p); setMobileMenuOpen(false); }} style={{
-                  background: page === p ? `${t.accent}18` : "transparent",
-                  border: "none", color: page === p ? t.accent : t.textMuted,
-                  padding: "12px", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: "pointer", textAlign: "left"
-                }}>{p}</button>
-              ))}
+        {/* Main column */}
+        <main className="ix-main-wrap" style={{ minHeight: "100vh", position: "relative" }}>
+          {isHome && <MascotSystem onSecretFound={() => setShowSurprise(true)} />}
+          {renderPage()}
+
+          {isHome && (
+            <div style={{ borderTop: `1px solid ${t.border}`, padding: "36px 24px", marginTop: 40 }}>
+              <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Shield size={18} color={t.accent} />
+                  <span style={{ fontSize: 13, color: t.textMuted }}>IronShield — by <span style={{ color: t.white }}>IronClaw</span> on NEAR Protocol</span>
+                </div>
+                <div style={{ display: "flex", gap: 20, fontSize: 13, color: t.textDim, flexWrap: "wrap" }}>
+                  <a href="https://t.me/IronClawHQ" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none" }}>Telegram</a>
+                  <a href="https://x.com/_IronClaw" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none" }}>X</a>
+                  <span onClick={() => setShowAdmin(true)} style={{ cursor: "pointer" }}>Admin</span>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-      </nav>
-
-      <div style={{ position: "relative", zIndex: 1, minHeight: "80vh" }}>
-        {renderPage()}
-      </div>
-
-      <div style={{ borderTop: `1px solid ${t.border}`, padding: "36px 24px", position: "relative", zIndex: 1, marginTop: 40 }}>
-        <div style={{ maxWidth: 1600, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Shield size={18} color={t.accent} />
-            <span style={{ fontSize: 13, color: t.textMuted }}>IronShield — by <span style={{ color: t.white }}>IronClaw</span> on NEAR Protocol</span>
-          </div>
-          <div style={{ display: "flex", gap: 20, fontSize: 13, color: t.textDim, flexWrap: "wrap", alignItems: "center" }}>
-            <span onClick={() => setPage("Docs")} style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Docs</span>
-            <a href="https://t.me/IronClawHQ" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>Telegram</a>
-            <a href="https://x.com/_IronClaw" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>X (Twitter)</a>
-            <a href="https://t.me/IronShieldCore_bot" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.color = t.text} onMouseLeave={e => e.currentTarget.style.color = t.textDim}>IronShield Bot</a>
-            <span style={{ cursor: "pointer", color: t.textDim }}
-              onClick={() => setShowAdmin(true)}
-              onMouseEnter={e => e.currentTarget.style.color = t.accent}
-              onMouseLeave={e => e.currentTarget.style.color = t.textDim}
-            >Dashboard Settings</span>
-          </div>
-        </div>
+          )}
+        </main>
       </div>
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-
-      {/* Floating Telegram Bot Launcher */}
-      <a
-        href="https://t.me/IronShieldCore_bot"
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Launch IronShield Bot"
-        style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 99,
-          width: 56, height: 56, borderRadius: "50%",
-          background: `linear-gradient(135deg, ${t.accent}, #0ea5e9)`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: `0 4px 20px ${t.accent}55`,
-          cursor: "pointer", textDecoration: "none",
-          transition: "transform 0.2s, box-shadow 0.2s",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.boxShadow = `0 6px 28px ${t.accent}88`; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = `0 4px 20px ${t.accent}55`; }}
-      >
-        <MessageCircle size={26} color="#fff" fill="#fff" />
-      </a>
     </div>
+  );
+}
+
+function MenuItem({ children, onClick, t, color }) {
+  return (
+    <button onClick={onClick} style={{
+      display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px",
+      border: "none", background: "transparent", color: color || t.text, cursor: "pointer",
+      fontSize: 14, borderRadius: 8, textAlign: "left",
+    }}
+      onMouseEnter={e => e.currentTarget.style.background = t.bgSurface}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+      {children}
+    </button>
   );
 }

@@ -31,6 +31,8 @@ app.use("/api/feed-org",      require("./routes/feedOrg.route"));
 app.use("/api/feed-agent",    require("./routes/feedAgent.route"));
 app.use("/api/ads",           require("./routes/ads.route"));
 app.use("/api/notifications", require("./routes/notifications.route"));
+app.use("/api/media",         require("./routes/media.route"));
+app.use("/api/feed-news",     require("./routes/feedNews.route"));
 
 // Root
 app.get("/", (req, res) => {

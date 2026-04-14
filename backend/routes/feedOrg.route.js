@@ -3,17 +3,18 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { verifyTransfer } = require("../services/txVerify");
 
 // POST /api/feed-org/register  body: { orgName, paymentTxHash }
-// Verifies the user paid 100N to the platform wallet, then grants the ORG badge.
 router.post("/register", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const { orgName, paymentTxHash } = req.body || {};
     if (!orgName || !paymentTxHash) return res.status(400).json({ error: "orgName + paymentTxHash required" });
 
-    // TODO: verify on-chain that paymentTxHash is a 100N transfer to PLATFORM_WALLET
-    // For now, trust the txHash and grant the badge once recorded.
+    const check = await verifyTransfer({ txHash: paymentTxHash, signerId: req.wallet, minAmountNear: 100 });
+    if (!check.ok) return res.status(402).json({ error: `Payment verification failed: ${check.reason}` });
+
     await db.query(
       `INSERT INTO feed_org_registrations (user_id, org_name, payment_tx, badge_granted)
        VALUES ($1,$2,$3,TRUE)`,
