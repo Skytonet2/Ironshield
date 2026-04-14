@@ -1,25 +1,20 @@
 "use client";
-import { useWallet } from "@/lib/contexts";
+import { Buffer } from "buffer";
+import { useWallet, getReadAccount } from "@/lib/contexts";
 
 export const IRONCLAW_TOKEN    = "ironclaw.near";
 export const STAKING_CONTRACT  = "ironshield.near";
 
-const NEAR_CONFIG = {
-  networkId: "mainnet",
-  nodeUrl:   "https://rpc.mainnet.near.org",
-  walletUrl: "https://wallet.mainnet.near.org",
-  helperUrl: "https://helper.mainnet.near.org",
-};
-
 export default function useNear() {
   const { connected, address, selector } = useWallet();
 
+  const encodeArgs = (args = {}) => Buffer.from(JSON.stringify(args ?? {})).toString("base64");
+
   const viewMethod = async (contractId, methodName, args = {}) => {
     try {
-      const { connect, keyStores } = await import("near-api-js");
-      const keyStore = new keyStores.BrowserLocalStorageKeyStore();
-      const near    = await connect({ ...NEAR_CONFIG, keyStore });
-      const account = await near.account("anonymous");
+      // Shared, lazily-built read-only account on fastnear RPC.
+      // Avoids reconstructing a connection on every navigation.
+      const account = await getReadAccount();
       const result  = await account.viewFunction({ contractId, methodName, args });
       return result;
     } catch (err) {
@@ -50,7 +45,7 @@ export default function useNear() {
           type: "FunctionCall",
           params: {
             methodName,
-            args,
+            args: encodeArgs(args),
             gas:     "30000000000000",
             deposit: depositYocto,
           },

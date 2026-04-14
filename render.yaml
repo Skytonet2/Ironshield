@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ironclaw-backend
+    runtime: node
+    buildCommand: npm install
+    startCommand: node backend/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BACKEND_PORT
+        value: "3001"
+      - key: NEAR_AI_ENDPOINT
+        fromEnvironment: NEAR_AI_ENDPOINT
+      - key: NEAR_AI_KEY
+        fromEnvironment: NEAR_AI_KEY
+      - key: NEAR_AI_MODEL
+        fromEnvironment: NEAR_AI_MODEL
+      - key: TELEGRAM_BOT_TOKEN
+        fromEnvironment: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_GOVERNANCE_CHAT_ID
+        fromEnvironment: TELEGRAM_GOVERNANCE_CHAT_ID
+      - key: AGENT_ACCOUNT_ID
+        fromEnvironment: AGENT_ACCOUNT_ID
+      - key: AGENT_PRIVATE_KEY
+        fromEnvironment: AGENT_PRIVATE_KEY
+      - key: STAKING_CONTRACT_ID
+        value: ironshield.near
+      - key: DATABASE_URL
+        fromEnvironment: DATABASE_URL

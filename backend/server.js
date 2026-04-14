@@ -14,6 +14,7 @@ app.use("/api/portfolio", require("./routes/portfolio.route"));
 app.use("/api/security",  require("./routes/security.route"));
 app.use("/api/chat",      require("./routes/chat.route"));
 app.use("/api/trending",  require("./routes/trending.route"));
+app.use("/api/alpha",    require("./routes/alpha.route"));
 
 // Routes — Data (contests, leaderboard, governance)
 app.use("/api/contests",    require("./routes/contests.route"));

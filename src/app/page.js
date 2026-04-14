@@ -4,24 +4,26 @@ import { Shield, Sun, Moon, LogOut, Wallet, MessageCircle } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
 
-import HomePage from "@/components/HomePage";
+/* Home is the only page that's eagerly imported — everything else is lazy
+   so the initial bundle stays tiny and the page stops feeling laggy. We're
+   on Cloudflare Pages now (not NEARFS), so multiple chunks are perfectly
+   fine and actually preferred. */
+import HomePage       from "@/components/HomePage";
+import AdminPanel     from "@/components/AdminPanel";
+import MascotSystem   from "@/components/MascotSystem";
 
-/* Lazy-load all secondary pages — only fetched when user navigates to them */
-const DashboardPage  = lazy(() => import("@/components/DashboardPage"));
 const StakingPage    = lazy(() => import("@/components/StakingPage"));
-const TradePage      = lazy(() => import("@/components/TradePage"));
+const AlphaFeedPage  = lazy(() => import("@/components/AlphaFeedPage"));
 const EarnPage       = lazy(() => import("@/components/EarnPage"));
-const RoadmapPage    = lazy(() => import("@/components/RoadmapPage"));
 const EcosystemPage  = lazy(() => import("@/components/EcosystemPage"));
-const AdminPanel     = lazy(() => import("@/components/AdminPanel"));
 const GovernancePage = lazy(() => import("@/components/GovernancePage"));
 const LaunchPage     = lazy(() => import("@/components/LaunchPage"));
 const DocsPage       = lazy(() => import("@/components/DocsPage"));
-const MascotSystem   = lazy(() => import("@/components/MascotSystem"));
+const AgentPage      = lazy(() => import("@/components/AgentPage"));
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Dashboard", "Staking", "Trade", "Earn", "Governance", "Launch", "Roadmap", "Ecosystem", "Docs"];
+const pages = ["Home", "Staking", "Alpha", "Earn", "Governance", "Agent", "Launch", "Ecosystem", "Docs"];
 
 /* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
 function getPageFromHash() {
@@ -66,32 +68,31 @@ export default function App() {
 
   const openWallet = () => showModal();
 
-  // Prevent blank flash during SSR hydration
-  if (!mounted) {
-    return (
-      <div style={{ background: "#080b12", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <Shield size={40} color="#3b82f6" style={{ marginBottom: 12 }} />
-          <div style={{ color: "#94a3b8", fontSize: 14 }}>Loading IronShield...</div>
-        </div>
-      </div>
-    );
-  }
+  // Pre-hydration: render nothing — the inline pre-loader in layout.js owns
+  // the loading UI and removes itself when the real <nav> appears below.
+  if (!mounted) return null;
+
+  const fallback = (
+    <div style={{ padding: "120px 24px", textAlign: "center", color: t.textMuted, fontSize: 13 }}>
+      Loading…
+    </div>
+  );
 
   const renderPage = () => {
+    let inner;
     switch (page) {
       case "Home":       return <HomePage setPage={setPage} openWallet={openWallet} />;
-      case "Dashboard":  return <DashboardPage openWallet={openWallet} />;
-      case "Staking":    return <StakingPage openWallet={openWallet} />;
-      case "Trade":      return <TradePage openWallet={openWallet} />;
-      case "Earn":       return <EarnPage openWallet={openWallet} />;
-      case "Governance": return <GovernancePage openWallet={openWallet} />;
-      case "Launch":     return <LaunchPage setPage={setPage} openWallet={openWallet} />;
-      case "Roadmap":    return <RoadmapPage />;
-      case "Ecosystem":  return <EcosystemPage />;
-      case "Docs":       return <DocsPage />;
+      case "Staking":    inner = <StakingPage openWallet={openWallet} />; break;
+      case "Alpha":      inner = <AlphaFeedPage openWallet={openWallet} />; break;
+      case "Earn":       inner = <EarnPage openWallet={openWallet} />; break;
+      case "Governance": inner = <GovernancePage openWallet={openWallet} />; break;
+      case "Agent":      inner = <AgentPage openWallet={openWallet} />; break;
+      case "Launch":     inner = <LaunchPage setPage={setPage} openWallet={openWallet} />; break;
+      case "Ecosystem":  inner = <EcosystemPage />; break;
+      case "Docs":       inner = <DocsPage />; break;
       default:           return <HomePage setPage={setPage} openWallet={openWallet} />;
     }
+    return <Suspense fallback={fallback}>{inner}</Suspense>;
   };
 
   return (
@@ -104,9 +105,8 @@ export default function App() {
 
       <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "90vw", maxWidth: 500, height: 500, opacity: t.watermarkOpacity, backgroundImage: `url(${MASCOT_IMG})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center", pointerEvents: "none", zIndex: 0 }} />
 
-      <Suspense fallback={null}>
-        <MascotSystem onSecretFound={() => setShowSurprise(true)} />
-      </Suspense>
+      {/* Mascot RAF + mousemove listeners are heavy — keep them on Home only. */}
+      {page === "Home" && <MascotSystem onSecretFound={() => setShowSurprise(true)} />}
 
       {showSurprise && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowSurprise(false)}>
@@ -119,7 +119,7 @@ export default function App() {
         </div>
       )}
 
-      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: t.navBg, backdropFilter: "blur(20px)", borderBottom: `1px solid ${t.border}` }}>
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: t.navBg, borderBottom: `1px solid ${t.border}` }}>
         <div style={{ maxWidth: 1600, margin: "0 auto", padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => setPage("Home")}>
             <Shield size={24} color={t.accent} />
@@ -179,9 +179,7 @@ export default function App() {
       </nav>
 
       <div style={{ position: "relative", zIndex: 1, minHeight: "80vh" }}>
-        <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}><Shield size={32} color={t.accent} style={{ animation: "spin 1.5s linear infinite" }} /></div>}>
-          {renderPage()}
-        </Suspense>
+        {renderPage()}
       </div>
 
       <div style={{ borderTop: `1px solid ${t.border}`, padding: "36px 24px", position: "relative", zIndex: 1, marginTop: 40 }}>
@@ -204,7 +202,7 @@ export default function App() {
         </div>
       </div>
 
-      {showAdmin && <Suspense fallback={null}><AdminPanel onClose={() => setShowAdmin(false)} /></Suspense>}
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
 
       {/* Floating Telegram Bot Launcher */}
       <a
