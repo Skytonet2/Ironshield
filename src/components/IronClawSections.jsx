@@ -14,7 +14,7 @@ import { Badge, Btn, Section } from "./Primitives";
 import { useTheme } from "@/lib/contexts";
 
 /* ─────────────────────────────────────────────────────────────────
-   1. HERO ADDITION — Illia quote block (rendered under the existing hero)
+   1. HERO ADDITION: Illia quote block (rendered under the existing hero)
    ───────────────────────────────────────────────────────────────── */
 export function IlliaQuote() {
   const t = useTheme();
@@ -38,7 +38,7 @@ export function IlliaQuote() {
         </div>
         <div>
           <p style={{ fontSize: 17, fontStyle: "italic", color: t.text, lineHeight: 1.6, margin: 0 }}>
-            "A true IronClaw must launch in fully autonomous mode and give governance to token holders — deciding on missions and prompt updating."
+            "A true IronClaw must launch in fully autonomous mode and give governance to token holders: deciding on missions and prompt updating."
           </p>
           <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 32, height: 2, background: t.accent }} />
@@ -54,7 +54,7 @@ export function IlliaQuote() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   2. WHAT IS IRONCLAW — 3 principles + 6 specialization cards
+   2. WHAT IS IRONCLAW: 3 principles + 6 specialization cards
    ───────────────────────────────────────────────────────────────── */
 export function WhatIsIronClaw() {
   const t = useTheme();
@@ -64,7 +64,7 @@ export function WhatIsIronClaw() {
     {
       icon: Crosshair,
       title: "Mission-Based Operation",
-      desc: "The community assigns targets and objectives. The agent receives clear directives directly from token holders — security audits, alpha hunting, content production, and beyond.",
+      desc: "The community assigns targets and objectives. The agent receives clear directives directly from token holders: security audits, alpha hunting, content production, and beyond.",
       color: t.accent,
     },
     {
@@ -76,7 +76,7 @@ export function WhatIsIronClaw() {
     {
       icon: Vote,
       title: "Community Prompt Control",
-      desc: "Token holders vote on prompt updates. Agent behavior evolves under transparent, on-chain prompt versioning — governed, not dictated.",
+      desc: "Token holders vote on prompt updates. Agent behavior evolves under transparent, on-chain prompt versioning: governed, not dictated.",
       color: "#9b5de5",
     },
   ];
@@ -161,7 +161,7 @@ export function WhatIsIronClaw() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   3. REVENUE STREAMS — 5 cards
+   3. REVENUE STREAMS: 5 cards
    ───────────────────────────────────────────────────────────────── */
 export function RevenueStreams() {
   const t = useTheme();
@@ -195,7 +195,7 @@ export function RevenueStreams() {
       bullets: [
         "Scam pattern databases · sentiment history",
         "Deal flow records · security audit logs",
-        "Protocols and traders pay for API access — data compounds",
+        "Protocols and traders pay for API access: data compounds",
       ],
     },
     {
@@ -217,7 +217,7 @@ export function RevenueStreams() {
         </h2>
         <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10, maxWidth: 640, margin: "10px auto 0", lineHeight: 1.65 }}>
           Five revenue streams, all flowing through the on-chain Treasury Contract. No team take-rate, no
-          off-chain skimming — every dollar is auditable.
+          off-chain skimming: every dollar is auditable.
         </p>
       </div>
 
@@ -259,7 +259,7 @@ export function RevenueStreams() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   4. HOW USERS EARN — 2x2 grid
+   4. HOW USERS EARN: 2x2 grid
    ───────────────────────────────────────────────────────────────── */
 export function HowUsersEarn() {
   const t = useTheme();
@@ -270,7 +270,7 @@ export function HowUsersEarn() {
     },
     {
       icon: Zap, letter: "B", title: "Work-to-Earn", category: "Active", color: t.green,
-      desc: "Improve prompts, flag false positives, contribute training data — get paid in tokens. The agent gets smarter, contributors get rewarded.",
+      desc: "Improve prompts, flag false positives, contribute training data: get paid in tokens. The agent gets smarter, contributors get rewarded.",
     },
     {
       icon: Vote, letter: "C", title: "Governance Yield", category: "Governance", color: "#9b5de5",
@@ -290,7 +290,7 @@ export function HowUsersEarn() {
           Four Ways Holders Earn
         </h2>
         <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10, maxWidth: 600, margin: "10px auto 0", lineHeight: 1.65 }}>
-          Passive, active, governance, and conviction-based earning paths. Pick your style — the protocol rewards every kind of participation.
+          Passive, active, governance, and conviction-based earning paths. Pick your style: the protocol rewards every kind of participation.
         </p>
       </div>
 
@@ -327,7 +327,7 @@ export function HowUsersEarn() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   5. THE MOAT — vertical list
+   5. THE MOAT: vertical list
    ───────────────────────────────────────────────────────────────── */
 export function TheMoat() {
   const t = useTheme();
@@ -363,7 +363,7 @@ export function TheMoat() {
       icon: Users, title: "Active Governance", color: "#9b5de5",
       points: [
         "A community that actually shows up to vote",
-        "Forks get the code — not the people",
+        "Forks get the code: not the people",
         "Governance culture can't be cloned",
         "Institutional knowledge held by holders",
       ],
@@ -378,7 +378,7 @@ export function TheMoat() {
           Why Forks Can't Win
         </h2>
         <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10, maxWidth: 620, margin: "10px auto 0", lineHeight: 1.65 }}>
-          The contracts are open-source. The code can be forked. None of that matters — the moat is everywhere the code isn't.
+          The contracts are open-source. The code can be forked. None of that matters: the moat is everywhere the code isn't.
         </p>
       </div>
 
@@ -417,7 +417,7 @@ export function TheMoat() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   6. GOVERNANCE FLOW — horizontal flow diagram
+   6. GOVERNANCE FLOW: horizontal flow diagram
    ───────────────────────────────────────────────────────────────── */
 export function GovernanceFlow() {
   const t = useTheme();
@@ -541,7 +541,7 @@ export function TechArchitecture() {
     ]},
     { icon: ServerCog, title: "Off-Chain Security", color: t.green, items: [
       "Agent runs in isolated execution environment",
-      "No direct wallet access — only signs pre-approved tx types",
+      "No direct wallet access: only signs pre-approved tx types",
       "Rate limiting on external API calls and audit logging",
     ]},
     { icon: ShieldCheck, title: "Prompt Safety", color: "#9b5de5", items: [
@@ -559,7 +559,7 @@ export function TechArchitecture() {
           How It's Built
         </h2>
         <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10, maxWidth: 640, margin: "10px auto 0", lineHeight: 1.65 }}>
-          Three layers — governance, agent, revenue — connected by on-chain anchors. Off-chain only where speed
+          Three layers: governance, agent, revenue: connected by on-chain anchors. Off-chain only where speed
           matters; on-chain everywhere trust matters.
         </p>
       </div>
@@ -664,7 +664,7 @@ export function TechArchitecture() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   8. TOKENOMICS DEEP DIVE — revenue split, fees, governance params
+   8. TOKENOMICS DEEP DIVE: revenue split, fees, governance params
    ───────────────────────────────────────────────────────────────── */
 export function TokenomicsDeep() {
   const t = useTheme();
@@ -676,7 +676,7 @@ export function TokenomicsDeep() {
   ];
 
   const fees = [
-    { service: "Premium Group Subscription", fee: "$50–500 / month", split: "100% Treasury → split per model" },
+    { service: "Premium Group Subscription", fee: "$50500 / month", split: "100% Treasury → split per model" },
     { service: "API Access (Data)",          fee: "$0.001 per call",  split: "100% Treasury → split per model" },
     { service: "Performance Fee (Alpha/Treasury)", fee: "10% of profits", split: "100% Treasury → split per model" },
     { service: "Sponsored Missions",         fee: "Negotiated",       split: "70% Treasury · 30% direct to stakers" },
@@ -699,7 +699,7 @@ export function TokenomicsDeep() {
           Money Flow, Fees & Parameters
         </h2>
         <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10, maxWidth: 640, margin: "10px auto 0", lineHeight: 1.65 }}>
-          Every dollar of revenue, every governance lever, every parameter — fully spec'd and on-chain.
+          Every dollar of revenue, every governance lever, every parameter: fully spec'd and on-chain.
         </p>
       </div>
 
@@ -872,7 +872,7 @@ export function TokenomicsDeep() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   9. LAUNCH SCOPE — feature checklist
+   9. LAUNCH SCOPE: feature checklist
    ───────────────────────────────────────────────────────────────── */
 export function LaunchScope() {
   const t = useTheme();
@@ -941,7 +941,7 @@ export function LaunchScope() {
           Everything Ships at Launch
         </h2>
         <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10, maxWidth: 620, margin: "10px auto 0", lineHeight: 1.65 }}>
-          No phased rollout. No "coming soon." The full agent, full governance, full revenue stack — live on day one.
+          No phased rollout. No "coming soon." The full agent, full governance, full revenue stack: live on day one.
         </p>
       </div>
 

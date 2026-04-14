@@ -60,7 +60,7 @@ export default function TradePage() {
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>{side === "buy" ? "You Receive ($IRONCLAW)" : "You Receive (NEAR)"}</div>
               <div style={{ background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "12px 14px", fontSize: 16, fontFamily: "'JetBrains Mono', monospace", color: t.textDim, marginBottom: 16 }}>0.00</div>
               <div style={{ background: t.bgSurface, borderRadius: 8, padding: 12, fontSize: 12, color: t.textMuted, marginBottom: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>Price</span><span>—</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>Price</span><span></span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>Slippage</span><span>0.5%</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}><span>Gas (est.)</span><span>~0.001 NEAR</span></div>
               </div>

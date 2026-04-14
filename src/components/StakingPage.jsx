@@ -16,7 +16,7 @@ const fromYocto = (yocto) => {
   return (parseFloat(yocto) / 1e24).toFixed(4);
 };
 const fmt = (num, dec = 2) => {
-  if (!num) return "—";
+  if (!num) return "";
   return parseFloat(num).toLocaleString(undefined, { maximumFractionDigits: dec });
 };
 
@@ -173,8 +173,8 @@ export default function StakingPage({ openWallet }) {
     setAmount(val.toFixed(4));
   };
 
-  const totalStaked = poolData?.total_staked ? fmt(fromYocto(poolData.total_staked)) : "—";
-  const userStaked  = userData?.amount       ? fmt(fromYocto(userData.amount), 4)    : "—";
+  const totalStaked = poolData?.total_staked ? fmt(fromYocto(poolData.total_staked)) : "";
+  const userStaked  = userData?.amount       ? fmt(fromYocto(userData.amount), 4)    : "";
   const pendingNEAR = fromYocto(pendingReward);
   const hasPending  = parseFloat(pendingNEAR) > 0;
 
@@ -184,7 +184,7 @@ export default function StakingPage({ openWallet }) {
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <Badge color={t.green}>LIVE</Badge>
         <h1 style={{ fontSize: 36, fontWeight: 700, color: t.white, marginTop: 12 }}>Stake $IRONCLAW</h1>
-        <p style={{ fontSize: 15, color: t.textMuted, marginTop: 8 }}>Earn real yield from protocol fees — not inflation.</p>
+        <p style={{ fontSize: 15, color: t.textMuted, marginTop: 8 }}>Earn real yield from protocol fees: not inflation.</p>
       </div>
 
       {/* Status messages */}
@@ -203,8 +203,8 @@ export default function StakingPage({ openWallet }) {
       <div className="grid-wrap-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 40 }}>
         <StatCard icon={Coins}     label="Total Staked"     value={loading ? "..." : totalStaked}  positive={false} color={t.textMuted} />
         <StatCard icon={TrendingUp} label="Current APY"     value={sel.apy}                        positive={true}  color={t.green} />
-        <StatCard icon={Users}      label="Active Stakers"  value="—"                              positive={false} color={t.textMuted} />
-        <StatCard icon={Flame}      label="Burned This Week" value="—"                             color={t.textMuted} />
+        <StatCard icon={Users}      label="Active Stakers"  value=""                              positive={false} color={t.textMuted} />
+        <StatCard icon={Flame}      label="Burned This Week" value=""                             color={t.textMuted} />
       </div>
 
       {/* Tier selector */}
@@ -338,11 +338,11 @@ export default function StakingPage({ openWallet }) {
         </WalletGate>
       </div>
 
-      {/* How staking works — preserved exactly */}
+      {/* How staking works: preserved exactly */}
       <div style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16, padding: 32, marginBottom: 20 }}>
         <div style={{ fontSize: 20, fontWeight: 700, color: t.white, marginBottom: 6 }}>How Staking Works</div>
         <p style={{ fontSize: 14, color: t.textMuted, marginBottom: 28, lineHeight: 1.6 }}>
-          Protocol fees from IronShield subscriptions and ecosystem activity are pooled and distributed proportionally to stakers based on their tier multiplier. No inflation — real revenue sharing.
+          Protocol fees from IronShield subscriptions and ecosystem activity are pooled and distributed proportionally to stakers based on their tier multiplier. No inflation: real revenue sharing.
         </p>
         <div className="grid-wrap-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 32 }}>
           {[
@@ -417,7 +417,7 @@ export default function StakingPage({ openWallet }) {
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </Section>
 
-    {/* ─── Tokenomics deep dive — fee model, staking tiers, governance params, burns ─── */}
+    {/* ─── Tokenomics deep dive: fee model, staking tiers, governance params, burns ─── */}
     <TokenomicsDeep />
     </>
   );

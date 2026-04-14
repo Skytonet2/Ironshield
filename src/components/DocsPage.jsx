@@ -15,7 +15,7 @@ export default function DocsPage() {
       icon: <Shield size={20} color={t.accent} />,
       title: "What is IronShield?",
       content: [
-        "IronShield is a decentralized AI security and intelligence platform built on NEAR Protocol. At its core is IronClaw — an autonomous AI agent that operates inside Telegram and Discord communities, providing real-time threat detection, token research, portfolio tracking, and governance — all controlled by token holders on-chain.",
+        "IronShield is a decentralized AI security and intelligence platform built on NEAR Protocol. At its core is IronClaw: an autonomous AI agent that operates inside Telegram and Discord communities, providing real-time threat detection, token research, portfolio tracking, and governance: all controlled by token holders on-chain.",
         "Unlike traditional security tools that require constant manual oversight, IronClaw is always-on, always-learning, and community-governed. Every mission it runs, every prompt it follows, and every capability it unlocks is decided by $IRONCLAW stakers through on-chain proposals.",
       ],
     },
@@ -27,12 +27,12 @@ export default function DocsPage() {
         "IronClaw is the autonomous AI agent at the heart of IronShield. Powered by NEAR AI, it operates 24/7 inside your community chats without any manual intervention.",
       ],
       features: [
-        { label: "/research [token]", desc: "Full token report — price, market cap, liquidity, audit status, risk flags, and trust score" },
+        { label: "/research [token]", desc: "Full token report: price, market cap, liquidity, audit status, risk flags, and trust score" },
         { label: "/summary [group]", desc: "Summarize any public Telegram group's recent conversation into key points, tokens mentioned, and red flags" },
-        { label: "/verify [claim]", desc: "Fact-check any claim against live data — returns verdict (Verified/False/Unverified) with sources" },
+        { label: "/verify [claim]", desc: "Fact-check any claim against live data: returns verdict (Verified/False/Unverified) with sources" },
         { label: "/portfolio", desc: "Multi-wallet portfolio view with 24h P&L, token breakdown, and risk alerts" },
         { label: "/scan [url/wallet]", desc: "Scan any URL or wallet address against known phishing, scam, and malicious databases" },
-        { label: "/alert [token] [condition]", desc: "Set price alerts — get notified when a token hits your target via DM" },
+        { label: "/alert [token] [condition]", desc: "Set price alerts: get notified when a token hits your target via DM" },
         { label: "Auto: Link Scanning", desc: "Every URL shared in protected groups is silently scanned in real time" },
         { label: "Auto: Wallet Alerts", desc: "Flagged wallet addresses detected and warned before funds move" },
       ],
@@ -43,7 +43,7 @@ export default function DocsPage() {
       title: "Security Engine",
       content: [
         "IronShield's security engine runs continuously across all protected communities. It maintains a growing database of flagged URLs, malicious wallet addresses, known phishing patterns, and scam signatures.",
-        "When a threat is detected — whether it's a phishing link, an impersonator, or a flagged wallet — IronClaw acts immediately: the message is flagged, the community is warned, and the threat is logged for future reference. Community members can also submit reports via the /report command or the Telegram bot.",
+        "When a threat is detected: whether it's a phishing link, an impersonator, or a flagged wallet: IronClaw acts immediately: the message is flagged, the community is warned, and the threat is logged for future reference. Community members can also submit reports via the /report command or the Telegram bot.",
       ],
       stats: [
         { label: "Phishing Detection", value: "Real-time URL scanning against known threat databases" },
@@ -57,7 +57,7 @@ export default function DocsPage() {
       icon: <Vote size={20} color={t.accent} />,
       title: "On-Chain Governance",
       content: [
-        "IronShield is fully governed by its token holders. Anyone who stakes $IRONCLAW tokens gains voting power proportional to their stake. Governance proposals can modify IronClaw's behavior in real-time — no team intervention required.",
+        "IronShield is fully governed by its token holders. Anyone who stakes $IRONCLAW tokens gains voting power proportional to their stake. Governance proposals can modify IronClaw's behavior in real-time: no team intervention required.",
       ],
       steps: [
         { step: "01", title: "Stake $IRONCLAW", desc: "Lock tokens in the staking contract to earn yield and gain voting power." },
@@ -71,11 +71,11 @@ export default function DocsPage() {
       icon: <Coins size={20} color={t.accent} />,
       title: "Staking & Yield",
       content: [
-        "IronShield uses a MasterChef-style staking mechanism designed for NEAR Protocol. Once the $IRONCLAW token launches, stakers will earn real yield from protocol revenue — not inflation.",
+        "IronShield uses a MasterChef-style staking mechanism designed for NEAR Protocol. Once the $IRONCLAW token launches, stakers will earn real yield from protocol revenue: not inflation.",
         "Revenue from IronShield subscriptions, premium features, and ecosystem fees flows into the reward pool. Rewards are distributed per-block proportional to each staker's share of the pool. Stakers can also earn bonus points through contests and community participation.",
       ],
       stats: [
-        { label: "Contract", value: "TBA — will be deployed at launch" },
+        { label: "Contract", value: "TBA: will be deployed at launch" },
         { label: "Reward Source", value: "Protocol revenue (real yield, not inflation)" },
         { label: "Distribution", value: "Per-block, proportional to stake" },
         { label: "Governance Power", value: "Voting power = total staked across all pools" },
@@ -106,11 +106,11 @@ export default function DocsPage() {
       ],
       stats: [
         { label: "Frontend", value: "Next.js 16 + React 19, static export to IPFS via web4-deploy" },
-        { label: "Backend API", value: "Express.js on port 3001 — contests, leaderboard, governance, security endpoints" },
-        { label: "Database", value: "PostgreSQL — users, wallets, contests, submissions, proposals, votes, flagged URLs/wallets" },
-        { label: "AI Engine", value: "NEAR AI Cloud API (cloud-api.near.ai) — LLaMA 3.1 70B for all agent tasks" },
-        { label: "Telegram Bot", value: "node-telegram-bot-api — polling mode for dev, webhook for production" },
-        { label: "Smart Contract", value: "Rust (near-sdk v5.1.0) — MasterChef staking, NEP-141 rewards, on-chain governance (deploying at launch)" },
+        { label: "Backend API", value: "Express.js on port 3001: contests, leaderboard, governance, security endpoints" },
+        { label: "Database", value: "PostgreSQL: users, wallets, contests, submissions, proposals, votes, flagged URLs/wallets" },
+        { label: "AI Engine", value: "NEAR AI Cloud API (cloud-api.near.ai): LLaMA 3.1 70B for all agent tasks" },
+        { label: "Telegram Bot", value: "node-telegram-bot-api: polling mode for dev, webhook for production" },
+        { label: "Smart Contract", value: "Rust (near-sdk v5.1.0): MasterChef staking, NEP-141 rewards, on-chain governance (deploying at launch)" },
         { label: "Hosting", value: "IPFS via NEARFS, served at ironshield.near.page" },
         { label: "Governance Listener", value: "Polls chain for executed proposals, auto-updates agent prompt/mission" },
       ],
@@ -127,7 +127,7 @@ export default function DocsPage() {
         { label: "Standard", value: "NEP-141 (NEAR fungible token)" },
         { label: "Chain", value: "NEAR Protocol (mainnet)" },
         { label: "Utility", value: "Governance votes, staking yield, premium access" },
-        { label: "Contract", value: "TBA — deploying at token launch" },
+        { label: "Contract", value: "TBA: deploying at token launch" },
       ],
     },
     {
@@ -299,7 +299,7 @@ export default function DocsPage() {
       </div>
     </Section>
 
-    {/* ─── Tech architecture — governance, agent core, revenue layers ─── */}
+    {/* ─── Tech architecture: governance, agent core, revenue layers ─── */}
     <TechArchitecture />
     </>
   );

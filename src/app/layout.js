@@ -30,7 +30,7 @@ export default function RootLayout({ children }) {
       <head>
         <link rel="preload" as="image" href="/mascot.webp" type="image/webp" />
         <style dangerouslySetInnerHTML={{ __html: `
-          /* Simple pre-React loader — pure CSS, no JS required */
+          /* Simple pre-React loader: pure CSS, no JS required */
           #ic-pre-loader {
             position: fixed; inset: 0;
             background: #080b12;

@@ -22,7 +22,7 @@ const DAILY_RITUALS = [
     emoji: "☀️",
     title: "GM Post",
     description: "Share your GM with an IronClaw pic or GIF. Spread the daily energy.",
-    points: "50–150",
+    points: "50150",
     difficulty: "Easy",
     category: "Daily",
     tip: "Use IronClaw branded art for bonus points.",
@@ -32,7 +32,7 @@ const DAILY_RITUALS = [
     emoji: "🌙",
     title: "GN Post",
     description: "Wrap up the day with a GN post. Tell the community how your day went.",
-    points: "50–150",
+    points: "50150",
     difficulty: "Easy",
     category: "Daily",
     tip: "Share a highlight from your day in the Telegram.",
@@ -45,9 +45,9 @@ const CONTENT_MISSIONS = [
   {
     id: "content-video",
     emoji: "🎬",
-    title: "Short Video (15–60s)",
+    title: "Short Video (1560s)",
     description: "Film a quick demo, review, or explainer about IronShield or IronClaw. Short and snappy wins.",
-    points: "500–2,000",
+    points: "5002,000",
     difficulty: "Medium",
     category: "Video",
     tip: "Post on TikTok, YouTube Shorts, or X. Include cashtag $IRONCLAW.",
@@ -57,7 +57,7 @@ const CONTENT_MISSIONS = [
     emoji: "🖼️",
     title: "IronClaw Meme",
     description: "Create a meme using IronClaw or IronShield branding. Original art gets bonus multipliers.",
-    points: "100–500",
+    points: "100500",
     difficulty: "Easy",
     category: "Meme",
     tip: "Post in Telegram and tag the project on X for visibility.",
@@ -65,9 +65,9 @@ const CONTENT_MISSIONS = [
   {
     id: "content-thread",
     emoji: "🧵",
-    title: "Twitter Thread (3–5 tweets)",
+    title: "Twitter Thread (35 tweets)",
     description: "Write a clear thread explaining IronShield, governance, or IronClaw agent. Link is your proof.",
-    points: "300–1,000",
+    points: "3001,000",
     difficulty: "Medium",
     category: "Thread",
     tip: "End with a CTA and tag @IronClawHQ for retweet chances.",
@@ -77,7 +77,7 @@ const CONTENT_MISSIONS = [
     emoji: "✍️",
     title: "Blog Post / Review",
     description: "Publish a blog post or Medium article. Deep dives and tutorials score highest.",
-    points: "500–1,500",
+    points: "5001,500",
     difficulty: "Hard",
     category: "Blog",
     tip: "Mirror.xyz posts qualify. Include screenshots for credibility.",
@@ -90,7 +90,7 @@ const COMMUNITY_MISSIONS = [
     emoji: "📢",
     title: "Invite a Friend",
     description: "Refer someone new to the project. Submit their wallet address as your referral proof.",
-    points: "200–400",
+    points: "200400",
     difficulty: "Easy",
     category: "Growth",
     tip: "Referred user must connect wallet within 7 days to count.",
@@ -100,7 +100,7 @@ const COMMUNITY_MISSIONS = [
     emoji: "🐛",
     title: "Report a Bug",
     description: "Find and report a reproducible bug with steps to reproduce. Quality reports only.",
-    points: "150–600",
+    points: "150600",
     difficulty: "Medium",
     category: "Community",
     tip: "Critical bugs earn up to 600 pts. Include browser + OS info.",
@@ -110,7 +110,7 @@ const COMMUNITY_MISSIONS = [
     emoji: "🌍",
     title: "Translate Content",
     description: "Translate a page, post, or doc into another language. Community votes on quality.",
-    points: "200–800",
+    points: "200800",
     difficulty: "Medium",
     category: "Community",
     tip: "Chinese, Spanish, Korean, and Arabic get bonus multipliers.",
@@ -120,7 +120,7 @@ const COMMUNITY_MISSIONS = [
     emoji: "🤝",
     title: "Help in Telegram",
     description: "Answer questions in the Telegram group. Mods nominate top helpers weekly.",
-    points: "50–300",
+    points: "50300",
     difficulty: "Easy",
     category: "Community",
     tip: "Nominated helpers get automatic weekly point allocation.",
@@ -146,10 +146,10 @@ const fmtAgo = (nsTimestamp) => {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 };
 
-const fmt = (n) => n?.toLocaleString() ?? "—";
+const fmt = (n) => n?.toLocaleString() ?? "";
 
 function truncAddr(addr) {
-  if (!addr) return "—";
+  if (!addr) return "";
   if (addr.length <= 18) return addr;
   return addr.slice(0, 10) + "…" + addr.slice(-6);
 }
@@ -173,14 +173,14 @@ function getWeekProgress() {
   return { pct, countdown: `${dLeft}d ${hLeft}h` };
 }
 
-// Program starts Sunday April 20 2026, 00:00 UTC. Auto-kicks off — no manual trigger.
+// Program starts Sunday April 20 2026, 00:00 UTC. Auto-kicks off: no manual trigger.
 const PROGRAM_START = new Date("2026-04-20T00:00:00Z").getTime();
 
 function isProgramLive() {
   return Date.now() >= PROGRAM_START;
 }
 
-// Derive current week number (1–7) from start date
+// Derive current week number (17) from start date
 function getCurrentWeek() {
   const now = Date.now();
   if (now < PROGRAM_START) return 0; // not started yet
@@ -369,7 +369,7 @@ function SubmitModal({ task, t, onClose, onSubmit, connected, openWallet }) {
             }}>
               <Upload size={20} color={t.textDim} />
               <span style={{ fontSize: 13 }}>Click to upload proof image</span>
-              <span style={{ fontSize: 11, color: t.textDim }}>PNG, JPG, GIF — up to 10 MB</span>
+              <span style={{ fontSize: 11, color: t.textDim }}>PNG, JPG, GIF: up to 10 MB</span>
             </button>
           )}
         </div>
@@ -533,7 +533,7 @@ export default function EarnPage({ openWallet }) {
     const baseline = memoryStore.contests || [];
     const baseConverted = baseline.map(c => ({
       ...c,
-      points: c.points || c.reward || "200–600",
+      points: c.points || c.reward || "200600",
       category: c.type || "Content",
     }));
     return [...agentTasks, ...baseConverted];
@@ -638,7 +638,7 @@ export default function EarnPage({ openWallet }) {
               Points Season Starts Sunday, April 20
             </div>
             <div style={{ fontSize: 14, color: t.textMuted }}>
-              Launches in <strong style={{ color: t.white }}>{d}d {h}h</strong> — Daily rituals are live now. Missions + leaderboard activate at launch.
+              Launches in <strong style={{ color: t.white }}>{d}d {h}h</strong>: Daily rituals are live now. Missions + leaderboard activate at launch.
             </div>
           </div>
         );
@@ -652,8 +652,8 @@ export default function EarnPage({ openWallet }) {
       }}>
         <StatCard icon={Award}       label="Total Points Pool"   value="22,000,000"              color={t.accent} />
         <StatCard icon={TrendingUp}  label="This Week's Pool"    value={fmt(WEEKLY_POOL)}         color={t.green} />
-        <StatCard icon={Star}        label="Your Points"         value={connected ? fmt(userPoints) : "—"}  color={t.amber}  blur={!connected} />
-        <StatCard icon={Trophy}      label="Your Rank"           value={connected && userRank ? `#${userRank}` : "—"} color={t.accent} blur={!connected} />
+        <StatCard icon={Star}        label="Your Points"         value={connected ? fmt(userPoints) : ""}  color={t.amber}  blur={!connected} />
+        <StatCard icon={Trophy}      label="Your Rank"           value={connected && userRank ? `#${userRank}` : ""} color={t.accent} blur={!connected} />
       </div>
 
       {/* ── Week progress bar ─────────────────────────────────────────────────── */}
@@ -891,7 +891,7 @@ export default function EarnPage({ openWallet }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
                 ["1", "Post your GM/GN or complete the daily task", t.accent],
-                ["2", "Submit proof — a link, screenshot, or text", t.green],
+                ["2", "Submit proof: a link, screenshot, or text", t.green],
                 ["3", "IronClaw agent reviews and scores your submission", t.amber],
                 ["4", "Points post to your account within 24 hours", t.accent],
               ].map(([num, text, color]) => (

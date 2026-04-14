@@ -5,7 +5,7 @@
 
 export const PLATFORM_TREASURY = process.env.NEXT_PUBLIC_TREASURY_ACCOUNT || "ironshield.near";
 
-// Balance check helper — returns available NEAR as a Number.
+// Balance check helper: returns available NEAR as a Number.
 export async function getAvailableNear(accountId) {
   const { getNearInstance } = await import("@/lib/contexts");
   const near = await getNearInstance();

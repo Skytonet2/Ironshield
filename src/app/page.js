@@ -125,12 +125,27 @@ export default function App() {
         }
         @media (max-width: 640px) {
           .ix-shell { grid-template-columns: 1fr; }
-          .ix-sidebar { position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%; height: 56px; flex-direction: row; justify-content: space-around; border-right: none; border-top: 1px solid ${t.border}; padding: 6px 6px; align-items: center; z-index: 100; overflow-x: auto; }
-          .ix-sidebar nav { flex-direction: row; gap: 0; flex: 1; justify-content: space-around; }
+          .ix-sidebar {
+            position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%;
+            height: 60px; flex-direction: row; justify-content: space-around;
+            align-items: stretch; border-right: none; border-top: 1px solid ${t.border};
+            padding: 0; z-index: 100; background: ${t.bg};
+          }
+          .ix-sidebar nav {
+            flex-direction: row; flex: 1; justify-content: space-around;
+            align-items: center; margin: 0; gap: 0;
+          }
           .ix-sidebar .ix-brand, .ix-sidebar .ix-post-cta, .ix-sidebar .ix-wallet-row { display: none; }
-          .ix-nav-btn { padding: 8px; flex: 0 0 auto; }
-          .ix-nav-btn.mobile-hide { display: none; }
-          .ix-main-wrap { padding-bottom: 70px; }
+          .ix-sidebar .ix-nav-btn {
+            flex: 1 1 0; min-width: 0; padding: 8px 4px; border-radius: 0;
+            justify-content: center; align-items: center; flex-direction: column;
+            gap: 2px; font-size: 10px;
+          }
+          .ix-sidebar .ix-nav-btn .ix-nav-label {
+            display: block; font-size: 10px; font-weight: 600; white-space: nowrap;
+          }
+          .ix-nav-btn.mobile-hide { display: none !important; }
+          .ix-main-wrap { padding-bottom: 72px; }
         }
       `}</style>
 
@@ -231,7 +246,7 @@ export default function App() {
               <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Shield size={18} color={t.accent} />
-                  <span style={{ fontSize: 13, color: t.textMuted }}>IronShield — by <span style={{ color: t.white }}>IronClaw</span> on NEAR Protocol</span>
+                  <span style={{ fontSize: 13, color: t.textMuted }}>IronShield: by <span style={{ color: t.white }}>IronClaw</span> on NEAR Protocol</span>
                 </div>
                 <div style={{ display: "flex", gap: 20, fontSize: 13, color: t.textDim, flexWrap: "wrap" }}>
                   <a href="https://t.me/IronClawHQ" target="_blank" rel="noopener noreferrer" style={{ color: t.textDim, textDecoration: "none" }}>Telegram</a>

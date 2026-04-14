@@ -13,7 +13,7 @@ export default function HomePage({ setPage, openWallet }) {
   const t = useTheme();
   const { connected } = useWallet();
 
-  /* Hero stat counters — mirror the thesis: autonomous, token-governed, revenue-generating. */
+  /* Hero stat counters: mirror the thesis: autonomous, token-governed, revenue-generating. */
   const stats = [
     { n: "24/7",  l: "Autonomous Operation" },
     { n: "100%",  l: "On-Chain Governance" },
@@ -31,7 +31,7 @@ export default function HomePage({ setPage, openWallet }) {
   return (
     <div>
       {/* ─────────────────────────────────────────────
-          HERO  —  community-governed autonomous agent
+          HERO :  community-governed autonomous agent
           ───────────────────────────────────────────── */}
       <div style={{
         minHeight: "92vh", display: "flex", alignItems: "center", position: "relative",
@@ -43,7 +43,7 @@ export default function HomePage({ setPage, openWallet }) {
             <Badge color={t.green}>LIVE ON NEAR PROTOCOL</Badge>
 
             <h1 style={{ fontSize: 58, fontWeight: 800, color: t.white, lineHeight: 1.08, marginTop: 20, letterSpacing: "-1.5px" }}>
-              IronClaw —<br />
+              IronClaw <br />
               <span style={{ color: t.accent }}>Community-Governed</span><br />
               Autonomous Agent.
             </h1>
@@ -98,14 +98,14 @@ export default function HomePage({ setPage, openWallet }) {
         </Section>
       </div>
 
-      {/* ─── Illia quote — anchors the entire thesis ─── */}
+      {/* ─── Illia quote: anchors the entire thesis ─── */}
       <IlliaQuote />
 
-      {/* ─── What Is IronClaw — 3 principles + 6 specializations ─── */}
+      {/* ─── What Is IronClaw: 3 principles + 6 specializations ─── */}
       <WhatIsIronClaw />
 
       {/* ─────────────────────────────────────────────
-          TOKENOMICS OVERVIEW  —  supply split + donut
+          TOKENOMICS OVERVIEW :  supply split + donut
           Deep-dive (fees, staking tiers, governance params)
           lives on the Staking page.
           ───────────────────────────────────────────── */}
@@ -175,7 +175,7 @@ export default function HomePage({ setPage, openWallet }) {
         </div>
       </Section>
 
-      {/* ─── Final CTA — join the community, launch the bot ─── */}
+      {/* ─── Final CTA: join the community, launch the bot ─── */}
       <FinalCTA />
     </div>
   );

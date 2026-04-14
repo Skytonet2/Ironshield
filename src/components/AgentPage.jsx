@@ -59,7 +59,7 @@ function AlphaHuntCard({ data, t }) {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: t.white }}>
-                {it.symbol || "—"} <span style={{ color: t.textDim, fontWeight: 500 }}>· {it.chain || "?"}</span>
+                {it.symbol || ""} <span style={{ color: t.textDim, fontWeight: 500 }}>· {it.chain || "?"}</span>
               </div>
               <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4, lineHeight: 1.5 }}>{it.narrative}</div>
             </div>
@@ -161,7 +161,7 @@ function BountyCard({ data, t }) {
           )}
           <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 11, color: t.textDim }}>
             <span>{b.payoutCLAW || 0} $CLAW</span>
-            <span>~{b.payoutUSDEstimate || "—"}</span>
+            <span>~{b.payoutUSDEstimate || ""}</span>
             <span>{b.deadlineDays || 7}d deadline</span>
           </div>
         </div>
@@ -315,7 +315,7 @@ export default function AgentPage({ openWallet }) {
                 <span style={{ fontSize: 13, fontWeight: 700, color: t.white }}>{meta.label}</span>
               </div>
               <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.5 }}>{meta.short}</div>
-              <div style={{ fontSize: 10, color: t.textDim, marginTop: 6 }}>last run: {last ? fmtAgo(last) : "—"}</div>
+              <div style={{ fontSize: 10, color: t.textDim, marginTop: 6 }}>last run: {last ? fmtAgo(last) : ""}</div>
             </button>
           );
         })}

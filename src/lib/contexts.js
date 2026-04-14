@@ -75,7 +75,7 @@ export function WalletProvider({ children }) {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Lazy wallet init — only loads heavy NEAR libs when needed
+  // Lazy wallet init: only loads heavy NEAR libs when needed
   const initWallet = useCallback(async () => {
     if (initStarted || selector) return;
     setInitStarted(true);
@@ -133,7 +133,7 @@ export function WalletProvider({ children }) {
     }
   }, [initStarted, selector]);
 
-  // Auto-init if user was previously connected — but DEFER it to browser
+  // Auto-init if user was previously connected: but DEFER it to browser
   // idle time so it never blocks first paint or initial bundle parse.
   useEffect(() => {
     if (!mounted) return;
@@ -183,7 +183,7 @@ export function WalletProvider({ children }) {
     await new Promise(r => setTimeout(r, 100));
     if (modal) modal.show();
     else {
-      // Retry — modal may have been set during initWallet
+      // Retry: modal may have been set during initWallet
       const checkModal = () => {
         const m = document.querySelector(".near-wallet-selector-modal");
         if (!m) setTimeout(checkModal, 100);

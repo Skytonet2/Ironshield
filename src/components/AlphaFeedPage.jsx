@@ -81,7 +81,7 @@ const SAMPLE_ITEMS = [
     avatarColor: "#8b5cf6",
     timestamp: Date.now() - 900_000,
     content:
-      "$NEAR +34% in 24h. Volume spiking across ref.finance and Jumbo DEX. Large wallet accumulation detected — 2.4M NEAR moved off exchanges in the last 6 hours. Watch for continuation above $5.20.",
+      "$NEAR +34% in 24h. Volume spiking across ref.finance and Jumbo DEX. Large wallet accumulation detected: 2.4M NEAR moved off exchanges in the last 6 hours. Watch for continuation above $5.20.",
     link: "https://dexscreener.com",
     upvotes: 456,
     isSample: true,
@@ -109,7 +109,7 @@ const SAMPLE_ITEMS = [
     avatarColor: "#f59e0b",
     timestamp: Date.now() - 10_800_000,
     content:
-      "Restaking is the most important narrative right now. EigenLayer, Symbiotic, Karak — all competing for the same TVL. My thesis: the winner won't be the first, it'll be the one with the best slashing UX. Watch Karak closely.",
+      "Restaking is the most important narrative right now. EigenLayer, Symbiotic, Karak: all competing for the same TVL. My thesis: the winner won't be the first, it'll be the one with the best slashing UX. Watch Karak closely.",
     link: "https://twitter.com/Route2FI",
     upvotes: 738,
     isSample: true,
@@ -581,7 +581,7 @@ export default function AlphaFeedPage({ openWallet }) {
       setBackendDown(false);
       setLastUpdated(Date.now());
     } catch {
-      // Backend unavailable — show sample data
+      // Backend unavailable: show sample data
       setItems(SAMPLE_ITEMS);
       setBackendDown(true);
       setLastUpdated(Date.now());
@@ -640,7 +640,7 @@ export default function AlphaFeedPage({ openWallet }) {
                   Alpha Feed
                 </h1>
                 <p style={{ fontSize: 14, color: t.textMuted, margin: 0, marginTop: 2 }}>
-                  Real-time crypto intelligence — KOL alpha, news, airdrops & market chaos
+                  Real-time crypto intelligence: KOL alpha, news, airdrops & market chaos
                 </p>
               </div>
             </div>
@@ -649,7 +649,7 @@ export default function AlphaFeedPage({ openWallet }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {backendDown && (
               <Badge color={t.amber} style={{ fontSize: 11 }}>
-                Sample Data — Backend Offline
+                Sample Data: Backend Offline
               </Badge>
             )}
             {lastUpdated && (

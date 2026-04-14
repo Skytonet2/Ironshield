@@ -128,9 +128,9 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
     } catch (e) {
       const m = e.message || "";
       if (/database|DATABASE_URL|dbOffline/i.test(m)) {
-        setErr("Backend database isn't configured yet — posts can't be saved. (Admin: add DATABASE_URL on Render.)");
+        setErr("Backend database isn't configured yet: posts can't be saved. (Admin: add DATABASE_URL on Render.)");
       } else if (/500|internal/i.test(m)) {
-        setErr("Server error — backend may be restarting. Retry in a moment.");
+        setErr("Server error: backend may be restarting. Retry in a moment.");
       } else {
         setErr(m);
       }
@@ -306,7 +306,7 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
               {menuOpen && (
                 <div style={{ position: "absolute", right: 0, top: 24, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10, minWidth: 200, padding: 4, zIndex: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
                   onMouseLeave={() => setMenuOpen(false)}>
-                  {isMine && <MenuRow t={t} onClick={onBoost}><Sparkles size={13} /> Boost — $5/wk</MenuRow>}
+                  {isMine && <MenuRow t={t} onClick={onBoost}><Sparkles size={13} /> Boost: $5/wk</MenuRow>}
                   {isMine && <MenuRow t={t} color={t.red} onClick={del}><Trash2 size={13} /> Delete</MenuRow>}
                   {!isMine && <MenuRow t={t}>Mute @{author.username}</MenuRow>}
                 </div>
@@ -576,7 +576,7 @@ function AgentDeployModal({ wallet, selector, onClose }) {
   const deploy = async () => {
     setErr("");
     if (!canDeploy) { setErr("Fill Post style, pick at least one personality trait, and set a schedule before deploying."); return; }
-    if (balance !== null && balance < 10.05) { setErr(`Insufficient balance — you have ${balance.toFixed(2)} NEAR, need 10 NEAR (+ gas).`); return; }
+    if (balance !== null && balance < 10.05) { setErr(`Insufficient balance: you have ${balance.toFixed(2)} NEAR, need 10 NEAR (+ gas).`); return; }
     setStep("signing");
     try {
       const { txHash } = await payNear({ selector, accountId: wallet, amountNear: 10, memo: "IronFeed agent deploy" });
@@ -599,7 +599,7 @@ function AgentDeployModal({ wallet, selector, onClose }) {
           </div>
           <p style={{ color: t.textMuted, fontSize: 13, margin: "6px 0 0" }}>
             Let your agent post, find alpha, and act even when you're not here. Deployed on IronClaw runtime,
-            tweaked from this site. Platform fee is 10N — separate from IronClaw's compute fees.
+            tweaked from this site. Platform fee is 10N: separate from IronClaw's compute fees.
           </p>
         </div>
       )}
@@ -644,7 +644,7 @@ function AgentDeployModal({ wallet, selector, onClose }) {
         {existing
           ? <Btn primary onClick={saveConfig}>Save config</Btn>
           : <Btn primary disabled={!canDeploy || step === "signing"} onClick={deploy}>
-              {step === "signing" ? "Signing…" : step === "done" ? "Deployed ✓" : "Deploy — 10 NEAR"}
+              {step === "signing" ? "Signing…" : step === "done" ? "Deployed ✓" : "Deploy: 10 NEAR"}
             </Btn>}
       </div>
     </Modal>
@@ -664,7 +664,7 @@ function OrgBadgeModal({ wallet, selector, onClose }) {
   const submit = async () => {
     setErr("");
     if (!orgName.trim()) { setErr("Organisation name required"); return; }
-    if (balance !== null && balance < 100.05) { setErr(`Insufficient balance — you have ${balance.toFixed(2)} NEAR, need 100 NEAR.`); return; }
+    if (balance !== null && balance < 100.05) { setErr(`Insufficient balance: you have ${balance.toFixed(2)} NEAR, need 100 NEAR.`); return; }
     setBusy(true);
     try {
       const { txHash } = await payNear({ selector, accountId: wallet, amountNear: 100, memo: `Org badge ${orgName}` });
@@ -677,7 +677,7 @@ function OrgBadgeModal({ wallet, selector, onClose }) {
   return (
     <Modal onClose={onClose} title="Become a verified Organization">
       <p style={{ color: t.textMuted, fontSize: 14 }}>
-        Pay <strong style={{ color: t.amber }}>100 NEAR</strong> to unlock the gold Org badge — for project
+        Pay <strong style={{ color: t.amber }}>100 NEAR</strong> to unlock the gold Org badge: for project
         teams, DAOs, and protocols.
       </p>
       <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
@@ -702,7 +702,7 @@ function AdBoostModal({ post, wallet, selector, onClose }) {
 
   const submit = async () => {
     setErr("");
-    if (balance !== null && balance < 5.05) { setErr(`Insufficient balance — you have ${balance.toFixed(2)} NEAR, need 5 NEAR.`); return; }
+    if (balance !== null && balance < 5.05) { setErr(`Insufficient balance: you have ${balance.toFixed(2)} NEAR, need 5 NEAR.`); return; }
     setBusy(true);
     try {
       const { txHash } = await payNear({ selector, accountId: wallet, amountNear: 5, memo: `Boost post ${post.id}` });
@@ -713,7 +713,7 @@ function AdBoostModal({ post, wallet, selector, onClose }) {
   };
 
   return (
-    <Modal onClose={onClose} title="Boost this post — $5 / week">
+    <Modal onClose={onClose} title="Boost this post: $5 / week">
       <p style={{ color: t.textMuted, fontSize: 14 }}>Promoted posts surface in For You every 8 slots for 7 days.</p>
       {balance !== null && <p style={{ color: t.textDim, fontSize: 12, marginTop: 10 }}>Wallet: {balance.toFixed(2)} NEAR</p>}
       {err && <p style={{ color: t.red, fontSize: 13 }}>{err}</p>}
@@ -775,12 +775,12 @@ function DMsModal({ wallet, onClose, initialPeer }) {
 
   const shareInvite = async (handle) => {
     const url = inviteLink(handle);
-    const shareText = `Join me on IronFeed — crypto-native social on NEAR. ${url}`;
+    const shareText = `Join me on IronFeed: crypto-native social on NEAR. ${url}`;
     if (navigator.share) {
       try { await navigator.share({ text: shareText, url }); return; } catch {}
     }
     await navigator.clipboard.writeText(shareText);
-    alert("Invite link copied — paste it into Telegram, X, Discord, etc.");
+    alert("Invite link copied: paste it into Telegram, X, Discord, etc.");
   };
 
   const send = async () => {
@@ -957,7 +957,7 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet }) {
         <span>Deploy your Agent <span style={{ background: `${t.green}22`, color: t.green, padding: "2px 7px", borderRadius: 6, fontSize: 11, marginLeft: 6 }}>10N /mo</span></span>,
         <div style={{ padding: 16 }}>
           <p style={{ color: t.textMuted, fontSize: 13, margin: 0, lineHeight: 1.5 }}>
-            Let your agent post, find alpha, and act — even when you're not here. Personality &amp; schedule
+            Let your agent post, find alpha, and act: even when you're not here. Personality &amp; schedule
             configured on IronShield, runtime on IronClaw.
           </p>
           <button onClick={() => wallet ? onDeployAgent() : openWallet?.()} style={{
@@ -967,7 +967,7 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet }) {
         </div>
       )}
 
-      {/* Ads — only if active campaigns */}
+      {/* Ads: only if active campaigns */}
       {ads.length > 0 && card("Sponsored",
         ads.map((a, i) => (
           <div key={a.id} style={{ padding: "10px 16px", borderTop: i ? `1px solid ${t.border}` : "none", cursor: "pointer" }}>
@@ -999,7 +999,7 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet }) {
       {/* Org badge */}
       {card("Verify your Organization",
         <div style={{ padding: 16 }}>
-          <p style={{ color: t.textMuted, fontSize: 13, margin: 0 }}>Unlock the gold Org badge for teams and protocols — 100 NEAR one-time.</p>
+          <p style={{ color: t.textMuted, fontSize: 13, margin: 0 }}>Unlock the gold Org badge for teams and protocols: 100 NEAR one-time.</p>
           <button onClick={() => wallet ? onOpenOrg() : openWallet?.()} style={{
             marginTop: 10, padding: "8px 14px", borderRadius: 999, background: "transparent",
             border: `1px solid ${t.border}`, color: t.text, cursor: "pointer", fontWeight: 600, fontSize: 13,
@@ -1121,7 +1121,7 @@ export default function IronFeedPage({ openWallet }) {
 
         {posts.length === 0 && !loading && (
           <div style={{ padding: 40, textAlign: "center", color: t.textDim }}>
-            {tab === "following" ? `${FOLLOW} people to fill your Squad feed.` : "No posts yet — be first!"}
+            {tab === "following" ? `${FOLLOW} people to fill your Squad feed.` : "No posts yet: be first!"}
           </div>
         )}
         {posts.map(p => (

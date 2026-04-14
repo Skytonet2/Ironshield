@@ -28,7 +28,7 @@ export default function EcosystemPage() {
         </div>
       )}
 
-      {/* NEAR — confirmed partner */}
+      {/* NEAR: confirmed partner */}
       <div className="flex-col-responsive" style={{ background: t.bgCard, border: `2px solid ${t.green}44`, borderRadius: 20, padding: 32, marginBottom: 24, display: "flex", alignItems: "center", gap: 28, boxShadow: `0 0 40px ${t.green}12` }}>
         <div style={{ width: 80, height: 80, background: `${t.green}18`, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, flexShrink: 0 }}>🟢</div>
         <div style={{ flex: 1 }}>
@@ -37,7 +37,7 @@ export default function EcosystemPage() {
             <Badge color={t.green}>OFFICIAL PARTNER</Badge>
           </div>
           <p style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.65, maxWidth: 560 }}>
-            IronShield is built natively on NEAR Protocol — the blockchain of choice for scalable, low-cost, developer-friendly Web3 infrastructure. Sub-second finality, Rust contracts, and a thriving ecosystem.
+            IronShield is built natively on NEAR Protocol: the blockchain of choice for scalable, low-cost, developer-friendly Web3 infrastructure. Sub-second finality, Rust contracts, and a thriving ecosystem.
           </p>
           <div style={{ display: "flex", gap: 20, marginTop: 14, flexWrap: "wrap" }}>
             {[

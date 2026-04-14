@@ -6,7 +6,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import { memoryStore } from "@/lib/store";
 import useGovernance from "@/hooks/useGovernance";
 
-// Admin wallet — only this address can access the panel
+// Admin wallet: only this address can access the panel
 const ADMIN_WALLET = "ironshield.near";
 
 export default function AdminPanel({ onClose }) {
@@ -398,7 +398,7 @@ export default function AdminPanel({ onClose }) {
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                             <div style={{ flex: 1, minWidth: 240 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: t.white, fontFamily: "'JetBrains Mono', monospace" }}>{app.account_id}</div>
-                              <div style={{ fontSize: 11, color: t.textDim, marginTop: 3 }}>Telegram: {app.telegram || "—"}</div>
+                              <div style={{ fontSize: 11, color: t.textDim, marginTop: 3 }}>Telegram: {app.telegram || ""}</div>
                               <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 1.6 }}>{app.reason}</div>
                             </div>
                             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -434,7 +434,7 @@ export default function AdminPanel({ onClose }) {
                         <div key={acc} style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                           <div>
                             <div style={{ fontSize: 13, color: t.white, fontFamily: "'JetBrains Mono', monospace" }}>{acc}</div>
-                            <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Telegram: {info?.telegram || "—"}</div>
+                            <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>Telegram: {info?.telegram || ""}</div>
                           </div>
                           <button onClick={() => handleRevoke(acc)} disabled={busy}
                             style={{ background: `${t.red}18`, border: `1px solid ${t.red}44`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: t.red, display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
@@ -454,7 +454,7 @@ export default function AdminPanel({ onClose }) {
                 </div>
 
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6 }}>Token ID Max (top-N rule — currently {tokenIdMax})</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6 }}>Token ID Max (top-N rule: currently {tokenIdMax})</div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input value={newTokenIdMax} onChange={e => setNewTokenIdMax(e.target.value)} placeholder={String(tokenIdMax)} type="number"
                       style={{ flex: 1, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none" }} />
@@ -531,7 +531,7 @@ export default function AdminPanel({ onClose }) {
                         <tr key={i} style={{ borderBottom: `1px solid ${t.border}44` }}>
                           <td style={{ padding: "12px 18px", color: t.text, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{s.wallet}</td>
                           <td style={{ padding: "12px 18px", color: t.green, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{s.points}</td>
-                          <td style={{ padding: "12px 18px", color: t.textDim, fontSize: 12 }}>{s.ts || "—"}</td>
+                          <td style={{ padding: "12px 18px", color: t.textDim, fontSize: 12 }}>{s.ts || ""}</td>
                           <td style={{ padding: "12px 18px" }}>
                             <button onClick={() => deleteScore(i)} style={{ background: `${t.red}18`, border: `1px solid ${t.red}33`, borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: t.red, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
                               <Trash2 size={10} /> Remove

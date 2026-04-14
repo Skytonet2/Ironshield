@@ -5,7 +5,7 @@ import { useTheme } from "@/lib/contexts";
 const MASCOT_IMG = "/mascot.png";
 
 /* ══════════════════════════════════════════════════════════════
-   CONFIG — tweak all behavior values here
+   CONFIG: tweak all behavior values here
    ══════════════════════════════════════════════════════════════ */
 const CFG = {
   // Small mascot
@@ -76,7 +76,7 @@ const STYLES = `
 `;
 
 /* ══════════════════════════════════════════════════════════════
-   SMALL MASCOT — bottom-right interactive character
+   SMALL MASCOT: bottom-right interactive character
    ══════════════════════════════════════════════════════════════ */
 function SmallMascot({ onAction, onSecretFound }) {
   const t = useTheme();
@@ -278,7 +278,7 @@ function SmallMascot({ onAction, onSecretFound }) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   LARGE PEEKER MASCOT — upside-down head from top
+   LARGE PEEKER MASCOT: upside-down head from top
    ══════════════════════════════════════════════════════════════ */
 function PeekerMascot() {
   const t = useTheme();
@@ -328,7 +328,7 @@ function PeekerMascot() {
       pointerEvents: "none",
       willChange: "transform",
     }}>
-      {/* Upside-down mascot head — clipped to show only head */}
+      {/* Upside-down mascot head: clipped to show only head */}
       <div style={{
         width: 100, height: 70, overflow: "hidden",
         animation: "peeker-float 3s ease-in-out infinite",
@@ -367,7 +367,7 @@ function PeekerMascot() {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   MAIN EXPORT — combines both mascots
+   MAIN EXPORT: combines both mascots
    ══════════════════════════════════════════════════════════════ */
 export default function MascotSystem({ onAction, onSecretFound }) {
   return (

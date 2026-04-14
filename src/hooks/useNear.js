@@ -15,7 +15,7 @@ export default function useNear() {
       const result  = await account.viewFunction({ contractId, methodName, args });
       return result;
     } catch (err) {
-      // Contract not deployed yet — return null silently so UI shows placeholders
+      // Contract not deployed yet: return null silently so UI shows placeholders
       const msg = err?.message || "";
       if (
         msg.includes("MethodNotFound") ||

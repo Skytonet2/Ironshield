@@ -309,7 +309,7 @@ export default function LaunchPage({ openWallet }) {
           <div style={{ fontSize: 20, fontWeight: 700, color: t.white }}>What is IronClaw?</div>
         </div>
         <p style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.75, marginBottom: 20, maxWidth: 700 }}>
-          IronClaw is a secure, open-source AI agent runtime built on NEAR Protocol. It provides a self-hostable, privacy-first AI assistant with WASM-sandboxed tooling, multi-LLM support, and on-chain credential management. IronShield is the ecosystem's security layer — protecting communities from scams, phishing, and rug pulls.
+          IronClaw is a secure, open-source AI agent runtime built on NEAR Protocol. It provides a self-hostable, privacy-first AI assistant with WASM-sandboxed tooling, multi-LLM support, and on-chain credential management. IronShield is the ecosystem's security layer: protecting communities from scams, phishing, and rug pulls.
         </p>
         <p style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.75, marginBottom: 24, maxWidth: 700 }}>
           The {TOKEN_NAME} token aligns incentives across the ecosystem: stakers earn real yield from protocol fees, governors shape AI behavior and treasury decisions, and the deflationary burn mechanism ensures long-term value accrual.
@@ -333,12 +333,12 @@ export default function LaunchPage({ openWallet }) {
         <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.7, maxWidth: 640, margin: "0 auto" }}>
           <strong style={{ color: t.textMuted }}>Disclaimer:</strong> Token launch details including price, date, and allocation may change.
           This is not financial advice. Participation is at your own risk. Always do your own research.
-          IronShield operates on NEAR Protocol — transactions are final and irreversible.
+          IronShield operates on NEAR Protocol: transactions are final and irreversible.
         </div>
       </div>
     </Section>
 
-    {/* ─── Launch scope — what ships on day one ─── */}
+    {/* ─── Launch scope: what ships on day one ─── */}
     <LaunchScope />
     </>
   );

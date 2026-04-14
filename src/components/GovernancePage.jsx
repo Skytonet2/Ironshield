@@ -261,7 +261,7 @@ export default function GovernancePage({ openWallet }) {
       showOk("Vanguard claim submitted. Ownership will be verified on-chain.");
       setShowVanguardForm(false);
       setVanguardForm({ nftContract: vanguardNftContracts[0] || "nearlegion.nfts.tg", tokenId: "" });
-      // Callback is async — give it a moment then refresh
+      // Callback is async: give it a moment then refresh
       setTimeout(() => fetchEligibility(), 4000);
     } catch (err) {
       showErr(err.message || "Vanguard claim failed");
@@ -403,10 +403,10 @@ export default function GovernancePage({ openWallet }) {
             <div style={{ maxWidth: 620 }}>
               <div style={{ fontSize: 11, color: "#9b5de5", fontWeight: 700, letterSpacing: "0.16em", marginBottom: 6 }}>PRE-TOKEN GOVERNANCE</div>
               <div style={{ fontSize: 14, color: t.white, fontWeight: 600, marginBottom: 4 }}>
-                $IRONCLAW hasn't launched yet — voting runs on trusted identity.
+                $IRONCLAW hasn't launched yet: voting runs on trusted identity.
               </div>
               <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6 }}>
-                Verified <strong>Vanguards</strong> (NEAR Legion NFT #1–{vanguardTokenIdMax}) get 2× voting power. Approved <strong>Contributors</strong> get 1×. Both can create proposals and vote.
+                Verified <strong>Vanguards</strong> (NEAR Legion NFT #1{vanguardTokenIdMax}) get 2× voting power. Approved <strong>Contributors</strong> get 1×. Both can create proposals and vote.
               </div>
             </div>
             {connected && (
@@ -451,7 +451,7 @@ export default function GovernancePage({ openWallet }) {
             <div style={{ marginTop: 18, background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 4 }}>Claim Vanguard Status</div>
               <div style={{ fontSize: 11, color: t.textDim, marginBottom: 14, lineHeight: 1.6 }}>
-                Prove ownership of an NFT in the whitelisted contracts below. Only token IDs 1–{vanguardTokenIdMax} qualify. Ownership is verified on-chain against the NFT contract.
+                Prove ownership of an NFT in the whitelisted contracts below. Only token IDs 1{vanguardTokenIdMax} qualify. Ownership is verified on-chain against the NFT contract.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
@@ -467,7 +467,7 @@ export default function GovernancePage({ openWallet }) {
                   )}
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 5 }}>Token ID (1–{vanguardTokenIdMax})</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 5 }}>Token ID (1{vanguardTokenIdMax})</div>
                   <input value={vanguardForm.tokenId} onChange={e => setVanguardForm(f => ({ ...f, tokenId: e.target.value }))} placeholder="e.g. 42"
                     style={{ width: "100%", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, outline: "none" }} />
                 </div>
@@ -590,9 +590,9 @@ export default function GovernancePage({ openWallet }) {
 
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
-              {newProposal.type === "Mission"      && "Describe the new IronClaw mission — what should it monitor?"}
+              {newProposal.type === "Mission"      && "Describe the new IronClaw mission: what should it monitor?"}
               {newProposal.type === "PromptUpdate" && "Write the new AI system prompt for IronClaw. This replaces the current one."}
-              {newProposal.type === "RuleChange"   && "Describe the rule change — which capability to enable or disable."}
+              {newProposal.type === "RuleChange"   && "Describe the rule change: which capability to enable or disable."}
             </div>
             <textarea
               value={newProposal.content}
