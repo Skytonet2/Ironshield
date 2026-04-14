@@ -75,13 +75,18 @@ function Avatar({ user, size = 40 }) {
 }
 
 /* ───────────────────── Compose (file picker) ──────────────────── */
+const COMMON_EMOJI = ["😀","😂","🤣","😊","😍","🤩","😎","🤔","😭","😡","🔥","💯","🚀","💎","🎯","👀","👍","👎","🙏","❤️","💔","⚡","🌙","☀️","💰","📈","📉","🤝","✅","❌","⭐"];
+
 function ComposePost({ wallet, onPosted, placeholder = "What's happening in IronShield?" }) {
   const t = useTheme();
   const fileRef = useRef(null);
+  const taRef = useRef(null);
   const [content, setContent] = useState("");
   const [media, setMedia] = useState(null); // { url, type }
   const [uploading, setUploading] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [err, setErr] = useState("");
   const left = 500 - content.length;
 
   const pick = () => fileRef.current?.click();
@@ -90,6 +95,7 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
     const f = e.target.files?.[0];
     if (!f) return;
     setUploading(true);
+    setErr("");
     try {
       const fd = new FormData();
       fd.append("file", f);
@@ -97,20 +103,30 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error || "upload failed");
       setMedia({ url: data.url, type: data.type });
-    } catch (err) { alert(`Upload failed: ${err.message}\n\nFallback: paste an image URL.`); const u = prompt("Image/video URL"); if (u) setMedia({ url: u, type: u.match(/\.(mp4|webm|mov)$/i) ? "VIDEO" : "IMAGE" }); }
+    } catch (err2) { setErr(`Upload failed: ${err2.message}`); }
     finally { setUploading(false); e.target.value = ""; }
+  };
+
+  const insertEmoji = (emo) => {
+    const ta = taRef.current;
+    const next = (content + emo).slice(0, 500);
+    setContent(next);
+    setEmojiOpen(false);
+    setTimeout(() => ta?.focus(), 0);
   };
 
   const submit = async () => {
     if (!content.trim() || posting || !wallet) return;
     setPosting(true);
+    setErr("");
     try {
       const body = { content };
       if (media) { body.mediaUrls = [media.url]; body.mediaType = media.type; }
       const r = await api("/api/posts", { method: "POST", wallet, body });
       onPosted?.(r.post);
       setContent(""); setMedia(null);
-    } catch (e) { alert(e.message); } finally { setPosting(false); }
+    } catch (e) { setErr(e.message.includes("500") || /internal/i.test(e.message) ? "Server error — the backend database may be offline. Please retry in a moment." : e.message); }
+    finally { setPosting(false); }
   };
 
   return (
@@ -119,6 +135,7 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
         <Avatar user={{ username: wallet?.[0] || "I" }} size={44} />
         <div style={{ flex: 1 }}>
           <textarea
+            ref={taRef}
             value={content}
             onChange={e => setContent(e.target.value.slice(0, 500))}
             placeholder={placeholder}
@@ -138,15 +155,29 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
               }}><X size={16} /></button>
             </div>
           )}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}`, position: "relative" }}>
             <div style={{ display: "flex", gap: 4 }}>
               <IconBtn onClick={pick} disabled={uploading} t={t}><ImageIcon size={18} color={t.accent} /></IconBtn>
-              <IconBtn t={t}><BarChart3 size={18} color={t.accent} /></IconBtn>
-              <IconBtn t={t}><Smile size={18} color={t.accent} /></IconBtn>
-              <IconBtn t={t}><Calendar size={18} color={t.accent} /></IconBtn>
-              <IconBtn t={t}><MapPin size={18} color={t.accent} /></IconBtn>
+              <IconBtn onClick={() => setEmojiOpen(v => !v)} t={t}><Smile size={18} color={t.accent} /></IconBtn>
               <input ref={fileRef} type="file" accept="image/*,video/*" onChange={onFile} style={{ display: "none" }} />
             </div>
+            {emojiOpen && (
+              <div style={{ position: "absolute", top: 44, left: 0, zIndex: 10, background: t.bgCard,
+                border: `1px solid ${t.border}`, borderRadius: 12, padding: 8,
+                boxShadow: "0 10px 32px rgba(0,0,0,.5)", display: "grid",
+                gridTemplateColumns: "repeat(8, 28px)", gap: 4 }}>
+                {COMMON_EMOJI.map(e => (
+                  <button key={e} onClick={() => insertEmoji(e)} style={{
+                    width: 28, height: 28, border: "none", background: "transparent",
+                    fontSize: 18, cursor: "pointer", borderRadius: 6,
+                  }}
+                    onMouseEnter={ev => ev.currentTarget.style.background = t.bgSurface}
+                    onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 12, color: left < 50 ? t.amber : t.textDim }}>{left}</span>
               <button disabled={!content.trim() || posting || !wallet} onClick={submit} style={{
@@ -156,6 +187,9 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
               }}>{posting ? "Posting…" : uploading ? "Uploading…" : "Post"}</button>
             </div>
           </div>
+          {err && (
+            <p style={{ color: t.red || "#ef4444", fontSize: 12, marginTop: 8 }}>{err}</p>
+          )}
           {!wallet && (
             <p style={{ color: t.textDim, fontSize: 12, marginTop: 8 }}>Connect a wallet to post.</p>
           )}
@@ -985,6 +1019,7 @@ export default function IronFeedPage({ openWallet }) {
   const [dmPeer, setDmPeer] = useState(null);
   const [openNotifs, setOpenNotifs] = useState(false);
   const [boostPost, setBoostPost] = useState(null);
+  const [railOpen, setRailOpen] = useState(true);
 
   // Deep-link support: #/Feed?profile=alice.near  or  #/Feed?invite=bob.near
   useEffect(() => {
@@ -1024,13 +1059,34 @@ export default function IronFeedPage({ openWallet }) {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 340px", gap: 0, maxWidth: 1100, margin: "0 auto" }}>
+    <div className={`ix-feed-wrap ${railOpen ? "rail-on" : "rail-off"}`} style={{ maxWidth: 1100, margin: "0 auto" }}>
       <style>{`
+        .ix-feed-wrap { display: grid; gap: 0; }
+        .ix-feed-wrap.rail-on  { grid-template-columns: minmax(0,1fr) 340px; }
+        .ix-feed-wrap.rail-off { grid-template-columns: minmax(0,1fr); }
         .ix-feed-col { border-left: 1px solid ${t.border}; border-right: 1px solid ${t.border}; min-height: 100vh; }
         .ix-feed-header { position: sticky; top: 0; z-index: 5; background: ${t.bg}cc; backdrop-filter: blur(8px); border-bottom: 1px solid ${t.border}; }
         .ix-right-col { padding: 8px 16px 40px; }
-        @media (max-width: 960px) { .ix-right-col { display: none; } }
+        .ix-rail-toggle {
+          position: fixed; top: 12px; right: 12px; z-index: 20;
+          width: 40px; height: 40px; border-radius: 50%;
+          background: ${t.bgCard}; border: 1px solid ${t.border};
+          display: inline-flex; align-items: center; justify-content: center;
+          cursor: pointer; color: ${t.text};
+        }
+        @media (max-width: 960px) {
+          .ix-feed-wrap.rail-on, .ix-feed-wrap.rail-off { grid-template-columns: 1fr; }
+          .ix-right-col { display: none; }
+        }
+        @media (max-width: 640px) {
+          .ix-feed-col { border-left: none; border-right: none; }
+          .ix-feed-wrap { margin: 0; }
+        }
       `}</style>
+      <button className="ix-rail-toggle" aria-label={railOpen ? "Hide sidebar" : "Show sidebar"}
+        onClick={() => setRailOpen(v => !v)} title={railOpen ? "Hide right sidebar" : "Show right sidebar"}>
+        {railOpen ? <X size={18} /> : <Sparkles size={18} color={t.accent} />}
+      </button>
 
       {/* Center column */}
       <section className="ix-feed-col">
@@ -1076,6 +1132,7 @@ export default function IronFeedPage({ openWallet }) {
       </section>
 
       {/* Right rail */}
+      {railOpen && (
       <aside className="ix-right-col">
         <RightRail
           wallet={wallet}
@@ -1098,6 +1155,7 @@ export default function IronFeedPage({ openWallet }) {
           </button>
         </div>
       </aside>
+      )}
 
       {openComments && <CommentsModal post={openComments} wallet={wallet} openWallet={openWallet} onClose={() => setOpenComments(null)} />}
       {openProfile && <ProfileModal wallet={openProfile} viewerWallet={wallet} viewerSelector={selector} openWallet={openWallet}

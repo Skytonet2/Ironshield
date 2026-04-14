@@ -24,14 +24,15 @@ const AgentPage      = lazy(() => import("@/components/AgentPage"));
 
 const MASCOT_IMG = "/mascot.png";
 
-/* Primary nav = what lives in the X-style left rail */
+/* Primary nav = what lives in the X-style left rail.
+ * mobileTop=true → shown in the bottom bar on phones. Others are desktop-only. */
 const PRIMARY = [
-  { key: "Home",        label: "Home",       Icon: HomeIcon },
-  { key: "Feed",        label: "IronFeed",   Icon: Feather },
-  { key: "Alpha",       label: "Alpha",      Icon: Sparkles },
+  { key: "Home",        label: "Home",       Icon: HomeIcon,  mobileTop: true },
+  { key: "Feed",        label: "IronFeed",   Icon: Feather,   mobileTop: true },
+  { key: "Alpha",       label: "Alpha",      Icon: Sparkles,  mobileTop: true },
   { key: "Staking",     label: "Staking",    Icon: Coins },
-  { key: "Earn",        label: "Earn",       Icon: Rocket },
-  { key: "Governance",  label: "Governance", Icon: Vote },
+  { key: "Earn",        label: "Earn",       Icon: Rocket,    mobileTop: true },
+  { key: "Governance",  label: "Governance", Icon: Vote,      mobileTop: true },
   { key: "Launch",      label: "Launch",     Icon: Zap },
   { key: "Agent",       label: "Agent",      Icon: Bot },
   { key: "Ecosystem",   label: "Ecosystem",  Icon: Network },
@@ -124,11 +125,12 @@ export default function App() {
         }
         @media (max-width: 640px) {
           .ix-shell { grid-template-columns: 1fr; }
-          .ix-sidebar { position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%; height: 56px; flex-direction: row; justify-content: space-around; border-right: none; border-top: 1px solid ${t.border}; padding: 6px 10px; align-items: center; z-index: 100; }
-          .ix-sidebar .ix-brand, .ix-sidebar .ix-secondary, .ix-sidebar .ix-post-cta { display: none; }
-          .ix-nav-btn { padding: 8px; }
-          .ix-wallet-row { margin: 0; }
-          .ix-main-wrap { padding-bottom: 60px; }
+          .ix-sidebar { position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%; height: 56px; flex-direction: row; justify-content: space-around; border-right: none; border-top: 1px solid ${t.border}; padding: 6px 6px; align-items: center; z-index: 100; overflow-x: auto; }
+          .ix-sidebar nav { flex-direction: row; gap: 0; flex: 1; justify-content: space-around; }
+          .ix-sidebar .ix-brand, .ix-sidebar .ix-post-cta, .ix-sidebar .ix-wallet-row { display: none; }
+          .ix-nav-btn { padding: 8px; flex: 0 0 auto; }
+          .ix-nav-btn.mobile-hide { display: none; }
+          .ix-main-wrap { padding-bottom: 70px; }
         }
       `}</style>
 
@@ -154,8 +156,8 @@ export default function App() {
           </div>
 
           <nav style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
-            {PRIMARY.map(({ key, label, Icon }) => (
-              <button key={key} onClick={() => setPage(key)} className={`ix-nav-btn ${page === key ? "active" : ""}`}>
+            {PRIMARY.map(({ key, label, Icon, mobileTop }) => (
+              <button key={key} onClick={() => setPage(key)} className={`ix-nav-btn ${page === key ? "active" : ""} ${mobileTop ? "" : "mobile-hide"}`}>
                 <Icon size={24} color={page === key ? t.accent : t.text} strokeWidth={page === key ? 2.5 : 2} />
                 <span className="ix-nav-label" style={{ color: page === key ? t.white : t.text }}>{label}</span>
               </button>

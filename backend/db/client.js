@@ -1,8 +1,12 @@
 // backend/db/client.js — PostgreSQL connection pool
 const { Pool } = require("pg");
 
+const connectionString = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/ironshield";
+// Render/Supabase/Heroku managed Postgres require SSL. Only skip for localhost.
+const isLocal = /@(localhost|127\.0\.0\.1)/.test(connectionString);
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/ironshield",
+  connectionString,
+  ssl: isLocal ? false : { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
