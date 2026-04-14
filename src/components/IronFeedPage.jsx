@@ -125,7 +125,16 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
       const r = await api("/api/posts", { method: "POST", wallet, body });
       onPosted?.(r.post);
       setContent(""); setMedia(null);
-    } catch (e) { setErr(e.message.includes("500") || /internal/i.test(e.message) ? "Server error — the backend database may be offline. Please retry in a moment." : e.message); }
+    } catch (e) {
+      const m = e.message || "";
+      if (/database|DATABASE_URL|dbOffline/i.test(m)) {
+        setErr("Backend database isn't configured yet — posts can't be saved. (Admin: add DATABASE_URL on Render.)");
+      } else if (/500|internal/i.test(m)) {
+        setErr("Server error — backend may be restarting. Retry in a moment.");
+      } else {
+        setErr(m);
+      }
+    }
     finally { setPosting(false); }
   };
 

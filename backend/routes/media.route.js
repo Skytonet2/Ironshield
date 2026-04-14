@@ -1,22 +1,13 @@
 // backend/routes/media.route.js
-// Accepts a file upload from the browser and forwards it to Cloudinary.
-// No SDK required — uses the unsigned REST API.
+// Accepts a file upload from the browser and forwards it to catbox.moe — a
+// free, no-account, anonymous image/video host. No Cloudinary required.
+// Fallback: if catbox fails and the file is < 512KB, returns a base64 data URL.
 const express = require("express");
 const router = express.Router();
-const crypto = require("crypto");
 
-// We use the built-in multipart parser via busboy (bundled with express 4? no —
-// fallback to a tiny raw parser using `Buffer.concat` on req stream).
-// For reliability, read the raw body ourselves.
 const Busboy = (() => { try { return require("busboy"); } catch { return null; } })();
 
 router.post("/upload", (req, res) => {
-  const cloud  = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const secret = process.env.CLOUDINARY_API_SECRET;
-  if (!cloud || !apiKey || !secret) {
-    return res.status(503).json({ error: "Cloudinary not configured" });
-  }
   if (!Busboy) {
     return res.status(503).json({ error: "busboy module missing — run `npm i busboy`" });
   }
@@ -31,47 +22,51 @@ router.post("/upload", (req, res) => {
     stream.on("data", c => chunks.push(c));
     stream.on("end", () => { fileBuf = Buffer.concat(chunks); });
   });
+
   bb.on("close", async () => {
     if (!fileBuf) return res.status(400).json({ error: "no file" });
 
-    const timestamp = Math.floor(Date.now() / 1000);
-    const folder = "ironfeed";
-    const toSign = `folder=${folder}&timestamp=${timestamp}${secret}`;
-    const signature = crypto.createHash("sha1").update(toSign).digest("hex");
-
-    // Build multipart body for Cloudinary
+    const crypto = require("crypto");
     const boundary = "----ironfeed" + crypto.randomBytes(12).toString("hex");
     const nl = "\r\n";
+
+    // catbox.moe multipart form: reqtype=fileupload + fileToUpload
     const parts = [];
-    const add = (name, val) => {
-      parts.push(Buffer.from(`--${boundary}${nl}Content-Disposition: form-data; name="${name}"${nl}${nl}${val}${nl}`));
-    };
-    add("api_key", apiKey);
-    add("timestamp", timestamp);
-    add("signature", signature);
-    add("folder", folder);
+    parts.push(Buffer.from(`--${boundary}${nl}Content-Disposition: form-data; name="reqtype"${nl}${nl}fileupload${nl}`));
     parts.push(Buffer.from(
-      `--${boundary}${nl}Content-Disposition: form-data; name="file"; filename="${filename}"${nl}` +
+      `--${boundary}${nl}Content-Disposition: form-data; name="fileToUpload"; filename="${filename}"${nl}` +
       `Content-Type: ${mimeType}${nl}${nl}`));
     parts.push(fileBuf);
     parts.push(Buffer.from(`${nl}--${boundary}--${nl}`));
     const body = Buffer.concat(parts);
 
+    const type = mimeType.startsWith("video") ? "VIDEO"
+               : mimeType.startsWith("image/gif") ? "GIF"
+               : "IMAGE";
+
     try {
-      const r = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/auto/upload`, {
+      const r = await fetch("https://catbox.moe/user/api.php", {
         method: "POST",
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         body,
       });
-      const data = await r.json();
-      if (!r.ok) return res.status(r.status).json({ error: data?.error?.message || "cloudinary error" });
-      res.json({
-        url: data.secure_url,
-        type: (data.resource_type === "video") ? "VIDEO" : "IMAGE",
-        bytes: data.bytes,
-      });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+      const text = (await r.text()).trim();
+      if (!r.ok || !/^https?:\/\//i.test(text)) {
+        throw new Error(text.slice(0, 200) || `catbox status ${r.status}`);
+      }
+      return res.json({ url: text, type, bytes: fileBuf.length });
+    } catch (e) {
+      // Fallback: inline as data URL for small images
+      if (fileBuf.length <= 512 * 1024 && mimeType.startsWith("image/")) {
+        return res.json({
+          url: `data:${mimeType};base64,${fileBuf.toString("base64")}`,
+          type, bytes: fileBuf.length, fallback: "inline",
+        });
+      }
+      return res.status(502).json({ error: `upload failed: ${e.message}` });
+    }
   });
+
   req.pipe(bb);
 });
 

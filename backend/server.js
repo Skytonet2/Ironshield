@@ -49,10 +49,22 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Error handler
+// Error handler — surface DB-offline state clearly instead of a generic 500
 app.use((err, req, res, next) => {
   console.error("IronClaw API error:", err);
-  res.status(500).json({ success: false, error: err.message || "Internal server error" });
+  const msg = String(err?.message || "");
+  const code = err?.code || "";
+  const dbDown = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ENETUNREACH/i.test(msg)
+    || /relation .* does not exist/i.test(msg)
+    || code === "ECONNREFUSED" || code === "57P03";
+  if (dbDown) {
+    return res.status(503).json({
+      success: false,
+      error: "Backend database is not configured. Ask the admin to set DATABASE_URL on Render.",
+      dbOffline: true,
+    });
+  }
+  res.status(500).json({ success: false, error: msg || "Internal server error" });
 });
 
 const PORT = process.env.BACKEND_PORT || 3001;
