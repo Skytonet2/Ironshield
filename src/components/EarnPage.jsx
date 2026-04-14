@@ -37,26 +37,8 @@ const DAILY_RITUALS = [
     category: "Daily",
     tip: "Share a highlight from your day in the Telegram.",
   },
-  {
-    id: "ritual-checkin",
-    emoji: "✅",
-    title: "Daily Check-In",
-    description: "Visit the site and click claim. Shows you're an active community member.",
-    points: "25–75",
-    difficulty: "Easy",
-    category: "Daily",
-    tip: "Consecutive days multiply your streak bonus.",
-  },
-  {
-    id: "ritual-react",
-    emoji: "⚡",
-    title: "Quick Reactions",
-    description: "Upvote or comment on Alpha feed items. Engage with fresh content.",
-    points: "10–50",
-    difficulty: "Easy",
-    category: "Daily",
-    tip: "Quality comments earn more than plain upvotes.",
-  },
+  // Check-in is on the mascot (bottom-right corner, tap twice to claim)
+  // Quick Reactions is a claim button that verifies Alpha feed upvotes
 ];
 
 const CONTENT_MISSIONS = [
@@ -536,7 +518,7 @@ export default function EarnPage({ openWallet }) {
   const [submitted, setSubmitted]     = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [weekProgress, setWeekProgress] = useState({ pct: 0, countdown: "…" });
-  const [currentWeek, setCurrentWeek]   = useState(1);
+  const [currentWeek, setCurrentWeek]   = useState(() => getCurrentWeek());
 
   // Derive live content_engine tasks from the proposals cache
   const agentTasks = useMemo(() => {

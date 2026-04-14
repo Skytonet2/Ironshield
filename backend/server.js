@@ -21,6 +21,17 @@ app.use("/api/contests",    require("./routes/contests.route"));
 app.use("/api/leaderboard", require("./routes/leaderboard.route"));
 app.use("/api/governance",  require("./routes/governance.route"));
 
+// Routes — IronFeed (Twitter-style social feed)
+app.use("/api/feed",          require("./routes/feed.route"));
+app.use("/api/posts",         require("./routes/posts.route"));
+app.use("/api/social",        require("./routes/social.route"));
+app.use("/api/profile",       require("./routes/profile.route"));
+app.use("/api/dm",            require("./routes/dm.route"));
+app.use("/api/feed-org",      require("./routes/feedOrg.route"));
+app.use("/api/feed-agent",    require("./routes/feedAgent.route"));
+app.use("/api/ads",           require("./routes/ads.route"));
+app.use("/api/notifications", require("./routes/notifications.route"));
+
 // Root
 app.get("/", (req, res) => {
   res.json({ service: "IronClaw API", version: "1.0.0", docs: "/health" });
@@ -52,6 +63,7 @@ async function start() {
     console.warn("[Server] DB migration failed — running without database:", err.message);
   }
   app.listen(PORT, () => console.log(`IronClaw backend running on port ${PORT}`));
+  try { require("./services/batchWorker").start(); } catch (e) { console.warn("[batch] not started:", e.message); }
 }
 
 start();

@@ -14,6 +14,7 @@ import MascotSystem   from "@/components/MascotSystem";
 
 const StakingPage    = lazy(() => import("@/components/StakingPage"));
 const AlphaFeedPage  = lazy(() => import("@/components/AlphaFeedPage"));
+const IronFeedPage   = lazy(() => import("@/components/IronFeedPage"));
 const EarnPage       = lazy(() => import("@/components/EarnPage"));
 const EcosystemPage  = lazy(() => import("@/components/EcosystemPage"));
 const GovernancePage = lazy(() => import("@/components/GovernancePage"));
@@ -23,7 +24,7 @@ const AgentPage      = lazy(() => import("@/components/AgentPage"));
 
 const MASCOT_IMG = "/mascot.png";
 
-const pages = ["Home", "Staking", "Alpha", "Earn", "Governance", "Agent", "Launch", "Ecosystem", "Docs"];
+const pages = ["Home", "Staking", "Feed", "Alpha", "Earn", "Governance", "Agent", "Launch", "Ecosystem", "Docs"];
 
 /* ── Hash-based routing (IPFS-compatible) ──────────────────────── */
 function getPageFromHash() {
@@ -84,6 +85,7 @@ export default function App() {
       case "Home":       return <HomePage setPage={setPage} openWallet={openWallet} />;
       case "Staking":    inner = <StakingPage openWallet={openWallet} />; break;
       case "Alpha":      inner = <AlphaFeedPage openWallet={openWallet} />; break;
+      case "Feed":       inner = <IronFeedPage openWallet={openWallet} />; break;
       case "Earn":       inner = <EarnPage openWallet={openWallet} />; break;
       case "Governance": inner = <GovernancePage openWallet={openWallet} />; break;
       case "Agent":      inner = <AgentPage openWallet={openWallet} />; break;

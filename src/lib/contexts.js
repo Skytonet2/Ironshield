@@ -84,16 +84,27 @@ export function WalletProvider({ children }) {
         { setupWalletSelector },
         { setupModal: _setupModal },
         { setupMeteorWallet },
+        { setupHereWallet },
+        { setupHotWallet },
+        { setupIntearWallet },
       ] = await Promise.all([
         import("@near-wallet-selector/core"),
         import("@near-wallet-selector/modal-ui"),
         import("@near-wallet-selector/meteor-wallet"),
+        import("@near-wallet-selector/here-wallet"),
+        import("@near-wallet-selector/hot-wallet"),
+        import("@near-wallet-selector/intear-wallet"),
         import("@near-wallet-selector/modal-ui/styles.css"),
       ]);
 
       const _selector = await setupWalletSelector({
         network: "mainnet",
-        modules: [setupMeteorWallet()],
+        modules: [
+          setupMeteorWallet(),
+          setupHereWallet(),
+          setupHotWallet(),
+          setupIntearWallet(),
+        ],
       });
 
       const _modal = _setupModal(_selector, { contractId: "ironshield.near" });

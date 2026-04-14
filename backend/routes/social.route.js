@@ -1,0 +1,126 @@
+// backend/routes/social.route.js
+const express = require("express");
+const router = express.Router();
+const db = require("../db/client");
+const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { enqueue } = require("../services/batchWorker");
+
+async function notify(userId, type, actorId, postId) {
+  if (!userId || userId === actorId) return;
+  await db.query(
+    "INSERT INTO feed_notifications (user_id, type, actor_id, post_id) VALUES ($1,$2,$3,$4)",
+    [userId, type, actorId, postId]);
+}
+
+// POST /api/social/like  body: { postId }
+router.post("/like", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const { postId } = req.body || {};
+    const ex = await db.query("SELECT id FROM feed_likes WHERE user_id=$1 AND post_id=$2", [user.id, postId]);
+    let liked;
+    if (ex.rows.length) {
+      await db.query("DELETE FROM feed_likes WHERE id=$1", [ex.rows[0].id]);
+      liked = false;
+    } else {
+      await db.query("INSERT INTO feed_likes (user_id, post_id) VALUES ($1,$2)", [user.id, postId]);
+      liked = true;
+      const author = await db.query("SELECT author_id FROM feed_posts WHERE id=$1", [postId]);
+      if (author.rows[0]) notify(author.rows[0].author_id, "like", user.id, postId);
+    }
+    await enqueue(user.id, "like", { postId, liked });
+    const c = await db.query("SELECT COUNT(*)::int AS c FROM feed_likes WHERE post_id=$1", [postId]);
+    res.json({ liked, count: c.rows[0].c });
+  } catch (e) { next(e); }
+});
+
+// POST /api/social/repost
+router.post("/repost", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const { postId } = req.body || {};
+    const ex = await db.query("SELECT id FROM feed_reposts WHERE user_id=$1 AND post_id=$2", [user.id, postId]);
+    let reposted;
+    if (ex.rows.length) {
+      await db.query("DELETE FROM feed_reposts WHERE id=$1", [ex.rows[0].id]);
+      reposted = false;
+    } else {
+      await db.query("INSERT INTO feed_reposts (user_id, post_id) VALUES ($1,$2)", [user.id, postId]);
+      reposted = true;
+      const author = await db.query("SELECT author_id FROM feed_posts WHERE id=$1", [postId]);
+      if (author.rows[0]) notify(author.rows[0].author_id, "repost", user.id, postId);
+    }
+    await enqueue(user.id, "repost", { postId, reposted });
+    const c = await db.query("SELECT COUNT(*)::int AS c FROM feed_reposts WHERE post_id=$1", [postId]);
+    res.json({ reposted, count: c.rows[0].c });
+  } catch (e) { next(e); }
+});
+
+// POST /api/social/comment  body: { postId, content }
+router.post("/comment", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const { postId, content } = req.body || {};
+    if (!content || content.length > 500) return res.status(400).json({ error: "content required, max 500" });
+    const r = await db.query(
+      "INSERT INTO feed_comments (author_id, post_id, content) VALUES ($1,$2,$3) RETURNING *",
+      [user.id, postId, content]);
+    const author = await db.query("SELECT author_id FROM feed_posts WHERE id=$1", [postId]);
+    if (author.rows[0]) notify(author.rows[0].author_id, "comment", user.id, postId);
+    await enqueue(user.id, "comment", { postId, commentId: r.rows[0].id });
+    res.json({ comment: r.rows[0] });
+  } catch (e) { next(e); }
+});
+
+router.get("/comments/:postId", async (req, res, next) => {
+  try {
+    const r = await db.query(
+      `SELECT c.*, u.username, u.display_name, u.pfp_url, u.account_type
+         FROM feed_comments c JOIN feed_users u ON u.id = c.author_id
+        WHERE c.post_id=$1 ORDER BY c.created_at DESC LIMIT 100`, [req.params.postId]);
+    res.json({ comments: r.rows });
+  } catch (e) { next(e); }
+});
+
+// POST /api/social/follow  body: { targetWallet }
+router.post("/follow", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const target = await getOrCreateUser(req.body?.targetWallet);
+    if (!target || target.id === user.id) return res.status(400).json({ error: "invalid target" });
+    const ex = await db.query("SELECT id FROM feed_follows WHERE follower_id=$1 AND following_id=$2", [user.id, target.id]);
+    let following;
+    if (ex.rows.length) {
+      await db.query("DELETE FROM feed_follows WHERE id=$1", [ex.rows[0].id]);
+      following = false;
+    } else {
+      await db.query("INSERT INTO feed_follows (follower_id, following_id) VALUES ($1,$2)", [user.id, target.id]);
+      following = true;
+      notify(target.id, "follow", user.id, null);
+    }
+    await enqueue(user.id, "follow", { targetId: target.id, following });
+    res.json({ following });
+  } catch (e) { next(e); }
+});
+
+router.get("/followers/:userId", async (req, res, next) => {
+  try {
+    const r = await db.query(
+      `SELECT u.id, u.wallet_address, u.username, u.display_name, u.pfp_url
+         FROM feed_follows f JOIN feed_users u ON u.id = f.follower_id
+        WHERE f.following_id=$1 ORDER BY f.created_at DESC LIMIT 200`, [req.params.userId]);
+    res.json({ users: r.rows });
+  } catch (e) { next(e); }
+});
+
+router.get("/following/:userId", async (req, res, next) => {
+  try {
+    const r = await db.query(
+      `SELECT u.id, u.wallet_address, u.username, u.display_name, u.pfp_url
+         FROM feed_follows f JOIN feed_users u ON u.id = f.following_id
+        WHERE f.follower_id=$1 ORDER BY f.created_at DESC LIMIT 200`, [req.params.userId]);
+    res.json({ users: r.rows });
+  } catch (e) { next(e); }
+});
+
+module.exports = router;
