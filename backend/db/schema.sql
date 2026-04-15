@@ -321,3 +321,113 @@ CREATE INDEX IF NOT EXISTS idx_feed_notifs_user ON feed_notifications(user_id, c
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS dm_pubkey TEXT;
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_post_tx TEXT;
 ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS onchain_tx TEXT;
+
+-- ============================================================
+-- Monetization: tips, gates, rooms, creator revenue
+-- ============================================================
+
+-- Tip rows. One row per tip sent. Tips can be in any NEAR-native or NEP-141
+-- token; each row records the token contract, raw base-unit amount, and
+-- the USD value frozen at tip time (used for aggregate glow-tier math and
+-- creator revenue scoring). `anonymous=true` hides tipper_id from public
+-- responses — the row still exists for 24h dedupe + moderation.
+CREATE TABLE IF NOT EXISTS feed_tips (
+  id                BIGSERIAL PRIMARY KEY,
+  post_id           INTEGER REFERENCES feed_posts(id) ON DELETE CASCADE,
+  tipper_id         INTEGER REFERENCES feed_users(id) ON DELETE SET NULL,
+  author_id         INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  token_contract    TEXT NOT NULL,           -- 'near' for native, else FT contract id
+  token_symbol      TEXT NOT NULL,
+  token_decimals    INTEGER NOT NULL,
+  amount_base       NUMERIC(40,0) NOT NULL,  -- raw base units as string-safe numeric
+  amount_human      NUMERIC(40,18) NOT NULL, -- human-readable for quick reads
+  amount_usd        NUMERIC(20,6)  NOT NULL, -- USD value frozen at tip time
+  anonymous         BOOLEAN NOT NULL DEFAULT FALSE,
+  waived_treasury   BOOLEAN NOT NULL DEFAULT FALSE, -- new-wallet 10% split waiver
+  tx_hash           TEXT,
+  created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_feed_tips_post    ON feed_tips(post_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feed_tips_author  ON feed_tips(author_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feed_tips_tipper  ON feed_tips(tipper_id, created_at DESC);
+-- 24h dedupe check: "same tipper tipped this post today"
+CREATE INDEX IF NOT EXISTS idx_feed_tips_dedupe  ON feed_tips(post_id, tipper_id, created_at);
+
+-- Gate metadata stored inline on feed_posts. Null = ungated.
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS gate_type         TEXT;          -- 'balance' | 'tier' | 'allowlist'
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS gate_min_balance  NUMERIC(40,18);
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS gate_min_tier     TEXT;          -- 'Bronze' | 'Silver' | 'Gold' | 'Legendary'
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS gate_allowlist    JSONB;         -- array of wallet addresses
+
+-- Flag a post as a validated insight (surface in creator scoring).
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS validated         BOOLEAN DEFAULT FALSE;
+
+-- Cached staking amount for revenue-share multiplier; refreshed by stakingSync job.
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS staked_amount     NUMERIC(40,18) DEFAULT 0;
+
+-- Long-form articles. kind = 'post' (default) or 'article'. Articles get a
+-- title and lift the 500-char body limit (handled in posts.route.js).
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS kind  TEXT DEFAULT 'post';
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS title TEXT;
+
+-- ============================================================
+-- Live Alpha Rooms (voice + text)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS feed_rooms (
+  id                   SERIAL PRIMARY KEY,
+  host_id              INTEGER REFERENCES feed_users(id) ON DELETE SET NULL,
+  title                TEXT NOT NULL,
+  topic                TEXT DEFAULT '',
+  access_type          TEXT NOT NULL DEFAULT 'open', -- 'open' | 'token_gated' | 'invite_only'
+  -- Host's stake. Any token; IRONCLAW when launched, else NEAR/USDC/etc.
+  stake_token_contract TEXT NOT NULL DEFAULT 'near',
+  stake_token_symbol   TEXT NOT NULL DEFAULT 'NEAR',
+  stake_token_decimals INTEGER NOT NULL DEFAULT 24,
+  stake_amount_base    NUMERIC(40,0) NOT NULL DEFAULT 0,
+  stake_amount_human   NUMERIC(40,18) NOT NULL DEFAULT 0,
+  stake_usd_frozen     NUMERIC(20,6)  NOT NULL DEFAULT 0,
+  stake_tx_hash        TEXT,
+  refund_tx_hash       TEXT,
+  duration_mins        INTEGER NOT NULL DEFAULT 60,
+  voice_enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Gating (token_gated / invite_only)
+  access_min_balance   NUMERIC(40,18),
+  access_min_tier      TEXT,
+  access_allowlist     JSONB,
+  -- LiveKit
+  livekit_room_name    TEXT UNIQUE NOT NULL,
+  -- Lifecycle
+  started_at           TIMESTAMPTZ DEFAULT NOW(),
+  ends_at              TIMESTAMPTZ NOT NULL,
+  closed_at            TIMESTAMPTZ,
+  status               TEXT NOT NULL DEFAULT 'live', -- 'live' | 'closed'
+  flagged_violations   INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_feed_rooms_status ON feed_rooms(status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feed_rooms_host   ON feed_rooms(host_id);
+
+CREATE TABLE IF NOT EXISTS feed_room_participants (
+  id               BIGSERIAL PRIMARY KEY,
+  room_id          INTEGER REFERENCES feed_rooms(id) ON DELETE CASCADE,
+  user_id          INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  role             TEXT NOT NULL DEFAULT 'listener', -- 'host' | 'speaker' | 'listener'
+  bot_probability  INTEGER NOT NULL DEFAULT 0,       -- 0..100, seeded from wallet
+  hand_raised      BOOLEAN NOT NULL DEFAULT FALSE,
+  joined_at        TIMESTAMPTZ DEFAULT NOW(),
+  left_at          TIMESTAMPTZ,
+  UNIQUE(room_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_feed_rp_room ON feed_room_participants(room_id, left_at);
+
+CREATE TABLE IF NOT EXISTS feed_room_messages (
+  id              BIGSERIAL PRIMARY KEY,
+  room_id         INTEGER REFERENCES feed_rooms(id) ON DELETE CASCADE,
+  user_id         INTEGER REFERENCES feed_users(id) ON DELETE SET NULL,
+  content         TEXT NOT NULL,
+  is_alpha_call   BOOLEAN NOT NULL DEFAULT FALSE,
+  alpha_upvotes   INTEGER NOT NULL DEFAULT 0,
+  alpha_downvotes INTEGER NOT NULL DEFAULT 0,
+  pinned          BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_feed_rm_room ON feed_room_messages(room_id, created_at DESC);

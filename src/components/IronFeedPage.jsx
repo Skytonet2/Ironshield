@@ -5,12 +5,19 @@ import {
   Search, Bell, User, MessageSquare, Sparkles, Star, Building2, Bot, Shield,
   Trash2, MoreHorizontal, Loader2, UserPlus, UserMinus, UserCheck, Link as LinkIcon,
   Smile, MapPin, Calendar, BarChart3, Home as HomeIcon, ArrowLeft,
+  Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
 import { payNear, getAvailableNear, PLATFORM_TREASURY } from "@/lib/payments";
 import { postToNearSocial, NEAR_SOCIAL_CONTRACT } from "@/lib/nearSocial";
 import { getOrCreateKeypair, exportPublicKey, encrypt as naclEncrypt, decrypt as naclDecrypt } from "@/lib/dmCrypto";
+import {
+  getTipTier, formatIronclawCompact, formatUsd, useIronclawPrice,
+  evaluateGate, useViewerSnapshot, IRONCLAW_SYMBOL,
+} from "@/lib/ironclaw";
+import { TipModal, TipHistoryDrawer } from "@/components/TipModal";
+import EarnDashboard from "@/components/EarnDashboard";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -89,7 +96,14 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
   const [posting, setPosting] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [err, setErr] = useState("");
-  const left = 500 - content.length;
+  // Gate state — null = ungated, else { type, minBalance?|minTier?|allowlist? }
+  const [gate, setGate] = useState(null);
+  const [gateOpen, setGateOpen] = useState(false);
+  // Composer mode — "post" (500 char) or "article" (long-form, requires title)
+  const [kind, setKind] = useState("post");
+  const [title, setTitle] = useState("");
+  const MAX = kind === "article" ? 50000 : 500;
+  const left = MAX - content.length;
 
   const pick = () => fileRef.current?.click();
 
@@ -119,34 +133,38 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
 
   const submit = async () => {
     if (!content.trim() || posting || !wallet) return;
+    if (kind === "article" && !title.trim()) { setErr("Article title required."); return; }
     setPosting(true);
     setErr("");
     try {
-      // Sign on-chain via NEAR Social — required, every post must have a real tx hash
-      if (!selector) { setErr("Wallet not ready yet. Please wait a second and retry."); setPosting(false); return; }
+      // Sign on-chain via NEAR Social — best effort. Signing failures fall
+      // through to off-chain post so users aren't blocked when their wallet
+      // can't function-call social.near (most common cause of "post stuck").
       let onchainTx = null;
-      try {
-        const r = await postToNearSocial({ selector, accountId: wallet, text: content, media });
-        onchainTx = r.txHash || null;
-      } catch (signErr) {
-        const sm = signErr?.message || String(signErr);
-        console.error("[IronFeed] sign failed:", signErr);
-        if (/reject|cancel|denied|user closed/i.test(sm)) {
-          setErr("Transaction rejected in wallet — post not published.");
-        } else if (/access key|NotEnoughAllowance|function[_-]?call/i.test(sm)) {
-          setErr("Your wallet access key can't call social.near. Reconnect the wallet and approve the full-access sign request.");
-        } else {
-          setErr(`Signing failed: ${sm}`);
+      if (selector) {
+        try {
+          const r = await postToNearSocial({ selector, accountId: wallet, text: content, media });
+          onchainTx = r.txHash || null;
+        } catch (signErr) {
+          const sm = signErr?.message || String(signErr);
+          console.warn("[IronFeed] sign failed (continuing off-chain):", sm);
+          if (/reject|cancel|denied|user closed/i.test(sm)) {
+            // Hard reject — don't proceed; the user actively cancelled.
+            setErr("Transaction rejected in wallet — post not published.");
+            setPosting(false); return;
+          }
+          // For any other error (access-key issues, network blips, etc.) we
+          // proceed off-chain so the post still lands.
         }
-        setPosting(false);
-        return;
       }
-      if (!onchainTx) { setErr("Transaction didn't return a hash. Retry or check your wallet."); setPosting(false); return; }
-      const body = { content, onchainTx };
+      const body = { content, kind };
+      if (onchainTx) body.onchainTx = onchainTx;
+      if (kind === "article") body.title = title.trim();
       if (media) { body.mediaUrls = [media.url]; body.mediaType = media.type; }
+      if (gate) body.gate = gate;
       const r = await api("/api/posts", { method: "POST", wallet, body });
       onPosted?.(r.post);
-      setContent(""); setMedia(null);
+      setContent(""); setMedia(null); setGate(null); setTitle(""); setKind("post");
     } catch (e) {
       const m = e.message || "";
       if (/database|DATABASE_URL|dbOffline/i.test(m)) {
@@ -165,14 +183,44 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
       <div style={{ display: "flex", gap: 12 }}>
         <Avatar user={{ username: wallet?.[0] || "I" }} size={44} />
         <div style={{ flex: 1 }}>
+          {/* Mode toggle: Post ↔ Article */}
+          <div style={{ display: "inline-flex", gap: 4, padding: 3, borderRadius: 999,
+            background: t.bgSurface, border: `1px solid ${t.border}`, marginBottom: 8 }}>
+            {[
+              { v: "post",    l: "Post",    icon: TypeIcon },
+              { v: "article", l: "Article", icon: FileText },
+            ].map(o => {
+              const Icon = o.icon;
+              const on = kind === o.v;
+              return (
+                <button key={o.v} onClick={() => setKind(o.v)} style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", border: "none",
+                  background: on ? t.accent : "transparent", color: on ? "#fff" : t.textMuted,
+                }}>
+                  <Icon size={12} /> {o.l}
+                </button>
+              );
+            })}
+          </div>
+          {kind === "article" && (
+            <input value={title} onChange={e => setTitle(e.target.value.slice(0, 200))}
+              placeholder="Article title"
+              style={{ width: "100%", background: "transparent", border: "none",
+                color: t.white, fontSize: 24, fontWeight: 800, outline: "none",
+                fontFamily: "inherit", padding: "4px 0", marginBottom: 4 }} />
+          )}
           <textarea
             ref={taRef}
             value={content}
-            onChange={e => setContent(e.target.value.slice(0, 500))}
-            placeholder={placeholder}
-            rows={2}
+            onChange={e => setContent(e.target.value.slice(0, MAX))}
+            placeholder={kind === "article" ? "Write your article… (Markdown-friendly)" : placeholder}
+            rows={kind === "article" ? 10 : 2}
             style={{ width: "100%", background: "transparent", border: "none", color: t.text,
-              fontSize: 19, outline: "none", resize: "none", fontFamily: "inherit", padding: "8px 0" }}
+              fontSize: kind === "article" ? 16 : 19, lineHeight: 1.55,
+              outline: "none", resize: "vertical", fontFamily: "inherit", padding: "8px 0",
+              minHeight: kind === "article" ? 220 : undefined }}
           />
           {media && (
             <div style={{ position: "relative", marginTop: 6, borderRadius: 14, overflow: "hidden", border: `1px solid ${t.border}` }}>
@@ -186,10 +234,19 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
               }}><X size={16} /></button>
             </div>
           )}
+          {gate && <GateChip t={t} gate={gate} onEdit={() => setGateOpen(true)} onClear={() => setGate(null)} />}
+          {gateOpen && (
+            <GatePicker t={t} initial={gate}
+              onClose={() => setGateOpen(false)}
+              onSave={(g) => { setGate(g); setGateOpen(false); }} />
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}`, position: "relative" }}>
             <div style={{ display: "flex", gap: 4 }}>
               <IconBtn onClick={pick} disabled={uploading} t={t}><ImageIcon size={18} color={t.accent} /></IconBtn>
               <IconBtn onClick={() => setEmojiOpen(v => !v)} t={t}><Smile size={18} color={t.accent} /></IconBtn>
+              <IconBtn onClick={() => setGateOpen(true)} t={t}>
+                <Lock size={18} color={gate ? t.amber : t.accent} />
+              </IconBtn>
               <input ref={fileRef} type="file" accept="image/*,video/*" onChange={onFile} style={{ display: "none" }} />
             </div>
             {emojiOpen && (
@@ -244,8 +301,149 @@ function IconBtn({ children, onClick, disabled, t }) {
   );
 }
 
+/* ───────────────────── GateChip / GatePicker ───────────────────── */
+function gateLabel(gate) {
+  if (!gate) return "";
+  if (gate.type === "balance") return `Hold ${formatIronclawCompact(gate.minBalance)} ${IRONCLAW_SYMBOL}`;
+  if (gate.type === "tier")    return `${gate.minTier} tier+`;
+  if (gate.type === "allowlist") return `${gate.allowlist?.length || 0} wallet${gate.allowlist?.length === 1 ? "" : "s"} allowed`;
+  return "Gated";
+}
+
+function GateChip({ t, gate, onEdit, onClear }) {
+  return (
+    <div style={{
+      marginTop: 8, padding: "6px 10px", borderRadius: 999,
+      background: `${t.amber}14`, border: `1px solid ${t.amber}55`,
+      display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: t.amber, fontWeight: 700,
+    }}>
+      <Lock size={12} /> {gateLabel(gate)}
+      <button onClick={onEdit} style={{ background: "none", border: "none", color: t.amber, cursor: "pointer", fontSize: 11, textDecoration: "underline" }}>edit</button>
+      <button onClick={onClear} style={{ background: "none", border: "none", color: t.textMuted, cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}><X size={12} /></button>
+    </div>
+  );
+}
+
+function GatePicker({ t, initial, onClose, onSave }) {
+  const [type, setType]         = useState(initial?.type || "balance");
+  const [minBalance, setMinBal] = useState(initial?.minBalance ? String(initial.minBalance) : "");
+  const [minTier, setMinTier]   = useState(initial?.minTier || "Bronze");
+  const [allowText, setAllowTx] = useState(Array.isArray(initial?.allowlist) ? initial.allowlist.join("\n") : "");
+  const [err, setErr]           = useState("");
+
+  const save = () => {
+    setErr("");
+    if (type === "balance") {
+      const n = Number(minBalance);
+      if (!(n > 0)) { setErr("Enter a positive $IRONCLAW amount"); return; }
+      onSave({ type: "balance", minBalance: n });
+    } else if (type === "tier") {
+      onSave({ type: "tier", minTier });
+    } else {
+      const list = allowText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+      if (!list.length) { setErr("Add at least one wallet"); return; }
+      onSave({ type: "allowlist", allowlist: list });
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)",
+      zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        width: "100%", maxWidth: 480,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 18px", borderBottom: `1px solid ${t.border}` }}>
+          <h3 style={{ margin: 0, color: t.white, fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
+            <Lock size={16} color={t.amber} /> Gate this post
+          </h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: t.textMuted, cursor: "pointer" }}><X size={18} /></button>
+        </div>
+
+        <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 12, color: t.textMuted }}>
+            Only wallets that meet the criteria below can read this post. Everyone else sees a blurred preview with an unlock prompt.
+          </div>
+
+          {/* Type selector */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+            {[
+              { k: "balance",   label: "Min $IRONCLAW" },
+              { k: "tier",      label: "Staking tier" },
+              { k: "allowlist", label: "Allowlist" },
+            ].map(o => (
+              <button key={o.k} onClick={() => setType(o.k)} style={{
+                padding: "8px 6px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                background: type === o.k ? `${t.amber}22` : t.bgSurface,
+                color:      type === o.k ? t.amber       : t.text,
+                border: `1px solid ${type === o.k ? t.amber : t.border}`,
+              }}>{o.label}</button>
+            ))}
+          </div>
+
+          {type === "balance" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
+                Minimum {IRONCLAW_SYMBOL} held
+              </label>
+              <input type="number" min="0" step="any" placeholder="e.g. 5000"
+                value={minBalance} onChange={e => setMinBal(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", background: t.bgSurface,
+                  border: `1px solid ${t.border}`, color: t.text, borderRadius: 10,
+                  outline: "none", fontSize: 14, boxSizing: "border-box" }} />
+            </div>
+          )}
+
+          {type === "tier" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
+                Minimum staking tier
+              </label>
+              <select value={minTier} onChange={e => setMinTier(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", background: t.bgSurface,
+                  border: `1px solid ${t.border}`, color: t.text, borderRadius: 10,
+                  outline: "none", fontSize: 14, boxSizing: "border-box" }}>
+                {["Bronze", "Silver", "Gold", "Legendary"].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+          )}
+
+          {type === "allowlist" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: t.textMuted, marginBottom: 6 }}>
+                Allowed wallets (one per line, commas OK)
+              </label>
+              <textarea value={allowText} onChange={e => setAllowTx(e.target.value)} rows={5}
+                placeholder="alice.near&#10;bob.near"
+                style={{ width: "100%", padding: "10px 14px", background: t.bgSurface,
+                  border: `1px solid ${t.border}`, color: t.text, borderRadius: 10,
+                  outline: "none", fontSize: 13, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
+            </div>
+          )}
+
+          {err && <div style={{ padding: 10, borderRadius: 10, background: `${t.red}14`, color: t.red, fontSize: 12 }}>{err}</div>}
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={onClose} style={{
+              flex: 1, padding: "10px 14px", background: "transparent",
+              color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600,
+            }}>Cancel</button>
+            <button onClick={save} style={{
+              flex: 1, padding: "10px 14px", background: t.amber, color: "#000",
+              border: "none", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 800,
+            }}>Apply gate</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────── PostCard ───────────────────── */
-function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBoost, onOpenProfile, openWallet }) {
+function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBoost, onOpenProfile, openWallet, onTip, onOpenTipHistory }) {
   const t = useTheme();
   const [liked, setLiked] = useState(post.likedByMe);
   const [likes, setLikes] = useState(post.likes);
@@ -253,6 +451,15 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
   const [reposts, setReposts] = useState(post.reposts);
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef(null);
+
+  // Monetization layer: tip totals, glow tier (USD-denominated since tips
+  // can be paid in any wallet-held token), gate evaluation.
+  const snapshot    = useViewerSnapshot(viewerWallet);
+  const tipCount    = Number(post.tipCount || 0);
+  const tipTotalUsd = Number(post.tipTotalUsd || 0);
+  const tier        = getTipTier(tipTotalUsd);
+  const gateEval    = evaluateGate(post.gate, snapshot);
+  const locked      = !!post.gate && !gateEval.met;
 
   useEffect(() => {
     if (!viewerWallet || !ref.current) return;
@@ -297,16 +504,39 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
   };
   const isMine = viewerWallet && author.wallet_address === viewerWallet;
 
+  // Glow-tier styling: inset ring + outer shadow in the tier color.
+  const glowRing = tier
+    ? { boxShadow: `inset 0 0 0 1px ${tier.color}55, 0 0 18px ${tier.color}22` }
+    : {};
+
   return (
-    <article ref={ref} onClick={onOpenComments} style={{
+    <article ref={ref} onClick={locked ? undefined : onOpenComments} style={{
+      position: "relative",
       borderBottom: `1px solid ${t.border}`, padding: "14px 18px",
-      background: post._promoted ? `${t.amber}08` : "transparent", cursor: "pointer",
+      background: post._promoted ? `${t.amber}08` : "transparent",
+      cursor: locked ? "default" : "pointer",
+      ...glowRing,
     }}
       onMouseEnter={e => e.currentTarget.style.background = post._promoted ? `${t.amber}10` : t.bgSurface + "44"}
       onMouseLeave={e => e.currentTarget.style.background = post._promoted ? `${t.amber}08` : "transparent"}>
       {post._promoted && (
         <div style={{ fontSize: 11, color: t.amber, fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
           <Sparkles size={11} /> Promoted
+        </div>
+      )}
+      {tier?.label && (
+        <div style={{ fontSize: 11, color: tier.color, fontWeight: 800, marginBottom: 6,
+          display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px",
+          borderRadius: 999, background: `${tier.color}18`, border: `1px solid ${tier.color}44` }}>
+          <Flame size={11} /> {tier.label}
+        </div>
+      )}
+      {post.gate && gateEval.met && (
+        <div style={{ fontSize: 10, color: t.green, fontWeight: 700, marginBottom: 6,
+          display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px",
+          borderRadius: 999, background: `${t.green}15`, border: `1px solid ${t.green}44`,
+          marginLeft: tier?.label ? 6 : 0 }}>
+          <CheckCircle2 size={10} /> Unlocked
         </div>
       )}
       <div style={{ display: "flex", gap: 12 }}>
@@ -346,27 +576,109 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
             </div>
           </div>
 
-          <p style={{ color: t.text, fontSize: 15, lineHeight: 1.45, margin: "4px 0",
-            whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{post.content}</p>
+          {/* Content — blurred if gate not met */}
+          <div style={{ position: "relative" }}>
+            <div style={{
+              filter: locked ? "blur(8px)" : "none",
+              userSelect: locked ? "none" : "auto",
+              pointerEvents: locked ? "none" : "auto",
+            }}>
+              {post.kind === "article" && post.title && (
+                <h3 style={{ color: t.white, fontSize: 18, fontWeight: 800, margin: "6px 0 4px",
+                  lineHeight: 1.3, display: "flex", alignItems: "center", gap: 6 }}>
+                  <FileText size={14} color={t.amber} /> {post.title}
+                </h3>
+              )}
+              <p style={{ color: t.text, fontSize: 15, lineHeight: 1.45, margin: "4px 0",
+                whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {post.kind === "article" && post.content.length > 320
+                  ? post.content.slice(0, 320) + "…"
+                  : post.content}
+              </p>
+              {post.kind === "article" && post.content.length > 320 && (
+                <span style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>Read article →</span>
+              )}
 
-          {post.mediaUrls?.length > 0 && (
-            <div style={{ marginTop: 8, borderRadius: 16, overflow: "hidden", border: `1px solid ${t.border}` }}
-              onClick={e => e.stopPropagation()}>
-              {post.mediaType === "VIDEO"
-                ? <video src={post.mediaUrls[0]} controls style={{ width: "100%", display: "block", maxHeight: 520 }} />
-                : <img src={post.mediaUrls[0]} alt="" style={{ width: "100%", display: "block", maxHeight: 520, objectFit: "cover" }} />}
+              {post.mediaUrls?.length > 0 && (
+                <div style={{ marginTop: 8, borderRadius: 16, overflow: "hidden", border: `1px solid ${t.border}` }}
+                  onClick={e => e.stopPropagation()}>
+                  {post.mediaType === "VIDEO"
+                    ? <video src={post.mediaUrls[0]} controls style={{ width: "100%", display: "block", maxHeight: 520 }} />
+                    : <img src={post.mediaUrls[0]} alt="" style={{ width: "100%", display: "block", maxHeight: 520, objectFit: "cover" }} />}
+                </div>
+              )}
             </div>
-          )}
 
-          <div onClick={e => e.stopPropagation()} style={{ display: "flex", justifyContent: "space-between", marginTop: 10, maxWidth: 440 }}>
+            {locked && (
+              <div onClick={e => { e.stopPropagation(); openWallet?.(); }} style={{
+                position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", gap: 8, padding: 18,
+                background: `${t.bg}aa`, borderRadius: 12, cursor: "pointer",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6,
+                  color: t.amber, fontSize: 13, fontWeight: 700 }}>
+                  <Lock size={14} /> {gateEval.reason}
+                </div>
+                {gateEval.almostThere && gateEval.needed != null && (
+                  <div style={{ color: t.textMuted, fontSize: 12 }}>
+                    Almost there — {formatIronclawCompact(gateEval.needed)} {IRONCLAW_SYMBOL} more needed
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div onClick={e => e.stopPropagation()} style={{ display: "flex", justifyContent: "space-between", marginTop: 10, maxWidth: 480 }}>
             <Action icon={MessageCircle} count={post.comments} onClick={onOpenComments} t={t} hover={t.accent} />
             <Action icon={Repeat2} count={reposts} active={reposted} hover={t.green} onClick={toggleRepost} t={t} />
             <Action icon={Heart} count={likes} active={liked} hover={t.red} onClick={toggleLike} t={t} fill={liked} />
+            <TipAction
+              t={t}
+              tipCount={tipCount}
+              tipTotalUsd={tipTotalUsd}
+              tier={tier}
+              onTip={() => onTip?.(post)}
+              onOpenHistory={() => onOpenTipHistory?.(post)}
+            />
             <Action icon={Share2} onClick={onShare} t={t} hover={t.accent} />
           </div>
         </div>
       </div>
     </article>
+  );
+}
+
+/* TipAction — lightning bolt with total tip count + aggregate USD value.
+   Click bolt → open tip modal. Click USD → open tip history drawer. */
+function TipAction({ t, tipCount, tipTotalUsd, tier, onTip, onOpenHistory }) {
+  const color = tier?.color || t.amber;
+  const hasTips = tipCount > 0;
+  const usdLabel = tipTotalUsd >= 1000
+    ? `$${(tipTotalUsd / 1000).toFixed(1)}K`
+    : tipTotalUsd >= 1
+      ? `$${tipTotalUsd.toFixed(0)}`
+      : `$${tipTotalUsd.toFixed(2)}`;
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+      <button onClick={onTip} title="Send tip" style={{
+        display: "inline-flex", alignItems: "center", gap: 4, background: "none",
+        border: "none", color: hasTips ? color : t.textMuted, cursor: "pointer",
+        fontSize: 13, padding: "4px 8px", borderRadius: 999, transition: "background .15s",
+      }}
+        onMouseEnter={e => e.currentTarget.style.background = `${color}14`}
+        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+        <Zap size={17} fill={hasTips ? color : "none"} />
+        {hasTips && <span style={{ fontSize: 12, fontWeight: 600 }}>{tipCount}</span>}
+      </button>
+      {hasTips && (
+        <button onClick={onOpenHistory} title="Tip history" style={{
+          background: "none", border: "none", color, cursor: "pointer",
+          fontSize: 11, padding: "2px 6px", borderRadius: 6, fontWeight: 700,
+        }}>
+          {usdLabel}
+        </button>
+      )}
+    </div>
   );
 }
 function Action({ icon: Icon, count, active, hover, onClick, fill, t }) {
@@ -612,7 +924,7 @@ function ProfileModal({ wallet, viewerWallet, viewerSelector, onClose, onOpenDM,
       )}
 
       <div style={{ display: "flex", marginTop: 18, borderBottom: `1px solid ${t.border}` }}>
-        {[["posts", "Posts"], ["replies", "Replies"], ["media", "Media"], ["likes", "Likes"]].map(([k, label]) => (
+        {[["posts", "Posts"], ["replies", "Replies"], ["media", "Media"], ["likes", "Likes"], ["earn", "Earn"]].map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             flex: 1, padding: "12px 0", background: "none", border: "none", cursor: "pointer",
             color: tab === k ? t.white : t.textMuted, fontWeight: 700,
@@ -632,7 +944,10 @@ function ProfileModal({ wallet, viewerWallet, viewerSelector, onClose, onOpenDM,
           ))}
         </div>
       )}
-      {tab !== "posts" && (
+      {tab === "earn" && (
+        <EarnDashboard wallet={user.walletAddress} isMine={isMine} />
+      )}
+      {tab !== "posts" && tab !== "earn" && (
         <p style={{ color: t.textDim, padding: 16, textAlign: "center" }}>
           {tab === "media" ? "No media posts." : tab === "likes" ? "No likes yet." : "No replies."}
         </p>
@@ -1207,6 +1522,8 @@ export default function IronFeedPage({ openWallet }) {
   const [dmPeer, setDmPeer] = useState(null);
   const [openNotifs, setOpenNotifs] = useState(false);
   const [boostPost, setBoostPost] = useState(null);
+  const [tipPost, setTipPost] = useState(null);
+  const [tipHistoryPost, setTipHistoryPost] = useState(null);
   const [railOpen, setRailOpen] = useState(true);
 
   // Deep-link support: #/Feed?profile=alice.near  or  #/Feed?invite=bob.near
@@ -1327,6 +1644,8 @@ export default function IronFeedPage({ openWallet }) {
             onShare={() => share(p)}
             onBoost={() => setBoostPost(p)}
             onOpenProfile={(w) => setOpenProfile(w)}
+            onTip={(post) => wallet ? setTipPost(post) : openWallet?.()}
+            onOpenTipHistory={(post) => setTipHistoryPost(post)}
             openWallet={openWallet} />
         ))}
         <InfiniteScrollSentinel cursor={cursor} loading={loading} onMore={() => load(false)} t={t} />
@@ -1366,6 +1685,12 @@ export default function IronFeedPage({ openWallet }) {
       {openDMs && <DMsModal wallet={wallet} initialPeer={dmPeer} onClose={() => { setOpenDMs(false); setDmPeer(null); }} />}
       {openNotifs && <NotificationsModal wallet={wallet} onClose={() => setOpenNotifs(false)} />}
       {boostPost && <AdBoostModal post={boostPost} wallet={wallet} selector={selector} onClose={() => setBoostPost(null)} />}
+      {tipPost && <TipModal post={tipPost} wallet={wallet} selector={selector} openWallet={openWallet}
+        onClose={() => setTipPost(null)}
+        onTipped={() => { setTipPost(null); load(true); }} />}
+      {tipHistoryPost && <TipHistoryDrawer post={tipHistoryPost}
+        onClose={() => setTipHistoryPost(null)}
+        openTipModal={() => { setTipPost(tipHistoryPost); setTipHistoryPost(null); }} />}
     </div>
   );
 }

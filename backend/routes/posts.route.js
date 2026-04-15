@@ -5,18 +5,80 @@ const db = require("../db/client");
 const { getOrCreateUser, requireWallet, postHash, hydratePosts } = require("../services/feedHelpers");
 const { enqueue } = require("../services/batchWorker");
 
-// POST /api/posts  body: { content, mediaUrls?, mediaType?, quotedPostId?, repostOfId? }
+const ALLOWED_TIERS = ["Bronze", "Silver", "Gold", "Legendary"];
+
+// Normalize an incoming gate object into the four column values stored on
+// feed_posts. Returns null if no gate is set, otherwise
+// { type, minBalance, minTier, allowlist }.
+function normalizeGate(raw) {
+  if (!raw || !raw.type) return null;
+  const type = String(raw.type).toLowerCase();
+  if (type === "balance") {
+    const n = Number(raw.minBalance);
+    if (!(n > 0)) return null;
+    return { type: "balance", minBalance: n, minTier: null, allowlist: null };
+  }
+  if (type === "tier") {
+    const tier = ALLOWED_TIERS.find(t => t.toLowerCase() === String(raw.minTier || "").toLowerCase());
+    if (!tier) return null;
+    return { type: "tier", minBalance: null, minTier: tier, allowlist: null };
+  }
+  if (type === "allowlist") {
+    const list = Array.isArray(raw.allowlist)
+      ? raw.allowlist.map(a => String(a).toLowerCase().trim()).filter(Boolean)
+      : [];
+    if (!list.length) return null;
+    return { type: "allowlist", minBalance: null, minTier: null, allowlist: list };
+  }
+  return null;
+}
+
+// POST /api/posts  body: { content, mediaUrls?, mediaType?, quotedPostId?,
+//                          repostOfId?, onchainTx?,
+//                          gate?: { type, minBalance?|minTier?|allowlist? },
+//                          kind?: 'post'|'article', title? }
+const MAX_POST_CHARS    = 500;
+const MAX_ARTICLE_CHARS = 50_000;
+
 router.post("/", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
-    const { content, mediaUrls = [], mediaType = "NONE", quotedPostId = null, repostOfId = null, onchainTx = null } = req.body || {};
-    if (!content || content.length > 500) return res.status(400).json({ error: "content required, max 500 chars" });
+    const {
+      content, mediaUrls = [], mediaType = "NONE",
+      quotedPostId = null, repostOfId = null, onchainTx = null, gate = null,
+      kind: rawKind = "post", title: rawTitle = null,
+    } = req.body || {};
+
+    const kind  = rawKind === "article" ? "article" : "post";
+    const title = kind === "article" ? String(rawTitle || "").trim().slice(0, 200) : null;
+    const limit = kind === "article" ? MAX_ARTICLE_CHARS : MAX_POST_CHARS;
+
+    if (!content || !content.trim()) return res.status(400).json({ error: "content required" });
+    if (content.length > limit) return res.status(400).json({ error: `content too long (max ${limit})` });
+    if (kind === "article" && !title) return res.status(400).json({ error: "article title required" });
+
+    const g = normalizeGate(gate);
     const ts = Date.now();
     const hash = postHash(content, user.id, ts);
+
     const r = await db.query(
-      `INSERT INTO feed_posts (author_id, content, media_urls, media_type, quoted_post_id, repost_of_id, post_hash, onchain_tx)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [user.id, content, mediaUrls, mediaType, quotedPostId, repostOfId, hash, onchainTx]);
+      `INSERT INTO feed_posts
+         (author_id, content, media_urls, media_type,
+          quoted_post_id, repost_of_id, post_hash, onchain_tx,
+          gate_type, gate_min_balance, gate_min_tier, gate_allowlist,
+          kind, title)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       RETURNING *`,
+      [
+        user.id, content, mediaUrls, mediaType,
+        quotedPostId, repostOfId, hash, onchainTx,
+        g?.type || null,
+        g?.minBalance ?? null,
+        g?.minTier || null,
+        g?.allowlist ? JSON.stringify(g.allowlist) : null,
+        kind, title,
+      ]);
+
     if (onchainTx) {
       await db.query("UPDATE feed_users SET last_post_tx=$1 WHERE id=$2", [onchainTx, user.id]);
     }

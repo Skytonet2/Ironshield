@@ -33,6 +33,10 @@ app.use("/api/ads",           require("./routes/ads.route"));
 app.use("/api/notifications", require("./routes/notifications.route"));
 app.use("/api/media",         require("./routes/media.route"));
 app.use("/api/feed-news",     require("./routes/feedNews.route"));
+app.use("/api/tips",          require("./routes/tips.route"));
+app.use("/api/rooms",         require("./routes/rooms.route"));
+app.use("/api/livekit",       require("./routes/livekit.route"));
+app.use("/api/revenue",       require("./routes/revenue.route"));
 
 // Root
 app.get("/", (req, res) => {

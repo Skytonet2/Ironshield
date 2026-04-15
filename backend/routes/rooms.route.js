@@ -1,0 +1,455 @@
+// backend/routes/rooms.route.js — Live Alpha Rooms
+const express = require("express");
+const router = express.Router();
+const crypto = require("crypto");
+const db = require("../db/client");
+const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+
+const MIN_STAKE_USD = 50; // spec: min 50 $IRONCLAW ≈ $50-equiv for MVP
+const ALLOWED_ACCESS = ["open", "token_gated", "invite_only"];
+
+// ─── Helpers ────────────────────────────────────────────────────────
+// Seeded per-wallet bot probability: stable across sessions, 0..100.
+function seedBotScore(wallet) {
+  if (!wallet) return 50;
+  const h = crypto.createHash("sha256").update(String(wallet)).digest();
+  return h[0] % 101;
+}
+
+function aggregateBotScore(participants) {
+  if (!participants.length) return 0;
+  const total = participants.reduce((s, p) => s + (p.botProbability || 0), 0);
+  return Math.round(total / participants.length);
+}
+
+async function countLive(roomId) {
+  const r = await db.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE role IN ('host','speaker'))::int AS speakers,
+       COUNT(*) FILTER (WHERE role = 'listener')::int         AS listeners,
+       COUNT(*)::int                                           AS total,
+       COALESCE(AVG(bot_probability), 0)::float                AS avg_bot
+       FROM feed_room_participants
+      WHERE room_id=$1 AND left_at IS NULL`,
+    [roomId]
+  );
+  return r.rows[0];
+}
+
+function hydrateRoom(room, counts, host) {
+  return {
+    id: room.id,
+    title: room.title,
+    topic: room.topic,
+    accessType: room.access_type,
+    voiceEnabled: room.voice_enabled,
+    stake: {
+      tokenContract: room.stake_token_contract,
+      tokenSymbol:   room.stake_token_symbol,
+      tokenDecimals: room.stake_token_decimals,
+      amountHuman:   Number(room.stake_amount_human),
+      amountUsd:     Number(room.stake_usd_frozen),
+      txHash:        room.stake_tx_hash,
+    },
+    durationMins: room.duration_mins,
+    startedAt: room.started_at,
+    endsAt:    room.ends_at,
+    closedAt:  room.closed_at,
+    status:    room.status,
+    livekitRoomName: room.livekit_room_name,
+    gate: room.access_type === "open" ? null : {
+      minBalance: room.access_min_balance != null ? Number(room.access_min_balance) : null,
+      minTier:    room.access_min_tier   || null,
+      allowlist:  Array.isArray(room.access_allowlist) ? room.access_allowlist : [],
+    },
+    counts: {
+      speakers:   counts?.speakers   || 0,
+      listeners:  counts?.listeners  || 0,
+      total:      counts?.total      || 0,
+      botThreat:  Math.round(counts?.avg_bot || 0),
+    },
+    host: host ? {
+      id: host.id,
+      wallet: host.wallet_address,
+      username: host.username,
+      displayName: host.display_name,
+      pfpUrl: host.pfp_url,
+    } : null,
+  };
+}
+
+// ─── Routes ─────────────────────────────────────────────────────────
+
+// GET /api/rooms — list live rooms (newest first). Query: ?access=open|token_gated|invite_only
+router.get("/", async (req, res, next) => {
+  try {
+    const { access } = req.query;
+    const params = [];
+    let sql = "SELECT * FROM feed_rooms WHERE status='live' AND ends_at > NOW()";
+    if (access && ALLOWED_ACCESS.includes(access)) {
+      params.push(access);
+      sql += ` AND access_type = $${params.length}`;
+    }
+    sql += " ORDER BY started_at DESC LIMIT 60";
+
+    const rooms = await db.query(sql, params);
+    if (!rooms.rows.length) return res.json({ rooms: [] });
+
+    const ids = rooms.rows.map(r => r.id);
+    const hostIds = [...new Set(rooms.rows.map(r => r.host_id).filter(Boolean))];
+
+    const [countsResult, hostsResult] = await Promise.all([
+      db.query(
+        `SELECT room_id,
+                COUNT(*) FILTER (WHERE role IN ('host','speaker'))::int AS speakers,
+                COUNT(*) FILTER (WHERE role = 'listener')::int         AS listeners,
+                COUNT(*)::int                                           AS total,
+                COALESCE(AVG(bot_probability),0)::float                 AS avg_bot
+           FROM feed_room_participants
+          WHERE room_id = ANY($1) AND left_at IS NULL
+          GROUP BY room_id`,
+        [ids]
+      ),
+      hostIds.length
+        ? db.query("SELECT id, wallet_address, username, display_name, pfp_url FROM feed_users WHERE id = ANY($1)", [hostIds])
+        : Promise.resolve({ rows: [] }),
+    ]);
+
+    const cMap = Object.fromEntries(countsResult.rows.map(r => [r.room_id, r]));
+    const hMap = Object.fromEntries(hostsResult.rows.map(h => [h.id, h]));
+
+    res.json({
+      rooms: rooms.rows.map(r => hydrateRoom(r, cMap[r.id], hMap[r.host_id])),
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms — create a room
+// body: { title, topic, accessType, stakeAmountHuman, stakeAmountUsd,
+//         stakeTokenContract, stakeTokenSymbol, stakeTokenDecimals,
+//         durationMins, voiceEnabled, gate?, stakeTxHash? }
+router.post("/", requireWallet, async (req, res, next) => {
+  try {
+    const host = await getOrCreateUser(req.wallet);
+    const {
+      title, topic = "",
+      accessType = "open",
+      stakeAmountHuman = 0, stakeAmountUsd = 0,
+      stakeTokenContract = "near", stakeTokenSymbol = "NEAR", stakeTokenDecimals = 24,
+      durationMins = 60, voiceEnabled = true,
+      gate = null,
+      stakeTxHash = null,
+    } = req.body || {};
+
+    if (!title || title.length > 120) return res.status(400).json({ error: "title required (max 120)" });
+    if (!ALLOWED_ACCESS.includes(accessType)) return res.status(400).json({ error: "bad accessType" });
+    if (Number(stakeAmountUsd) < MIN_STAKE_USD) {
+      return res.status(400).json({ error: `minimum stake is $${MIN_STAKE_USD} equivalent` });
+    }
+
+    // Derive base-unit amount from human amount + decimals.
+    const stakeBase = (() => {
+      const [w, f = ""] = String(stakeAmountHuman).split(".");
+      const padded = (f + "0".repeat(stakeTokenDecimals)).slice(0, stakeTokenDecimals);
+      return (BigInt(w || "0") * 10n ** BigInt(stakeTokenDecimals) + BigInt(padded || "0")).toString();
+    })();
+
+    // Gate columns (for token_gated / invite_only). Open rooms ignore gate.
+    let minBalance = null, minTier = null, allowlist = null;
+    if (accessType !== "open" && gate) {
+      if (gate.type === "balance") minBalance = Number(gate.minBalance) || null;
+      if (gate.type === "tier")    minTier    = gate.minTier || null;
+      if (gate.type === "allowlist") {
+        const list = Array.isArray(gate.allowlist) ? gate.allowlist.map(a => String(a).toLowerCase().trim()).filter(Boolean) : [];
+        if (list.length) allowlist = JSON.stringify(list);
+      }
+    }
+
+    const livekitName = `ironclaw-${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
+    const endsAt = new Date(Date.now() + Number(durationMins) * 60_000).toISOString();
+
+    const r = await db.query(
+      `INSERT INTO feed_rooms
+         (host_id, title, topic, access_type,
+          stake_token_contract, stake_token_symbol, stake_token_decimals,
+          stake_amount_base, stake_amount_human, stake_usd_frozen, stake_tx_hash,
+          duration_mins, voice_enabled,
+          access_min_balance, access_min_tier, access_allowlist,
+          livekit_room_name, ends_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       RETURNING *`,
+      [
+        host.id, title, topic, accessType,
+        stakeTokenContract, stakeTokenSymbol, Number(stakeTokenDecimals),
+        stakeBase, String(stakeAmountHuman), String(stakeAmountUsd), stakeTxHash,
+        Number(durationMins), !!voiceEnabled,
+        minBalance, minTier, allowlist,
+        livekitName, endsAt,
+      ]
+    );
+    const room = r.rows[0];
+
+    // Auto-add host as speaker.
+    await db.query(
+      `INSERT INTO feed_room_participants (room_id, user_id, role, bot_probability)
+       VALUES ($1, $2, 'host', $3)
+       ON CONFLICT (room_id, user_id) DO UPDATE SET role='host', left_at=NULL`,
+      [room.id, host.id, seedBotScore(host.wallet_address)]
+    );
+
+    const hostRow = await db.query(
+      "SELECT id, wallet_address, username, display_name, pfp_url FROM feed_users WHERE id=$1",
+      [host.id]
+    );
+    const counts = await countLive(room.id);
+    res.json({ room: hydrateRoom(room, counts, hostRow.rows[0]) });
+  } catch (e) { next(e); }
+});
+
+// GET /api/rooms/:id
+router.get("/:id", async (req, res, next) => {
+  try {
+    const r = await db.query("SELECT * FROM feed_rooms WHERE id=$1", [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "room not found" });
+    const room = r.rows[0];
+    const [host, counts, parts] = await Promise.all([
+      room.host_id
+        ? db.query("SELECT id, wallet_address, username, display_name, pfp_url FROM feed_users WHERE id=$1", [room.host_id]).then(rr => rr.rows[0])
+        : Promise.resolve(null),
+      countLive(room.id),
+      db.query(
+        `SELECT p.id, p.role, p.bot_probability, p.hand_raised, p.joined_at,
+                u.id AS user_id, u.wallet_address, u.username, u.display_name, u.pfp_url
+           FROM feed_room_participants p
+           JOIN feed_users u ON u.id = p.user_id
+          WHERE p.room_id=$1 AND p.left_at IS NULL
+          ORDER BY
+            CASE p.role WHEN 'host' THEN 0 WHEN 'speaker' THEN 1 ELSE 2 END,
+            p.joined_at ASC`,
+        [room.id]
+      ),
+    ]);
+
+    res.json({
+      room: hydrateRoom(room, counts, host),
+      participants: parts.rows.map(row => ({
+        id: row.user_id,
+        wallet: row.wallet_address,
+        username: row.username,
+        displayName: row.display_name,
+        pfpUrl: row.pfp_url,
+        role: row.role,
+        botProbability: row.bot_probability,
+        handRaised: row.hand_raised,
+        joinedAt: row.joined_at,
+      })),
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/join  body: { role?: 'listener'|'speaker' }
+// Access enforcement is client-supplied for MVP (client checks balance/tier
+// against gate and sends the eligible role). Real-world impl would re-verify
+// against on-chain balance here before issuing the LiveKit token.
+router.post("/:id/join", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const room = await db.query("SELECT * FROM feed_rooms WHERE id=$1", [req.params.id]);
+    if (!room.rows.length) return res.status(404).json({ error: "room not found" });
+    if (room.rows[0].status !== "live") return res.status(410).json({ error: "room closed" });
+
+    const requested = req.body?.role === "speaker" ? "speaker" : "listener";
+    // Token-gated access upgrades listeners to speakers automatically.
+    const finalRole = room.rows[0].access_type === "token_gated" && requested === "listener"
+      ? "speaker"
+      : requested;
+
+    await db.query(
+      `INSERT INTO feed_room_participants (room_id, user_id, role, bot_probability)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (room_id, user_id) DO UPDATE
+         SET role = EXCLUDED.role, left_at = NULL, joined_at = NOW()`,
+      [room.rows[0].id, user.id, finalRole, seedBotScore(user.wallet_address)]
+    );
+    res.json({ ok: true, role: finalRole });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/leave
+router.post("/:id/leave", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    await db.query(
+      "UPDATE feed_room_participants SET left_at=NOW() WHERE room_id=$1 AND user_id=$2 AND left_at IS NULL",
+      [req.params.id, user.id]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/close — host only, closes room and (mock) refunds stake
+router.post("/:id/close", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const room = await db.query("SELECT * FROM feed_rooms WHERE id=$1", [req.params.id]);
+    if (!room.rows.length) return res.status(404).json({ error: "room not found" });
+    if (room.rows[0].host_id !== user.id) return res.status(403).json({ error: "not host" });
+
+    const refundOk = (room.rows[0].flagged_violations || 0) === 0;
+    const refundTx = refundOk ? `mock_refund_${room.rows[0].id}_${Date.now().toString(36)}` : null;
+
+    await db.query(
+      `UPDATE feed_rooms
+          SET status='closed', closed_at=NOW(), refund_tx_hash=$1
+        WHERE id=$2`,
+      [refundTx, room.rows[0].id]
+    );
+    await db.query(
+      "UPDATE feed_room_participants SET left_at=NOW() WHERE room_id=$1 AND left_at IS NULL",
+      [room.rows[0].id]
+    );
+
+    const summary = await db.query(
+      `SELECT
+         (SELECT COUNT(*) FROM feed_room_participants WHERE room_id=$1)::int           AS total_participants,
+         (SELECT COUNT(*) FROM feed_room_participants WHERE room_id=$1 AND role IN ('host','speaker'))::int AS total_speakers,
+         (SELECT COUNT(*) FROM feed_room_messages    WHERE room_id=$1 AND is_alpha_call) ::int             AS alpha_calls`,
+      [room.rows[0].id]
+    );
+    res.json({
+      ok: true, refundTx,
+      summary: {
+        totalParticipants: summary.rows[0].total_participants,
+        totalSpeakers:     summary.rows[0].total_speakers,
+        alphaCalls:        summary.rows[0].alpha_calls,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// ─── Messages ───────────────────────────────────────────────────────
+
+// GET /api/rooms/:id/messages?since=<iso>
+router.get("/:id/messages", async (req, res, next) => {
+  try {
+    const { since } = req.query;
+    const params = [req.params.id];
+    let sql = `SELECT m.id, m.content, m.is_alpha_call, m.alpha_upvotes, m.alpha_downvotes, m.pinned, m.created_at,
+                      u.id AS user_id, u.wallet_address, u.username, u.display_name, u.pfp_url
+                 FROM feed_room_messages m
+                 JOIN feed_users u ON u.id = m.author_id
+                WHERE m.room_id=$1`;
+    if (since) {
+      params.push(since);
+      sql += ` AND m.created_at > $${params.length}`;
+    }
+    sql += " ORDER BY m.created_at ASC LIMIT 200";
+    const r = await db.query(sql, params);
+    res.json({
+      messages: r.rows.map(row => ({
+        id: row.id,
+        content: row.content,
+        isAlphaCall: row.is_alpha_call,
+        alphaUpvotes: row.alpha_upvotes,
+        alphaDownvotes: row.alpha_downvotes,
+        pinned: row.pinned,
+        createdAt: row.created_at,
+        author: {
+          id: row.user_id, wallet: row.wallet_address,
+          username: row.username, displayName: row.display_name, pfpUrl: row.pfp_url,
+        },
+      })),
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/messages  body: { content, isAlphaCall? }
+router.post("/:id/messages", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const { content, isAlphaCall = false } = req.body || {};
+    if (!content || !content.trim()) return res.status(400).json({ error: "content required" });
+    if (content.length > 500) return res.status(400).json({ error: "max 500 chars" });
+
+    // Must be in the room.
+    const part = await db.query(
+      "SELECT 1 FROM feed_room_participants WHERE room_id=$1 AND user_id=$2 AND left_at IS NULL",
+      [req.params.id, user.id]
+    );
+    if (!part.rows.length) return res.status(403).json({ error: "join the room first" });
+
+    const r = await db.query(
+      `INSERT INTO feed_room_messages (room_id, author_id, content, is_alpha_call)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, created_at`,
+      [req.params.id, user.id, content.trim(), !!isAlphaCall]
+    );
+    res.json({ id: r.rows[0].id, createdAt: r.rows[0].created_at });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/messages/:msgId/vote  body: { dir: 'up'|'down' }
+router.post("/:id/messages/:msgId/vote", requireWallet, async (req, res, next) => {
+  try {
+    const dir = req.body?.dir === "down" ? "down" : "up";
+    const col = dir === "up" ? "alpha_upvotes" : "alpha_downvotes";
+    await db.query(
+      `UPDATE feed_room_messages SET ${col} = ${col} + 1 WHERE id=$1 AND room_id=$2`,
+      [req.params.msgId, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// ─── Host controls ──────────────────────────────────────────────────
+
+async function assertHost(roomId, wallet) {
+  const u = await getOrCreateUser(wallet);
+  const r = await db.query("SELECT host_id FROM feed_rooms WHERE id=$1", [roomId]);
+  if (!r.rows.length) return { ok: false, code: 404, msg: "room not found" };
+  if (r.rows[0].host_id !== u.id) return { ok: false, code: 403, msg: "not host" };
+  return { ok: true, host: u };
+}
+
+// POST /api/rooms/:id/raise  body: { raised: bool }
+router.post("/:id/raise", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const raised = !!req.body?.raised;
+    await db.query(
+      "UPDATE feed_room_participants SET hand_raised=$1 WHERE room_id=$2 AND user_id=$3",
+      [raised, req.params.id, user.id]
+    );
+    res.json({ ok: true, raised });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/promote  body: { userId, role: 'speaker'|'listener' }
+router.post("/:id/promote", requireWallet, async (req, res, next) => {
+  try {
+    const guard = await assertHost(req.params.id, req.wallet);
+    if (!guard.ok) return res.status(guard.code).json({ error: guard.msg });
+    const { userId, role } = req.body || {};
+    const r = role === "speaker" ? "speaker" : "listener";
+    await db.query(
+      "UPDATE feed_room_participants SET role=$1, hand_raised=FALSE WHERE room_id=$2 AND user_id=$3",
+      [r, req.params.id, userId]
+    );
+    res.json({ ok: true, role: r });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/kick  body: { userId }
+router.post("/:id/kick", requireWallet, async (req, res, next) => {
+  try {
+    const guard = await assertHost(req.params.id, req.wallet);
+    if (!guard.ok) return res.status(guard.code).json({ error: guard.msg });
+    await db.query(
+      "UPDATE feed_room_participants SET left_at=NOW() WHERE room_id=$1 AND user_id=$2",
+      [req.params.id, req.body?.userId]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+module.exports = router;
