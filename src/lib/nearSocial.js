@@ -27,40 +27,48 @@ export async function postToNearSocial({ selector, accountId, text, media }) {
   const walletId = wallet?.id || wallet?.metadata?.name || "";
   console.log("[NEAR Social] signing with wallet:", walletId, "for", accountId);
 
-  const action = {
+  // wallet-selector v10 expects two different action shapes depending on adapter:
+  //   • Meteor, MyNearWallet → `{ type: "FunctionCall", params: {...} }`
+  //   • HOT, HERE, Intear     → NAJ-style `{ functionCall: { methodName, args(Uint8Array), gas, deposit } }`
+  // The najActionToInternal helper inside those adapters throws "Unsupported NAJ
+  // action" when the new-style object is handed in. We try NAJ-style first (works
+  // for the majority of v10.1.4 adapters), then fall back to the typed form.
+  const argsBytes = new TextEncoder().encode(JSON.stringify({ data }));
+  const najAction = {
+    functionCall: {
+      methodName: "set",
+      args: argsBytes,
+      gas: BigInt("100000000000000"),
+      deposit: BigInt(STORAGE_DEPOSIT_YOCTO),
+    },
+  };
+  const typedAction = {
     type: "FunctionCall",
     params: {
       methodName: "set",
       args: { data },
-      gas: "100000000000000",           // 100 Tgas
+      gas: "100000000000000",
       deposit: STORAGE_DEPOSIT_YOCTO,
     },
   };
 
+  const send = async (action) => wallet.signAndSendTransaction({
+    signerId: accountId,
+    receiverId: SOCIAL_CONTRACT,
+    actions: [action],
+  });
+
   let result;
   try {
-    result = await wallet.signAndSendTransaction({
-      signerId: accountId,
-      receiverId: SOCIAL_CONTRACT,
-      actions: [action],
-    });
-  } catch (e) {
-    const msg = String(e?.message || e);
-    console.warn("[NEAR Social] signAndSendTransaction failed:", msg);
-    // Intear and some wallets reject the standard action shape; retry via the
-    // plural `signAndSendTransactions` API which many wallets translate differently.
-    if (/NAJ|Unsupported|not supported|unknown action/i.test(msg) && typeof wallet.signAndSendTransactions === "function") {
-      console.log("[NEAR Social] retrying via signAndSendTransactions");
-      result = await wallet.signAndSendTransactions({
-        transactions: [{
-          signerId: accountId,
-          receiverId: SOCIAL_CONTRACT,
-          actions: [action],
-        }],
-      });
-      if (Array.isArray(result)) result = result[0];
-    } else {
-      throw e;
+    result = await send(najAction);
+  } catch (e1) {
+    const m1 = String(e1?.message || e1);
+    console.warn("[NEAR Social] NAJ-style attempt failed:", m1);
+    try {
+      result = await send(typedAction);
+    } catch (e2) {
+      console.error("[NEAR Social] Typed-style attempt also failed:", e2);
+      throw e2;
     }
   }
 
