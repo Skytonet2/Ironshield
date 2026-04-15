@@ -122,19 +122,26 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
     setPosting(true);
     setErr("");
     try {
-      // Sign on-chain via NEAR Social first so every post has a real tx hash
+      // Sign on-chain via NEAR Social — required, every post must have a real tx hash
+      if (!selector) { setErr("Wallet not ready yet. Please wait a second and retry."); setPosting(false); return; }
       let onchainTx = null;
-      if (selector) {
-        try {
-          const r = await postToNearSocial({ selector, accountId: wallet, text: content, media });
-          onchainTx = r.txHash || null;
-        } catch (signErr) {
-          const sm = signErr?.message || "";
-          if (/reject|cancel|denied/i.test(sm)) { setErr("Transaction rejected: post not published."); setPosting(false); return; }
-          // Fall through: still let them save (off-chain) if signing infra failed
-          console.warn("NEAR Social sign failed, saving off-chain:", sm);
+      try {
+        const r = await postToNearSocial({ selector, accountId: wallet, text: content, media });
+        onchainTx = r.txHash || null;
+      } catch (signErr) {
+        const sm = signErr?.message || String(signErr);
+        console.error("[IronFeed] sign failed:", signErr);
+        if (/reject|cancel|denied|user closed/i.test(sm)) {
+          setErr("Transaction rejected in wallet — post not published.");
+        } else if (/access key|NotEnoughAllowance|function[_-]?call/i.test(sm)) {
+          setErr("Your wallet access key can't call social.near. Reconnect the wallet and approve the full-access sign request.");
+        } else {
+          setErr(`Signing failed: ${sm}`);
         }
+        setPosting(false);
+        return;
       }
+      if (!onchainTx) { setErr("Transaction didn't return a hash. Retry or check your wallet."); setPosting(false); return; }
       const body = { content, onchainTx };
       if (media) { body.mediaUrls = [media.url]; body.mediaType = media.type; }
       const r = await api("/api/posts", { method: "POST", wallet, body });
