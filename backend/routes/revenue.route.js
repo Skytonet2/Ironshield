@@ -52,7 +52,7 @@ function scoreCte() {
                   WHERE p.author_id = u.id AND c.author_id <> u.id
                   AND c.created_at > NOW() - INTERVAL '${PERIOD_DAYS} days'), 0)::int  AS comments_count,
         COALESCE((SELECT COUNT(*) FROM feed_room_messages m
-                  WHERE m.author_id = u.id AND m.is_alpha_call = TRUE
+                  WHERE m.user_id = u.id AND m.is_alpha_call = TRUE
                   AND m.created_at > NOW() - INTERVAL '${PERIOD_DAYS} days'), 0)::int  AS alpha_count
       FROM feed_users u
     ),
