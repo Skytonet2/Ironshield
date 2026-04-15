@@ -24,6 +24,8 @@ export async function postToNearSocial({ selector, accountId, text, media }) {
   };
 
   const wallet = await selector.wallet();
+  console.log("[NEAR Social] signing with wallet:", wallet?.id || wallet?.metadata?.name, "for", accountId);
+
   const result = await wallet.signAndSendTransaction({
     signerId: accountId,
     receiverId: SOCIAL_CONTRACT,
@@ -38,7 +40,16 @@ export async function postToNearSocial({ selector, accountId, text, media }) {
     }],
   });
 
-  const txHash = result?.transaction?.hash || result?.transaction_outcome?.id || null;
+  console.log("[NEAR Social] signAndSendTransaction result:", result);
+
+  // Extract hash from the multiple shapes different wallets return
+  const txHash =
+    result?.transaction?.hash ||
+    result?.transaction_outcome?.id ||
+    result?.hash ||
+    (Array.isArray(result) ? result[0]?.transaction?.hash : null) ||
+    null;
+
   return { txHash, result };
 }
 
