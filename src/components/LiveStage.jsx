@@ -42,8 +42,8 @@ function botColor(s) { return s >= 70 ? "#ef4444" : s >= 40 ? "#f59e0b" : "#22c5
 function initials(p) { return (p.displayName || p.username || p.wallet || "?")[0]?.toUpperCase(); }
 
 export default function LiveStage({
-  t, room, roomId, wallet, joined, myRole, speakers, voiceEnabled,
-  muted, setMuted, handRaised, onToggleHand,
+  t, room, roomId, wallet, joined, myRole, speakers, voiceEnabled, accessType,
+  muted, setMuted, handRaised, onToggleHand, onRequestMic,
 }) {
   const [tokenInfo, setTokenInfo] = useState(null);
   const [tokenErr, setTokenErr]   = useState(null);
@@ -84,9 +84,10 @@ export default function LiveStage({
     }}>
       <Header
         t={t} speakersCount={speakers.length} voiceEnabled={voiceEnabled}
-        joined={joined} myRole={myRole}
+        joined={joined} myRole={myRole} accessType={accessType}
         muted={muted} setMuted={setMuted}
         handRaised={handRaised} onToggleHand={onToggleHand}
+        onRequestMic={onRequestMic}
         connecting={joined && voiceEnabled && !tokenInfo && !tokenErr}
         mocked={tokenInfo?.mocked}
         error={tokenErr}
@@ -115,8 +116,8 @@ export default function LiveStage({
 }
 
 // ─── Header (controls + status) ────────────────────────────────────────
-function Header({ t, speakersCount, voiceEnabled, joined, myRole, muted, setMuted,
-                  handRaised, onToggleHand, connecting, mocked, error }) {
+function Header({ t, speakersCount, voiceEnabled, joined, myRole, accessType, muted, setMuted,
+                  handRaised, onToggleHand, onRequestMic, connecting, mocked, error }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
       <Mic size={14} color={t.amber} />
@@ -143,16 +144,28 @@ function Header({ t, speakersCount, voiceEnabled, joined, myRole, muted, setMute
           {muted ? "Muted" : "Live"}
         </button>
       )}
-      {joined && myRole === "listener" && (
-        <button onClick={onToggleHand} style={{
-          padding: "6px 10px", background: "transparent",
-          border: `1px solid ${handRaised ? `${t.amber}88` : t.border}`,
-          borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 700,
-          color: handRaised ? t.amber : t.text,
-          display: "inline-flex", alignItems: "center", gap: 4,
-        }}>
-          <Hand size={13} /> {handRaised ? "Hand raised" : "Raise hand"}
-        </button>
+      {joined && myRole === "listener" && voiceEnabled && (
+        accessType === "open" ? (
+          <button onClick={onRequestMic} style={{
+            padding: "6px 10px", background: "#22c55e22",
+            border: `1px solid #22c55e66`,
+            borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 700,
+            color: "#22c55e",
+            display: "inline-flex", alignItems: "center", gap: 4,
+          }}>
+            <Mic size={13} /> Request mic
+          </button>
+        ) : (
+          <button onClick={onToggleHand} style={{
+            padding: "6px 10px", background: "transparent",
+            border: `1px solid ${handRaised ? `${t.amber}88` : t.border}`,
+            borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 700,
+            color: handRaised ? t.amber : t.text,
+            display: "inline-flex", alignItems: "center", gap: 4,
+          }}>
+            <Hand size={13} /> {handRaised ? "Hand raised" : "Raise hand"}
+          </button>
+        )
       )}
     </div>
   );
@@ -162,12 +175,13 @@ function Header({ t, speakersCount, voiceEnabled, joined, myRole, muted, setMute
 function RealStage({ lk, tokenInfo, t, speakers, wallet, muted, setMuted }) {
   const { LiveKitRoom, RoomAudioRenderer, useParticipants, useLocalParticipant }
     = lk.react;
+  const canPublish = tokenInfo.role === "host" || tokenInfo.role === "speaker";
 
   return (
     <LiveKitRoom
       token={tokenInfo.token}
       serverUrl={tokenInfo.url}
-      audio={true}
+      audio={canPublish}
       video={false}
       connect={true}
       style={{ height: "auto" }}
@@ -176,24 +190,24 @@ function RealStage({ lk, tokenInfo, t, speakers, wallet, muted, setMuted }) {
       <StageInner
         useParticipants={useParticipants}
         useLocalParticipant={useLocalParticipant}
+        canPublish={canPublish}
         t={t} speakers={speakers} wallet={wallet} muted={muted} setMuted={setMuted}
       />
     </LiveKitRoom>
   );
 }
 
-function StageInner({ useParticipants, useLocalParticipant, t, speakers, wallet, muted, setMuted }) {
+function StageInner({ useParticipants, useLocalParticipant, canPublish, t, speakers, wallet, muted, setMuted }) {
   const lkParts  = useParticipants();
   const { localParticipant } = useLocalParticipant();
 
-  // Sync local mic state with parent muted toggle.
+  // Sync local mic state with parent muted toggle — only if we can publish.
   useEffect(() => {
-    if (!localParticipant) return;
+    if (!localParticipant || !canPublish) return;
     localParticipant.setMicrophoneEnabled(!muted).catch(() => {
-      // If publish fails (permissions), force back to muted.
       setMuted(true);
     });
-  }, [muted, localParticipant, setMuted]);
+  }, [muted, localParticipant, setMuted, canPublish]);
 
   // Map identity (wallet) → LiveKit participant for speaking-state lookup.
   const byIdentity = useMemo(() => {

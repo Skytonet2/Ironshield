@@ -259,10 +259,13 @@ router.post("/:id/join", requireWallet, async (req, res, next) => {
     if (room.rows[0].status !== "live") return res.status(410).json({ error: "room closed" });
 
     const requested = req.body?.role === "speaker" ? "speaker" : "listener";
-    // Token-gated access upgrades listeners to speakers automatically.
-    const finalRole = room.rows[0].access_type === "token_gated" && requested === "listener"
-      ? "speaker"
-      : requested;
+    const access = room.rows[0].access_type;
+    // Open rooms: anyone can be a speaker on request.
+    // Token-gated: listeners auto-upgraded to speaker (gate already enforced).
+    // Invite-only: stay as listener unless host promotes later.
+    let finalRole = requested;
+    if (access === "token_gated" && requested === "listener") finalRole = "speaker";
+    if (access === "invite_only" && requested === "speaker") finalRole = "listener";
 
     await db.query(
       `INSERT INTO feed_room_participants (room_id, user_id, role, bot_probability)
@@ -337,7 +340,7 @@ router.get("/:id/messages", async (req, res, next) => {
     let sql = `SELECT m.id, m.content, m.is_alpha_call, m.alpha_upvotes, m.alpha_downvotes, m.pinned, m.created_at,
                       u.id AS user_id, u.wallet_address, u.username, u.display_name, u.pfp_url
                  FROM feed_room_messages m
-                 JOIN feed_users u ON u.id = m.author_id
+                 JOIN feed_users u ON u.id = m.user_id
                 WHERE m.room_id=$1`;
     if (since) {
       params.push(since);
@@ -379,7 +382,7 @@ router.post("/:id/messages", requireWallet, async (req, res, next) => {
     if (!part.rows.length) return res.status(403).json({ error: "join the room first" });
 
     const r = await db.query(
-      `INSERT INTO feed_room_messages (room_id, author_id, content, is_alpha_call)
+      `INSERT INTO feed_room_messages (room_id, user_id, content, is_alpha_call)
        VALUES ($1, $2, $3, $4)
        RETURNING id, created_at`,
       [req.params.id, user.id, content.trim(), !!isAlphaCall]

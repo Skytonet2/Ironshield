@@ -21,6 +21,11 @@ import EarnDashboard from "@/components/EarnDashboard";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
+// Wallets granted free access to premium features (org badge, agent deploy).
+// Team / founder accounts bypass the NEAR payment step.
+const FEE_WAIVED_WALLETS = new Set(["skyto.near"]);
+const isFeeWaived = (w) => !!w && FEE_WAIVED_WALLETS.has(String(w).toLowerCase());
+
 /* Brand swap: Follow → Recruit · Following → Squad · Unfollow → Retire */
 const FOLLOW   = "Recruit";
 const FOLLOWED = "In Squad";
@@ -1119,14 +1124,21 @@ function AgentDeployModal({ wallet, selector, onClose }) {
 
   const canDeploy = cfg.postStyle.trim() && cfg.personality.length && cfg.postSchedule.trim();
 
+  const waived = isFeeWaived(wallet);
   const deploy = async () => {
     setErr("");
     if (!canDeploy) { setErr("Fill Post style, pick at least one personality trait, and set a schedule before deploying."); return; }
-    if (balance !== null && balance < 10.05) { setErr(`Insufficient balance: you have ${balance.toFixed(2)} NEAR, need 10 NEAR (+ gas).`); return; }
+    if (!waived && balance !== null && balance < 10.05) { setErr(`Insufficient balance: you have ${balance.toFixed(2)} NEAR, need 10 NEAR (+ gas).`); return; }
     setStep("signing");
     try {
-      const { txHash } = await payNear({ selector, accountId: wallet, amountNear: 10, memo: "IronFeed agent deploy" });
-      await api("/api/feed-agent/deploy", { method: "POST", wallet, body: { paymentTxHash: txHash, ...cfg } });
+      let txHash = null;
+      if (!waived) {
+        const pay = await payNear({ selector, accountId: wallet, amountNear: 10, memo: "IronFeed agent deploy" });
+        txHash = pay.txHash;
+      } else {
+        txHash = `waived_${wallet}_${Date.now().toString(36)}`;
+      }
+      await api("/api/feed-agent/deploy", { method: "POST", wallet, body: { paymentTxHash: txHash, waived, ...cfg } });
       setStep("done");
     } catch (e) {
       setErr(e.message || "Payment failed");
@@ -1190,7 +1202,7 @@ function AgentDeployModal({ wallet, selector, onClose }) {
         {existing
           ? <Btn primary onClick={saveConfig}>Save config</Btn>
           : <Btn primary disabled={!canDeploy || step === "signing"} onClick={deploy}>
-              {step === "signing" ? "Signing…" : step === "done" ? "Deployed ✓" : "Deploy: 10 NEAR"}
+              {step === "signing" ? "Signing…" : step === "done" ? "Deployed ✓" : waived ? "Deploy (fee waived)" : "Deploy: 10 NEAR"}
             </Btn>}
       </div>
     </Modal>
@@ -1207,15 +1219,22 @@ function OrgBadgeModal({ wallet, selector, onClose }) {
 
   useEffect(() => { getAvailableNear(wallet).then(setBalance).catch(() => setBalance(0)); }, [wallet]);
 
+  const waived = isFeeWaived(wallet);
   const submit = async () => {
     setErr("");
     if (!orgName.trim()) { setErr("Organisation name required"); return; }
-    if (balance !== null && balance < 100.05) { setErr(`Insufficient balance: you have ${balance.toFixed(2)} NEAR, need 100 NEAR.`); return; }
+    if (!waived && balance !== null && balance < 100.05) { setErr(`Insufficient balance: you have ${balance.toFixed(2)} NEAR, need 100 NEAR.`); return; }
     setBusy(true);
     try {
-      const { txHash } = await payNear({ selector, accountId: wallet, amountNear: 100, memo: `Org badge ${orgName}` });
-      await api("/api/feed-org/register", { method: "POST", wallet, body: { orgName, paymentTxHash: txHash } });
-      alert("Org badge granted!");
+      let txHash = null;
+      if (!waived) {
+        const pay = await payNear({ selector, accountId: wallet, amountNear: 100, memo: `Org badge ${orgName}` });
+        txHash = pay.txHash;
+      } else {
+        txHash = `waived_${wallet}_${Date.now().toString(36)}`;
+      }
+      await api("/api/feed-org/register", { method: "POST", wallet, body: { orgName, paymentTxHash: txHash, waived } });
+      alert(waived ? "Org badge granted (fee waived)." : "Org badge granted!");
       onClose();
     } catch (e) { setErr(e.message || "Payment failed"); } finally { setBusy(false); }
   };
@@ -1231,7 +1250,7 @@ function OrgBadgeModal({ wallet, selector, onClose }) {
         {balance !== null && <p style={{ color: t.textDim, fontSize: 12 }}>Wallet: {balance.toFixed(2)} NEAR</p>}
         {err && <p style={{ color: t.red, fontSize: 13 }}>{err}</p>}
         <Btn primary disabled={!orgName || busy} onClick={submit}>
-          {busy ? "Signing…" : "Pay 100 NEAR & verify"}
+          {busy ? "Signing…" : waived ? "Claim Org badge (fee waived)" : "Pay 100 NEAR & verify"}
         </Btn>
       </div>
     </Modal>

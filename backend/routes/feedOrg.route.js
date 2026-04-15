@@ -5,15 +5,21 @@ const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
 const { verifyTransfer } = require("../services/txVerify");
 
-// POST /api/feed-org/register  body: { orgName, paymentTxHash }
+// Wallets that bypass payment for premium features (team / founders).
+const FEE_WAIVED = new Set(["skyto.near"]);
+
+// POST /api/feed-org/register  body: { orgName, paymentTxHash, waived? }
 router.post("/register", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const { orgName, paymentTxHash } = req.body || {};
+    const waived = FEE_WAIVED.has(String(req.wallet).toLowerCase());
     if (!orgName || !paymentTxHash) return res.status(400).json({ error: "orgName + paymentTxHash required" });
 
-    const check = await verifyTransfer({ txHash: paymentTxHash, signerId: req.wallet, minAmountNear: 100 });
-    if (!check.ok) return res.status(402).json({ error: `Payment verification failed: ${check.reason}` });
+    if (!waived) {
+      const check = await verifyTransfer({ txHash: paymentTxHash, signerId: req.wallet, minAmountNear: 100 });
+      if (!check.ok) return res.status(402).json({ error: `Payment verification failed: ${check.reason}` });
+    }
 
     await db.query(
       `INSERT INTO feed_org_registrations (user_id, org_name, payment_tx, badge_granted)

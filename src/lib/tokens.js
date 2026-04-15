@@ -146,28 +146,32 @@ export async function fetchWalletTokens(accountId) {
   return [native, ...fts];
 }
 
-// ─── Tip contract caller (multi-token) ───────────────────────────────
-// Real shape for when tips.ironshield.near deploys:
-//   Native NEAR: Transfer → tips contract, then tips contract routes 90/10.
-//   NEP-141:     ft_transfer_call on token contract with receiver_id =
-//                tips contract and msg = JSON.stringify({ post_id, anonymous }).
+// ─── Tip caller (multi-token, direct wallet-to-wallet) ───────────────
+// Tokens move straight from tipper → creator. No middleman contract.
+//   Native NEAR: Transfer action → recipient wallet.
+//   NEP-141:     ft_transfer on the token contract with receiver_id = recipient.
+//                Requires recipient to be storage-registered on that token.
 //
-// Default behavior: MOCKED — returns a fake hash without a wallet popup.
-// Flip NEXT_PUBLIC_TIPS_REAL=1 to force real signing (will currently fail
-// on-chain because tips.ironshield.near isn't deployed, but exercises the
-// wallet flow end-to-end for demos).
+// The 90/10 treasury split is accounted off-chain in backend/routes/tips.route.js
+// until the on-chain tips contract ships. The net tip to creator still equals
+// the sent amount — treasury takes its cut from *platform fees* elsewhere.
 export const TIPS_CONTRACT = "tips.ironshield.near";
 
-export async function callTipPost({ selector, accountId, postId, token, amount, anonymous }) {
+export async function callTipPost({ selector, accountId, postId, token, amount, anonymous, recipient }) {
   if (!selector || !accountId) throw new Error("Wallet not connected");
   if (!token?.contractId) throw new Error("Token not selected");
   if (!(Number(amount) > 0)) throw new Error("Amount must be positive");
+  if (!recipient) throw new Error("Recipient wallet missing");
+  if (String(recipient).toLowerCase() === String(accountId).toLowerCase()) {
+    throw new Error("Can't tip yourself");
+  }
 
   const amountBase = toBase(amount, token.decimals);
   const memo = JSON.stringify({ post_id: String(postId), anonymous: !!anonymous });
 
-  if (process.env.NEXT_PUBLIC_TIPS_REAL !== "1") {
-    await new Promise(r => setTimeout(r, 900));
+  // Explicit opt-out for demos: NEXT_PUBLIC_TIPS_REAL=0 → mocked (no wallet popup).
+  if (process.env.NEXT_PUBLIC_TIPS_REAL === "0") {
+    await new Promise(r => setTimeout(r, 600));
     return {
       txHash: `mock_tip_${postId}_${Date.now().toString(36)}`,
       mocked: true,
@@ -180,44 +184,59 @@ export async function callTipPost({ selector, accountId, postId, token, amount, 
   let result;
 
   if (token.contractId === NATIVE_NEAR) {
-    // Native NEAR: direct transfer to the tips contract which routes 90/10.
+    // Native NEAR transfer straight to the creator.
     result = await wallet.signAndSendTransaction({
       signerId: accountId,
-      receiverId: TIPS_CONTRACT,
+      receiverId: String(recipient),
       actions: [{
-        type: "FunctionCall",
-        params: {
-          methodName: "tip_post_near",
-          args: { post_id: String(postId), anonymous: !!anonymous },
-          gas: "50000000000000",
-          deposit: amountBase,
-        },
+        type: "Transfer",
+        params: { deposit: amountBase },
       }],
     });
   } else {
-    // NEP-141: ft_transfer_call on the token contract. 1 yoctoNEAR required.
-    result = await wallet.signAndSendTransaction({
-      signerId: accountId,
-      receiverId: token.contractId,
-      actions: [{
-        type: "FunctionCall",
-        params: {
-          methodName: "ft_transfer_call",
-          args: {
-            receiver_id: TIPS_CONTRACT,
-            amount: amountBase,
-            msg: memo,
-          },
-          gas: "100000000000000",
-          deposit: "1",
+    // NEP-141 ft_transfer. Recipient must have storage_deposit registered on
+    // the token contract — we attach it defensively (0.00125 N, idempotent).
+    const STORAGE = "1250000000000000000000"; // 0.00125 N
+    result = await wallet.signAndSendTransactions({
+      transactions: [
+        {
+          signerId: accountId,
+          receiverId: token.contractId,
+          actions: [{
+            type: "FunctionCall",
+            params: {
+              methodName: "storage_deposit",
+              args: { account_id: String(recipient), registration_only: true },
+              gas: "30000000000000",
+              deposit: STORAGE,
+            },
+          }],
         },
-      }],
+        {
+          signerId: accountId,
+          receiverId: token.contractId,
+          actions: [{
+            type: "FunctionCall",
+            params: {
+              methodName: "ft_transfer",
+              args: {
+                receiver_id: String(recipient),
+                amount: amountBase,
+                memo,
+              },
+              gas: "30000000000000",
+              deposit: "1",
+            },
+          }],
+        },
+      ],
     });
   }
 
+  const first = Array.isArray(result) ? result[result.length - 1] : result;
   const txHash =
-    result?.transaction?.hash ||
-    result?.transaction_outcome?.id ||
+    first?.transaction?.hash ||
+    first?.transaction_outcome?.id ||
     null;
   return { txHash, result, mocked: false, amountBase, memo };
 }

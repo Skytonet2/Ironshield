@@ -80,12 +80,15 @@ export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped
     setErr("");
     setStep("signing");
     try {
+      const recipient = post.author?.wallet_address || post.author?.wallet;
+      if (!recipient) throw new Error("Post author wallet unknown");
       const { txHash: hash, amountBase } = await callTipPost({
         selector, accountId: wallet,
         postId: post.id,
         token: selected,
         amount: Number(amount),
         anonymous,
+        recipient,
       });
       setTxHash(hash);
       setStep("processing");

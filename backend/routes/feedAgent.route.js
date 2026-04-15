@@ -5,15 +5,21 @@ const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
 const { verifyTransfer } = require("../services/txVerify");
 
-// POST /api/feed-agent/deploy  body: { paymentTxHash, postStyle, personality, postSchedule, commentRules, repostRules }
+// Wallets that bypass payment for premium features (team / founders).
+const FEE_WAIVED = new Set(["skyto.near"]);
+
+// POST /api/feed-agent/deploy  body: { paymentTxHash, postStyle, personality, postSchedule, commentRules, repostRules, waived? }
 router.post("/deploy", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const { paymentTxHash, postStyle = "", personality = [], postSchedule = "", commentRules = "", repostRules = "" } = req.body || {};
+    const waived = FEE_WAIVED.has(String(req.wallet).toLowerCase());
     if (!paymentTxHash) return res.status(400).json({ error: "paymentTxHash required" });
 
-    const check = await verifyTransfer({ txHash: paymentTxHash, signerId: req.wallet, minAmountNear: 10 });
-    if (!check.ok) return res.status(402).json({ error: `Payment verification failed: ${check.reason}` });
+    if (!waived) {
+      const check = await verifyTransfer({ txHash: paymentTxHash, signerId: req.wallet, minAmountNear: 10 });
+      if (!check.ok) return res.status(402).json({ error: `Payment verification failed: ${check.reason}` });
+    }
 
     const expires = new Date(Date.now() + 30 * 86400_000);
     const r = await db.query(

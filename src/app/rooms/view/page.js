@@ -55,7 +55,7 @@ function RoomViewInner() {
   const [error, setError]               = useState("");
   const [joined, setJoined]             = useState(false);
   const [myRole, setMyRole]             = useState(null);
-  const [muted, setMuted]               = useState(true);
+  const [muted, setMuted]               = useState(false);
   const [handRaised, setHandRaised]     = useState(false);
   const [draftMsg, setDraftMsg]         = useState("");
   const [sending, setSending]           = useState(false);
@@ -136,6 +136,30 @@ function RoomViewInner() {
       setJoined(true);
       loadRoom();
     } catch (e) { alert(e?.message || "Couldn't join"); }
+  };
+
+  // Listener asks for the mic. In open rooms the request is auto-granted via
+  // /join with role=speaker. In gated rooms we raise the hand and let the host
+  // promote from the participants sidebar.
+  const requestMic = async () => {
+    if (!wallet || !joined) return;
+    const isOpen = room?.accessType === "open";
+    if (isOpen) {
+      try {
+        const r = await fetch(`${API}/api/rooms/${roomId}/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-wallet": wallet },
+          body: JSON.stringify({ role: "speaker" }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || `mic ${r.status}`);
+        setMyRole(j.role || "speaker");
+        setMuted(false);
+        loadRoom();
+      } catch (e) { alert(e?.message || "Couldn't grab mic"); }
+    } else {
+      toggleHand();
+    }
   };
 
   const leave = async () => {
@@ -254,7 +278,7 @@ function RoomViewInner() {
       <nav aria-hidden style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", opacity: 0 }} />
 
       {/* Top bar */}
-      <div style={{
+      <div className="ix-room-topbar" style={{
         padding: "12px 18px", borderBottom: `1px solid ${t.border}`, background: t.bgCard,
         position: "sticky", top: 0, zIndex: 10,
         display: "flex", alignItems: "center", gap: 12,
@@ -271,21 +295,21 @@ function RoomViewInner() {
             boxShadow: "0 0 6px #ef4444", animation: "ixPulse 1.2s ease-in-out infinite" }} /> LIVE
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: t.white, fontSize: 14, fontWeight: 700,
+          <div className="ix-room-title" style={{ color: t.white, fontSize: 14, fontWeight: 700,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {room.title}
           </div>
-          <div style={{ color: t.textMuted, fontSize: 11 }}>
+          <div className="ix-room-subtitle" style={{ color: t.textMuted, fontSize: 11 }}>
             {room.topic || "—"} · ends in {timeLeft(room.endsAt)}
           </div>
         </div>
-        <span title={`Bot threat ${room.counts.botThreat}/100`} style={{
+        <span className="ix-room-bot-chip" title={`Bot threat ${room.counts.botThreat}/100`} style={{
           display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700,
           color: botColor(room.counts.botThreat),
         }}>
           <ShieldAlert size={13} /> {room.counts.botThreat}
         </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4,
+        <span className="ix-room-stake-chip" style={{ display: "inline-flex", alignItems: "center", gap: 4,
           color: t.amber, fontSize: 11, fontWeight: 700 }}>
           <Coins size={11} /> ${Math.round(room.stake.amountUsd)}
         </span>
@@ -306,9 +330,10 @@ function RoomViewInner() {
       </div>
 
       {/* Layout: stage+chat | participants */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 16,
+      <div className="ix-room-grid" style={{
+        display: "grid", gridTemplateColumns: "1fr 280px", gap: 16,
         padding: 16, maxWidth: 1280, margin: "0 auto",
-        '@media (maxWidth: 800px)': { gridTemplateColumns: "1fr" } }}>
+      }}>
         {/* Main column */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           {/* Voice stage */}
@@ -317,8 +342,10 @@ function RoomViewInner() {
             joined={joined} myRole={myRole}
             speakers={speakers}
             voiceEnabled={room.voiceEnabled}
+            accessType={room.accessType}
             muted={muted} setMuted={setMuted}
             handRaised={handRaised} onToggleHand={toggleHand}
+            onRequestMic={requestMic}
           />
 
           {/* Chat */}
@@ -343,7 +370,7 @@ function RoomViewInner() {
               )}
               <div ref={chatEnd} />
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div className="ix-chat-input-row" style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <input
                 value={draftMsg}
                 onChange={e => setDraftMsg(e.target.value)}
@@ -369,7 +396,7 @@ function RoomViewInner() {
         </div>
 
         {/* Participants sidebar */}
-        <aside style={{
+        <aside className="ix-room-aside" style={{
           background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
           padding: 14, height: "fit-content", position: "sticky", top: 80,
         }}>
@@ -457,6 +484,19 @@ function RoomViewInner() {
         @keyframes ixSpin { to { transform: rotate(360deg); } }
         @keyframes ixPulse { 0%,100% { opacity: 1 } 50% { opacity: .4 } }
         @keyframes ixRing { 0% { box-shadow: 0 0 0 0 #f5b30166 } 70% { box-shadow: 0 0 0 8px transparent } 100% { box-shadow: 0 0 0 0 transparent } }
+        @media (max-width: 820px) {
+          .ix-room-grid { grid-template-columns: 1fr !important; padding: 10px !important; }
+          .ix-room-aside { position: static !important; top: auto !important; }
+        }
+        @media (max-width: 560px) {
+          .ix-room-topbar { padding: 8px 10px !important; gap: 6px !important; flex-wrap: wrap !important; }
+          .ix-room-topbar .ix-room-title { font-size: 13px !important; }
+          .ix-room-topbar .ix-room-subtitle { font-size: 10px !important; }
+          .ix-room-topbar .ix-room-stake-chip { display: none !important; }
+          .ix-room-topbar .ix-room-bot-chip { font-size: 10px !important; }
+          .ix-chat-input-row { flex-wrap: wrap !important; }
+          .ix-chat-input-row input { flex: 1 1 100% !important; }
+        }
       `}</style>
     </div>
   );
