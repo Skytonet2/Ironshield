@@ -9,6 +9,8 @@ import {
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
 import { payNear, getAvailableNear, PLATFORM_TREASURY } from "@/lib/payments";
+import { postToNearSocial, NEAR_SOCIAL_CONTRACT } from "@/lib/nearSocial";
+import { getOrCreateKeypair, exportPublicKey, encrypt as naclEncrypt, decrypt as naclDecrypt } from "@/lib/dmCrypto";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -77,7 +79,7 @@ function Avatar({ user, size = 40 }) {
 /* ───────────────────── Compose (file picker) ──────────────────── */
 const COMMON_EMOJI = ["😀","😂","🤣","😊","😍","🤩","😎","🤔","😭","😡","🔥","💯","🚀","💎","🎯","👀","👍","👎","🙏","❤️","💔","⚡","🌙","☀️","💰","📈","📉","🤝","✅","❌","⭐"];
 
-function ComposePost({ wallet, onPosted, placeholder = "What's happening in IronShield?" }) {
+function ComposePost({ wallet, selector, onPosted, placeholder = "What's happening in IronShield?" }) {
   const t = useTheme();
   const fileRef = useRef(null);
   const taRef = useRef(null);
@@ -120,7 +122,20 @@ function ComposePost({ wallet, onPosted, placeholder = "What's happening in Iron
     setPosting(true);
     setErr("");
     try {
-      const body = { content };
+      // Sign on-chain via NEAR Social first so every post has a real tx hash
+      let onchainTx = null;
+      if (selector) {
+        try {
+          const r = await postToNearSocial({ selector, accountId: wallet, text: content, media });
+          onchainTx = r.txHash || null;
+        } catch (signErr) {
+          const sm = signErr?.message || "";
+          if (/reject|cancel|denied/i.test(sm)) { setErr("Transaction rejected: post not published."); setPosting(false); return; }
+          // Fall through: still let them save (off-chain) if signing infra failed
+          console.warn("NEAR Social sign failed, saving off-chain:", sm);
+        }
+      }
+      const body = { content, onchainTx };
       if (media) { body.mediaUrls = [media.url]; body.mediaType = media.type; }
       const r = await api("/api/posts", { method: "POST", wallet, body });
       onPosted?.(r.post);
@@ -276,7 +291,7 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
   const isMine = viewerWallet && author.wallet_address === viewerWallet;
 
   return (
-    <article ref={ref} style={{
+    <article ref={ref} onClick={onOpenComments} style={{
       borderBottom: `1px solid ${t.border}`, padding: "14px 18px",
       background: post._promoted ? `${t.amber}08` : "transparent", cursor: "pointer",
     }}
@@ -299,6 +314,16 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
             <span style={{ color: t.textDim, fontSize: 14 }}>@{author.username}</span>
             <span style={{ color: t.textDim, fontSize: 14 }}>·</span>
             <span style={{ color: t.textDim, fontSize: 14 }}>{timeAgo(post.createdAt)}</span>
+            {post.onchainTx && (
+              <a href={`https://nearblocks.io/txns/${post.onchainTx}`} target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                title={`On-chain: ${post.onchainTx}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 700,
+                  color: t.green, background: `${t.green}18`, border: `1px solid ${t.green}44`,
+                  padding: "2px 6px", borderRadius: 999, textDecoration: "none" }}>
+                <LinkIcon size={9} /> on-chain
+              </a>
+            )}
             <div style={{ marginLeft: "auto", position: "relative" }} onClick={e => e.stopPropagation()}>
               <button onClick={() => setMenuOpen(v => !v)} style={{ background: "none", border: "none", color: t.textMuted, cursor: "pointer", padding: 4 }}>
                 <MoreHorizontal size={16} />
@@ -411,9 +436,45 @@ function CommentsModal({ post, wallet, onClose, openWallet }) {
     } catch (e) { alert(e.message); } finally { setBusy(false); }
   };
 
+  const copyLink = async () => {
+    const origin = (typeof window !== "undefined" && window.location.origin) || "https://ironshield.pages.dev";
+    const url = `${origin}/#/Feed?post=${post.id}`;
+    try { await navigator.clipboard.writeText(url); alert("Post link copied"); }
+    catch { prompt("Copy this link:", url); }
+  };
+
   return (
-    <Modal onClose={onClose} title="Replies">
-      <div style={{ maxHeight: 360, overflowY: "auto" }}>
+    <Modal onClose={onClose} title="Post">
+      {/* Parent post */}
+      <div style={{ display: "flex", gap: 10, paddingBottom: 12, borderBottom: `1px solid ${t.border}` }}>
+        <Avatar user={post.author || {}} size={40} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: t.white, fontWeight: 700 }}>
+            {post.author?.display_name || post.author?.username || "anon"}
+            <span style={{ color: t.textDim, fontWeight: 400, marginLeft: 6 }}>· {timeAgo(post.createdAt)}</span>
+          </div>
+          <div style={{ color: t.text, fontSize: 15, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{post.content}</div>
+          {post.mediaUrls?.[0] && (
+            <div style={{ marginTop: 8, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}` }}>
+              {post.mediaType === "VIDEO"
+                ? <video src={post.mediaUrls[0]} controls style={{ width: "100%", maxHeight: 360 }} />
+                : <img src={post.mediaUrls[0]} alt="" style={{ width: "100%", maxHeight: 360, objectFit: "cover" }} />}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, marginTop: 8, alignItems: "center" }}>
+            {post.onchainTx && (
+              <a href={`https://nearblocks.io/txns/${post.onchainTx}`} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 11, color: t.green, textDecoration: "none" }}>
+                on-chain ↗
+              </a>
+            )}
+            <button onClick={copyLink} style={{ fontSize: 11, color: t.accent, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              Copy link
+            </button>
+          </div>
+        </div>
+      </div>
+      <div style={{ maxHeight: 320, overflowY: "auto", marginTop: 10 }}>
         {comments.length === 0 && <p style={{ color: t.textDim, padding: 12 }}>No replies yet.</p>}
         {comments.map(c => (
           <div key={c.id} style={{ display: "flex", gap: 10, padding: "10px 0" }}>
@@ -765,6 +826,18 @@ function DMsModal({ wallet, onClose, initialPeer }) {
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
   const [searchResult, setSearchResult] = useState(null);
+  const [kp, setKp] = useState(null);
+
+  // Local keypair + register pubkey with backend once
+  useEffect(() => {
+    if (!wallet) return;
+    const k = getOrCreateKeypair(wallet);
+    setKp(k);
+    const pub = exportPublicKey(k);
+    if (pub) {
+      api("/api/profile/dm-pubkey", { method: "POST", wallet, body: { pubkey: pub } }).catch(() => {});
+    }
+  }, [wallet]);
 
   const refresh = useCallback(() => {
     api("/api/dm/conversations", { wallet }).then(r => setConvs(r.conversations)).catch(() => {});
@@ -817,29 +890,61 @@ function DMsModal({ wallet, onClose, initialPeer }) {
 
   const send = async () => {
     if (!text.trim() || !active) return;
-    // TODO: upgrade to tweetnacl E2E. For now, base64 payload only.
-    const encryptedPayload = btoa(unescape(encodeURIComponent(text)));
-    const nonce = btoa(String(Date.now()));
-    // Optimistic append (sub-second UX)
+    const peerPub = active.peer?.dmPubkey;
+    let encryptedPayload, nonce;
+    if (kp && peerPub) {
+      try {
+        const enc = naclEncrypt(text, peerPub, kp);
+        encryptedPayload = enc.encryptedPayload; nonce = enc.nonce;
+      } catch {
+        encryptedPayload = btoa(unescape(encodeURIComponent(text)));
+        nonce = btoa(String(Date.now()));
+      }
+    } else {
+      // Peer hasn't registered a pubkey yet → fallback plaintext-b64 (will upgrade on next session)
+      encryptedPayload = btoa(unescape(encodeURIComponent(text)));
+      nonce = btoa(String(Date.now()));
+    }
     const tempId = "tmp-" + Date.now();
-    const optimistic = { id: tempId, encrypted_payload: encryptedPayload, nonce, from_id: -1, to_id: active.peer.id, created_at: new Date().toISOString() };
+    const optimistic = { id: tempId, encrypted_payload: encryptedPayload, nonce, from_id: -1, to_id: active.peer.id, created_at: new Date().toISOString(), _plain: text };
     setMessages(m => [...m, optimistic]);
     setText("");
     try {
       const r = await api("/api/dm/send", { method: "POST", wallet,
         body: { conversationId: active.id, encryptedPayload, nonce } });
-      setMessages(m => m.map(x => x.id === tempId ? r.message : x));
+      setMessages(m => m.map(x => x.id === tempId ? { ...r.message, _plain: text } : x));
     } catch (e) {
       setMessages(m => m.filter(x => x.id !== tempId));
       alert(e.message);
     }
   };
-  const decode = (m) => { try { return decodeURIComponent(escape(atob(m.encrypted_payload))); } catch { return "(message)"; } };
+  const decode = (m) => {
+    if (m._plain) return m._plain;
+    const peerPub = active?.peer?.dmPubkey;
+    if (kp && peerPub) {
+      const p = naclDecrypt(m.encrypted_payload, m.nonce, peerPub, kp);
+      if (p) return p;
+    }
+    // Legacy base64 fallback
+    try { return decodeURIComponent(escape(atob(m.encrypted_payload))); } catch { return "(encrypted)"; }
+  };
 
   return (
     <Modal onClose={onClose} title="Messages" maxWidth={820}>
-      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 12, height: 520 }}>
-        <div style={{ borderRight: `1px solid ${t.border}`, paddingRight: 10, overflowY: "auto" }}>
+      <style>{`
+        .ix-dm-grid { display: grid; grid-template-columns: 260px 1fr; gap: 12px; height: min(70vh, 560px); }
+        .ix-dm-list { border-right: 1px solid ${t.border}; padding-right: 10px; overflow-y: auto; }
+        .ix-dm-chat { display: flex; flex-direction: column; min-height: 0; }
+        .ix-dm-back { display: none; }
+        @media (max-width: 640px) {
+          .ix-dm-grid { grid-template-columns: 1fr; height: 75vh; }
+          .ix-dm-list { ${active ? "display: none;" : "border-right: none; padding-right: 0;"} }
+          .ix-dm-chat { ${active ? "" : "display: none;"} }
+          .ix-dm-back { display: inline-flex; margin-bottom: 8px; }
+        }
+      `}</style>
+      <div className="ix-dm-grid">
+        <div className="ix-dm-list">
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
             <input placeholder="search wallet / username" value={search}
               onChange={e => setSearch(e.target.value)}
@@ -894,9 +999,13 @@ function DMsModal({ wallet, onClose, initialPeer }) {
           )}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div className="ix-dm-chat">
           {!active ? <p style={{ color: t.textDim, padding: 20 }}>Select or start a conversation.</p> : (
             <>
+              <button className="ix-dm-back" onClick={() => setActive(null)} style={{
+                alignItems: "center", gap: 6, background: "none", border: "none",
+                color: t.accent, cursor: "pointer", fontSize: 14, padding: "4px 0",
+              }}><ArrowLeft size={16} /> Back</button>
               <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
                 {messages.map(m => {
                   const mine = m.from_id !== active.peer.id;
@@ -1080,10 +1189,14 @@ export default function IronFeedPage({ openWallet }) {
       const invite = params.get("invite");
       const dms = params.get("dms");
       const notifs = params.get("notifs");
+      const postId = params.get("post");
       if (profile) setOpenProfile(profile);
       if (invite && wallet) { setDmPeer(invite); setOpenDMs(true); }
       if (dms && wallet) setOpenDMs(true);
       if (notifs && wallet) setOpenNotifs(true);
+      if (postId) {
+        api(`/api/posts/${postId}`, { wallet }).then(r => r.post && setOpenComments(r.post)).catch(() => {});
+      }
     };
     parse();
     window.addEventListener("hashchange", parse);
@@ -1105,10 +1218,15 @@ export default function IronFeedPage({ openWallet }) {
   useEffect(() => { load(true); /* eslint-disable-next-line */ }, [tab, wallet]);
 
   const onPosted = (p) => setPosts(prev => [p, ...prev]);
-  const share = (p) => {
-    const url = `https://ironshield.pages.dev/#/Feed?post=${p.id}`;
-    if (navigator.share) navigator.share({ text: p.content, url }).catch(() => {});
-    else { navigator.clipboard.writeText(url); alert("Link copied"); }
+  const share = async (p) => {
+    const origin = (typeof window !== "undefined" && window.location.origin) || "https://ironshield.pages.dev";
+    const url = `${origin}/#/Feed?post=${p.id}`;
+    const text = p.content?.slice(0, 120) || "Check this out on IronFeed";
+    try {
+      if (navigator.share) { await navigator.share({ text, url }); return; }
+    } catch { /* user cancelled */ return; }
+    try { await navigator.clipboard.writeText(url); alert("Link copied to clipboard"); }
+    catch { prompt("Copy this link:", url); }
   };
 
   return (
@@ -1165,7 +1283,7 @@ export default function IronFeedPage({ openWallet }) {
           </div>
         </header>
 
-        <ComposePost wallet={wallet} onPosted={onPosted} />
+        <ComposePost wallet={wallet} selector={selector} onPosted={onPosted} />
 
         {posts.length === 0 && !loading && (
           <div style={{ padding: 40, textAlign: "center", color: t.textDim }}>

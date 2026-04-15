@@ -9,15 +9,18 @@ const { enqueue } = require("../services/batchWorker");
 router.post("/", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
-    const { content, mediaUrls = [], mediaType = "NONE", quotedPostId = null, repostOfId = null } = req.body || {};
+    const { content, mediaUrls = [], mediaType = "NONE", quotedPostId = null, repostOfId = null, onchainTx = null } = req.body || {};
     if (!content || content.length > 500) return res.status(400).json({ error: "content required, max 500 chars" });
     const ts = Date.now();
     const hash = postHash(content, user.id, ts);
     const r = await db.query(
-      `INSERT INTO feed_posts (author_id, content, media_urls, media_type, quoted_post_id, repost_of_id, post_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [user.id, content, mediaUrls, mediaType, quotedPostId, repostOfId, hash]);
-    await enqueue(user.id, "post", { postId: r.rows[0].id, hash });
+      `INSERT INTO feed_posts (author_id, content, media_urls, media_type, quoted_post_id, repost_of_id, post_hash, onchain_tx)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [user.id, content, mediaUrls, mediaType, quotedPostId, repostOfId, hash, onchainTx]);
+    if (onchainTx) {
+      await db.query("UPDATE feed_users SET last_post_tx=$1 WHERE id=$2", [onchainTx, user.id]);
+    }
+    await enqueue(user.id, "post", { postId: r.rows[0].id, hash, onchainTx });
     const [hydrated] = await hydratePosts([r.rows[0]], user.id);
     res.json({ post: hydrated });
   } catch (e) { next(e); }

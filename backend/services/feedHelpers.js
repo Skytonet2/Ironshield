@@ -62,6 +62,7 @@ async function hydratePosts(rows, viewerId) {
     repostOfId: p.repost_of_id,
     quotedPostId: p.quoted_post_id,
     createdAt: p.created_at,
+    onchainTx: p.onchain_tx || null,
     author: aMap[p.author_id] || null,
     likes: lMap[p.id] || 0,
     comments: cMap[p.id] || 0,

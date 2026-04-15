@@ -14,8 +14,8 @@ router.get("/conversations", requireWallet, async (req, res, next) => {
     const me = await getOrCreateUser(req.wallet);
     const r = await db.query(
       `SELECT c.*,
-              ua.id AS a_id, ua.wallet_address AS a_wallet, ua.username AS a_username, ua.display_name AS a_name, ua.pfp_url AS a_pfp,
-              ub.id AS b_id, ub.wallet_address AS b_wallet, ub.username AS b_username, ub.display_name AS b_name, ub.pfp_url AS b_pfp,
+              ua.id AS a_id, ua.wallet_address AS a_wallet, ua.username AS a_username, ua.display_name AS a_name, ua.pfp_url AS a_pfp, ua.dm_pubkey AS a_pk,
+              ub.id AS b_id, ub.wallet_address AS b_wallet, ub.username AS b_username, ub.display_name AS b_name, ub.pfp_url AS b_pfp, ub.dm_pubkey AS b_pk,
               (SELECT COUNT(*)::int FROM feed_dms d
                 WHERE d.conversation_id=c.id AND d.to_id=$1 AND d.read_at IS NULL) AS unread
          FROM feed_conversations c
@@ -27,8 +27,8 @@ router.get("/conversations", requireWallet, async (req, res, next) => {
       conversations: r.rows.map(c => ({
         id: c.id, lastMessageAt: c.last_message_at, unread: c.unread,
         peer: c.a_id === me.id
-          ? { id: c.b_id, wallet: c.b_wallet, username: c.b_username, displayName: c.b_name, pfpUrl: c.b_pfp }
-          : { id: c.a_id, wallet: c.a_wallet, username: c.a_username, displayName: c.a_name, pfpUrl: c.a_pfp },
+          ? { id: c.b_id, wallet: c.b_wallet, username: c.b_username, displayName: c.b_name, pfpUrl: c.b_pfp, dmPubkey: c.b_pk }
+          : { id: c.a_id, wallet: c.a_wallet, username: c.a_username, displayName: c.a_name, pfpUrl: c.a_pfp, dmPubkey: c.a_pk },
       })),
     });
   } catch (e) { next(e); }
@@ -40,7 +40,7 @@ router.get("/search", requireWallet, async (req, res, next) => {
     const q = String(req.query.q || "").toLowerCase().trim();
     if (!q) return res.json({ user: null });
     const r = await db.query(
-      "SELECT id, wallet_address, username, display_name, pfp_url, account_type FROM feed_users WHERE LOWER(wallet_address)=$1 OR LOWER(username)=$1 LIMIT 1",
+      "SELECT id, wallet_address, username, display_name, pfp_url, account_type, dm_pubkey FROM feed_users WHERE LOWER(wallet_address)=$1 OR LOWER(username)=$1 LIMIT 1",
       [q]);
     res.json({ user: r.rows[0] || null, registered: !!r.rows[0] });
   } catch (e) { next(e); }
@@ -57,7 +57,7 @@ router.post("/conversation", requireWallet, async (req, res, next) => {
     if (!r.rows.length) {
       r = await db.query("INSERT INTO feed_conversations (participant_a, participant_b) VALUES ($1,$2) RETURNING *", [a, b]);
     }
-    res.json({ conversationId: r.rows[0].id, peer: { id: peer.id, wallet: peer.wallet_address, username: peer.username } });
+    res.json({ conversationId: r.rows[0].id, peer: { id: peer.id, wallet: peer.wallet_address, username: peer.username, dmPubkey: peer.dm_pubkey } });
   } catch (e) { next(e); }
 });
 

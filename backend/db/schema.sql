@@ -171,6 +171,8 @@ CREATE TABLE IF NOT EXISTS feed_users (
   org_verified_at TIMESTAMPTZ,
   org_payment_tx  TEXT,
   delegate_pubkey TEXT,                 -- platform function-call access key (granted once)
+  dm_pubkey       TEXT,                 -- Curve25519 public key for E2E DMs (base64)
+  last_post_tx    TEXT,                 -- last social.near tx hash (for tamper-evident posts)
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_feed_users_username ON feed_users(username);
@@ -314,3 +316,8 @@ CREATE TABLE IF NOT EXISTS feed_notifications (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_feed_notifs_user ON feed_notifications(user_id, created_at DESC);
+
+-- Idempotent additive migrations (safe to re-run)
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS dm_pubkey TEXT;
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_post_tx TEXT;
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS onchain_tx TEXT;

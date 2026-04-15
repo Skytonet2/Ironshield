@@ -1,5 +1,5 @@
 "use client";
-import { Shield, Wallet, Vote, Cpu, Coins } from "lucide-react";
+import { Shield, Wallet, Vote, Cpu, Coins, Feather } from "lucide-react";
 import { Badge, Btn, Section } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
 
@@ -79,8 +79,8 @@ export default function HomePage({ setPage, openWallet }) {
                 ? <Btn onClick={openWallet} style={{ fontSize: 15, padding: "14px 32px" }}>
                     <Wallet size={16} /> Connect Wallet
                   </Btn>
-                : <Btn onClick={() => setPage("Governance")} style={{ fontSize: 15, padding: "14px 32px", borderColor: "#9b5de544", color: "#9b5de5" }}>
-                    <Vote size={16} /> Vote on Missions
+                : <Btn onClick={() => setPage("Feed")} style={{ fontSize: 15, padding: "14px 32px", borderColor: `${t.accent}66`, color: t.accent }}>
+                    <Feather size={16} /> IronFeed
                   </Btn>
               }
             </div>

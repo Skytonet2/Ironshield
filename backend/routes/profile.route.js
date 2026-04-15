@@ -22,7 +22,7 @@ router.get("/:key", async (req, res, next) => {
       user: {
         id: u.id, walletAddress: u.wallet_address, username: u.username,
         displayName: u.display_name, bio: u.bio, pfpUrl: u.pfp_url, bannerUrl: u.banner_url,
-        accountType: u.account_type, verified: u.verified,
+        accountType: u.account_type, verified: u.verified, dmPubkey: u.dm_pubkey,
         followers: followers.rows[0].c, following: following.rows[0].c, posts: posts.rows[0].c,
       },
     });
@@ -66,6 +66,18 @@ router.post("/upload", requireWallet, async (req, res) => {
     cloudName: cloud, apiKey, timestamp, folder, signature,
     uploadUrl: `https://api.cloudinary.com/v1_1/${cloud}/auto/upload`,
   });
+});
+
+// POST /api/profile/dm-pubkey  body: { pubkey }
+// Publishes the user's Curve25519 public key so peers can encrypt DMs to them.
+router.post("/dm-pubkey", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const { pubkey } = req.body || {};
+    if (!pubkey) return res.status(400).json({ error: "pubkey required" });
+    await db.query("UPDATE feed_users SET dm_pubkey=$1 WHERE id=$2", [pubkey, user.id]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
 });
 
 // POST /api/profile/grant-delegate body: { pubkey }
