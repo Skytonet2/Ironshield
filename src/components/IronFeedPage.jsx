@@ -83,8 +83,97 @@ function Avatar({ user, size = 40 }) {
   );
 }
 
+/* ───────────────────── RichText: URLs + @mentions + #tags ─────── */
+// Single regex splits text into [normal, url, mention, hashtag, ...] chunks.
+// URL:      https?://… OR bare domain.tld/…
+// Mention:  @user.near | @user.testnet | @user (alphanum, min 2 chars)
+// Hashtag:  #alphanum (min 2 chars)
+const RICH_RE = /(https?:\/\/[^\s<>"']+|\b[a-zA-Z0-9-]+\.(?:near|testnet)(?:\/[^\s<>"']*)?|@[a-zA-Z0-9_.-]{2,}|#[a-zA-Z0-9_]{2,})/g;
+
+function RichText({ text, style, onMention }) {
+  const t = useTheme();
+  if (!text) return null;
+  const linkStyle = { color: t.accent, textDecoration: "none", cursor: "pointer", wordBreak: "break-word" };
+  const parts = [];
+  let lastIdx = 0;
+  let m;
+  const re = new RegExp(RICH_RE.source, "g");
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > lastIdx) parts.push({ kind: "text", v: text.slice(lastIdx, m.index) });
+    const tok = m[0];
+    if (tok.startsWith("http")) parts.push({ kind: "url", v: tok, href: tok });
+    else if (tok.startsWith("@")) {
+      const handle = tok.slice(1).toLowerCase();
+      parts.push({ kind: "mention", v: tok, handle });
+    } else if (tok.startsWith("#")) {
+      parts.push({ kind: "tag", v: tok, tag: tok.slice(1) });
+    } else {
+      // bare account like user.near or url like foo.near/something
+      const href = tok.startsWith("http") ? tok : `https://${tok}`;
+      parts.push({ kind: "url", v: tok, href });
+    }
+    lastIdx = m.index + tok.length;
+  }
+  if (lastIdx < text.length) parts.push({ kind: "text", v: text.slice(lastIdx) });
+
+  return (
+    <span style={style}>
+      {parts.map((p, i) => {
+        if (p.kind === "url") {
+          return (
+            <a key={i} href={p.href} target="_blank" rel="noopener noreferrer"
+               onClick={e => e.stopPropagation()} style={linkStyle}>{p.v}</a>
+          );
+        }
+        if (p.kind === "mention") {
+          return (
+            <a key={i} href={`#/Feed?profile=${encodeURIComponent(p.handle)}`}
+               onClick={e => { e.stopPropagation(); onMention?.(p.handle); }}
+               style={linkStyle}>{p.v}</a>
+          );
+        }
+        if (p.kind === "tag") {
+          return (
+            <a key={i} href={`#/Feed?tag=${encodeURIComponent(p.tag)}`}
+               onClick={e => e.stopPropagation()} style={linkStyle}>{p.v}</a>
+          );
+        }
+        return <span key={i}>{p.v}</span>;
+      })}
+    </span>
+  );
+}
+
 /* ───────────────────── Compose (file picker) ──────────────────── */
 const COMMON_EMOJI = ["😀","😂","🤣","😊","😍","🤩","😎","🤔","😭","😡","🔥","💯","🚀","💎","🎯","👀","👍","👎","🙏","❤️","💔","⚡","🌙","☀️","💰","📈","📉","🤝","✅","❌","⭐"];
+
+/* Tag-picker: when composer content ends in "@fragment", show wallets matching
+ * from the /api/social/search?q= endpoint (fallback to local cache). Click to
+ * insert ".near" suffix if missing. Shared by Compose + Comment. */
+function useMentionSuggestions(content, wallet) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [query, setQuery] = useState(null);
+  useEffect(() => {
+    // Find last @token under cursor (end-of-string heuristic).
+    const m = /(^|\s)@([a-zA-Z0-9_.-]{1,})$/.exec(content || "");
+    if (!m) { setQuery(null); setSuggestions([]); return; }
+    const q = m[2].toLowerCase();
+    setQuery(q);
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API}/api/social/search?q=${encodeURIComponent(q)}&limit=6`,
+          { headers: wallet ? { "x-wallet": wallet } : {} });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!cancelled) setSuggestions(Array.isArray(data?.users) ? data.users : []);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [content, wallet]);
+  return { suggestions, query };
+}
+
 
 function ComposePost({ wallet, selector, onPosted, placeholder = "What's happening in IronShield?" }) {
   const t = useTheme();
@@ -104,6 +193,13 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
   const [title, setTitle] = useState("");
   const MAX = kind === "article" ? 50000 : 500;
   const left = MAX - content.length;
+  const { suggestions: mentionSugg, query: mentionQuery } = useMentionSuggestions(content, wallet);
+
+  const insertMention = (username) => {
+    const handle = /\.(near|testnet)$/i.test(username) ? username : `${username}.near`;
+    setContent(prev => prev.replace(/(^|\s)@[a-zA-Z0-9_.-]*$/, (_m, pre) => `${pre}@${handle} `));
+    setTimeout(() => taRef.current?.focus(), 0);
+  };
 
   const pick = () => fileRef.current?.click();
 
@@ -141,21 +237,25 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
       // through to off-chain post so users aren't blocked when their wallet
       // can't function-call social.near (most common cause of "post stuck").
       let onchainTx = null;
+      let onchainWarn = "";
       if (selector) {
         try {
           const r = await postToNearSocial({ selector, accountId: wallet, text: content, media });
           onchainTx = r.txHash || null;
+          if (!onchainTx) onchainWarn = "On-chain tx signed but hash not returned by wallet.";
         } catch (signErr) {
           const sm = signErr?.message || String(signErr);
-          console.warn("[IronFeed] sign failed (continuing off-chain):", sm);
+          console.warn("[IronFeed] sign failed:", sm);
           if (/reject|cancel|denied|user closed/i.test(sm)) {
-            // Hard reject — don't proceed; the user actively cancelled.
             setErr("Transaction rejected in wallet — post not published.");
             setPosting(false); return;
           }
-          // For any other error (access-key issues, network blips, etc.) we
-          // proceed off-chain so the post still lands.
+          // Non-rejection error: save off-chain but surface the reason so the
+          // user knows why no tx hash appeared.
+          onchainWarn = `On-chain post failed (${sm.slice(0, 140)}). Saved off-chain.`;
         }
+      } else {
+        onchainWarn = "Wallet not connected to a signer — saved off-chain only.";
       }
       const body = { content, kind };
       if (onchainTx) body.onchainTx = onchainTx;
@@ -165,6 +265,7 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
       const r = await api("/api/posts", { method: "POST", wallet, body });
       onPosted?.(r.post);
       setContent(""); setMedia(null); setGate(null); setTitle(""); setKind("post");
+      if (onchainWarn) setErr(onchainWarn);
     } catch (e) {
       const m = e.message || "";
       if (/database|DATABASE_URL|dbOffline/i.test(m)) {
@@ -222,6 +323,33 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
               outline: "none", resize: "vertical", fontFamily: "inherit", padding: "8px 0",
               minHeight: kind === "article" ? 220 : undefined }}
           />
+          {mentionQuery !== null && mentionSugg.length > 0 && (
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", top: -4, left: 0, right: 0, zIndex: 10,
+                background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 12,
+                padding: 6, boxShadow: "0 10px 32px rgba(0,0,0,.5)", maxHeight: 220, overflowY: "auto" }}>
+                {mentionSugg.slice(0, 6).map(u => (
+                  <button key={u.wallet_address || u.username}
+                    onMouseDown={(e) => { e.preventDefault(); insertMention(u.username || u.wallet_address); }}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      padding: "6px 8px", border: "none", background: "transparent",
+                      color: t.text, cursor: "pointer", borderRadius: 8, textAlign: "left" }}
+                    onMouseEnter={e => e.currentTarget.style.background = t.bgSurface}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <Avatar user={u} size={24} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: t.white }}>
+                        {u.display_name || u.username}
+                      </div>
+                      <div style={{ fontSize: 11, color: t.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        @{u.username || u.wallet_address}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {media && (
             <div style={{ position: "relative", marginTop: 6, borderRadius: 14, overflow: "hidden", border: `1px solid ${t.border}` }}>
               {media.type === "VIDEO"
@@ -591,9 +719,12 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
               )}
               <p style={{ color: t.text, fontSize: 15, lineHeight: 1.45, margin: "4px 0",
                 whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                {post.kind === "article" && post.content.length > 320
-                  ? post.content.slice(0, 320) + "…"
-                  : post.content}
+                <RichText
+                  text={post.kind === "article" && post.content.length > 320
+                    ? post.content.slice(0, 320) + "…"
+                    : post.content}
+                  onMention={(h) => onOpenProfile?.(h)}
+                />
               </p>
               {post.kind === "article" && post.content.length > 320 && (
                 <span style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>Read article →</span>
@@ -772,7 +903,7 @@ function CommentsModal({ post, wallet, onClose, openWallet }) {
             {post.author?.display_name || post.author?.username || "anon"}
             <span style={{ color: t.textDim, fontWeight: 400, marginLeft: 6 }}>· {timeAgo(post.createdAt)}</span>
           </div>
-          <div style={{ color: t.text, fontSize: 15, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{post.content}</div>
+          <div style={{ color: t.text, fontSize: 15, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}><RichText text={post.content} /></div>
           {post.mediaUrls?.[0] && (
             <div style={{ marginTop: 8, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}` }}>
               {post.mediaType === "VIDEO"
@@ -803,7 +934,7 @@ function CommentsModal({ post, wallet, onClose, openWallet }) {
                 <strong style={{ color: t.white }}>{c.display_name || c.username}</strong>
                 <span style={{ color: t.textDim, marginLeft: 6 }}>· {timeAgo(c.created_at)}</span>
               </div>
-              <div style={{ color: t.text, fontSize: 14 }}>{c.content}</div>
+              <div style={{ color: t.text, fontSize: 14 }}><RichText text={c.content} /></div>
             </div>
           </div>
         ))}
@@ -938,7 +1069,7 @@ function ProfileModal({ wallet, viewerWallet, viewerSelector, onClose, onOpenDM,
           {posts.length === 0 && <p style={{ color: t.textDim, padding: 12 }}>No posts yet.</p>}
           {posts.map(p => (
             <div key={p.id} style={{ padding: "10px 0", borderBottom: `1px solid ${t.border}` }}>
-              <div style={{ color: t.text, fontSize: 14 }}>{p.content}</div>
+              <div style={{ color: t.text, fontSize: 14 }}><RichText text={p.content} /></div>
               <div style={{ color: t.textDim, fontSize: 12, marginTop: 4 }}>{timeAgo(p.createdAt)}</div>
             </div>
           ))}

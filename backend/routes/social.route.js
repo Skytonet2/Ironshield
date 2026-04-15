@@ -123,4 +123,26 @@ router.get("/following/:userId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/social/search?q=foo&limit=6 — used by composer @mention picker.
+// Matches prefix on username OR wallet_address (case-insensitive).
+router.get("/search", async (req, res, next) => {
+  try {
+    const q = String(req.query.q || "").toLowerCase().trim();
+    const limit = Math.min(20, Number(req.query.limit) || 6);
+    if (!q) return res.json({ users: [] });
+    const r = await db.query(
+      `SELECT id, wallet_address, username, display_name, pfp_url, account_type, verified
+         FROM feed_users
+        WHERE LOWER(username) LIKE $1 OR LOWER(wallet_address) LIKE $1
+        ORDER BY
+          CASE WHEN LOWER(username) = $2 THEN 0
+               WHEN LOWER(username) LIKE $3 THEN 1
+               ELSE 2 END,
+          username
+        LIMIT $4`,
+      [`%${q}%`, q, `${q}%`, limit]);
+    res.json({ users: r.rows });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

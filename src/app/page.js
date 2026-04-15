@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import {
   Shield, Sun, Moon, LogOut, Wallet, Home as HomeIcon, Hash, Bell,
   Mail, Bookmark, Users, User, MoreHorizontal, Feather, Rocket, Coins,
-  Vote, Sparkles, Network, BookOpen, Bot, Zap, MessageSquare, Menu, X,
+  Vote, Sparkles, Network, BookOpen, Bot, Zap, MessageSquare, Menu, X, Mic,
 } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -30,6 +30,7 @@ const PRIMARY = [
   { key: "Home",        label: "Home",       Icon: HomeIcon,  mobileTop: true },
   { key: "Feed",        label: "IronFeed",   Icon: Feather,   mobileTop: true },
   { key: "Alpha",       label: "Alpha",      Icon: Sparkles,  mobileTop: true },
+  { key: "Rooms",       label: "Rooms",      Icon: Mic,       mobileTop: true, external: "/rooms/" },
   { key: "Staking",     label: "Staking",    Icon: Coins },
   { key: "Earn",        label: "Earn",       Icon: Rocket,    mobileTop: true },
   { key: "Governance",  label: "Governance", Icon: Vote,      mobileTop: true },
@@ -64,6 +65,11 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const setPage = useCallback((p) => {
+    const entry = PRIMARY.find(x => x.key === p);
+    if (entry?.external) {
+      window.location.href = entry.external;
+      return;
+    }
     setPageState(p);
     navigate(p);
     window.scrollTo(0, 0);
