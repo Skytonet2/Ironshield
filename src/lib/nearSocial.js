@@ -24,21 +24,45 @@ export async function postToNearSocial({ selector, accountId, text, media }) {
   };
 
   const wallet = await selector.wallet();
-  console.log("[NEAR Social] signing with wallet:", wallet?.id || wallet?.metadata?.name, "for", accountId);
+  const walletId = wallet?.id || wallet?.metadata?.name || "";
+  console.log("[NEAR Social] signing with wallet:", walletId, "for", accountId);
 
-  const result = await wallet.signAndSendTransaction({
-    signerId: accountId,
-    receiverId: SOCIAL_CONTRACT,
-    actions: [{
-      type: "FunctionCall",
-      params: {
-        methodName: "set",
-        args: { data },
-        gas: "100000000000000",           // 100 Tgas
-        deposit: STORAGE_DEPOSIT_YOCTO,
-      },
-    }],
-  });
+  const action = {
+    type: "FunctionCall",
+    params: {
+      methodName: "set",
+      args: { data },
+      gas: "100000000000000",           // 100 Tgas
+      deposit: STORAGE_DEPOSIT_YOCTO,
+    },
+  };
+
+  let result;
+  try {
+    result = await wallet.signAndSendTransaction({
+      signerId: accountId,
+      receiverId: SOCIAL_CONTRACT,
+      actions: [action],
+    });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    console.warn("[NEAR Social] signAndSendTransaction failed:", msg);
+    // Intear and some wallets reject the standard action shape; retry via the
+    // plural `signAndSendTransactions` API which many wallets translate differently.
+    if (/NAJ|Unsupported|not supported|unknown action/i.test(msg) && typeof wallet.signAndSendTransactions === "function") {
+      console.log("[NEAR Social] retrying via signAndSendTransactions");
+      result = await wallet.signAndSendTransactions({
+        transactions: [{
+          signerId: accountId,
+          receiverId: SOCIAL_CONTRACT,
+          actions: [action],
+        }],
+      });
+      if (Array.isArray(result)) result = result[0];
+    } else {
+      throw e;
+    }
+  }
 
   console.log("[NEAR Social] signAndSendTransaction result:", result);
 
