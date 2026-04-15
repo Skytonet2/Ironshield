@@ -1166,6 +1166,29 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet }) {
   );
 }
 
+/* ───────────────────── Infinite scroll sentinel ───────────────────── */
+function InfiniteScrollSentinel({ cursor, loading, onMore, t }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!cursor || !ref.current) return;
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting && !loading) onMore();
+    }, { rootMargin: "600px" });
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [cursor, loading, onMore]);
+
+  if (!cursor && !loading) {
+    return <div style={{ textAlign: "center", padding: 24, color: t.textDim, fontSize: 13 }}>You're all caught up ✨</div>;
+  }
+  return (
+    <div ref={ref} style={{ textAlign: "center", padding: 20, color: t.textDim, fontSize: 13 }}>
+      {loading ? <Loader2 size={16} className="ix-spin" /> : "Loading more…"}
+      <style>{`.ix-spin { animation: ixSpin 1s linear infinite; } @keyframes ixSpin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 /* ───────────────────── Main page ───────────────────── */
 export default function IronFeedPage({ openWallet }) {
   const t = useTheme();
@@ -1306,11 +1329,7 @@ export default function IronFeedPage({ openWallet }) {
             onOpenProfile={(w) => setOpenProfile(w)}
             openWallet={openWallet} />
         ))}
-        {cursor && (
-          <div style={{ textAlign: "center", padding: 16 }}>
-            <Btn onClick={() => load(false)} disabled={loading}>{loading ? "Loading…" : "Load more"}</Btn>
-          </div>
-        )}
+        <InfiniteScrollSentinel cursor={cursor} loading={loading} onMore={() => load(false)} t={t} />
       </section>
 
       {/* Right rail */}

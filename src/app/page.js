@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import {
   Shield, Sun, Moon, LogOut, Wallet, Home as HomeIcon, Hash, Bell,
   Mail, Bookmark, Users, User, MoreHorizontal, Feather, Rocket, Coins,
-  Vote, Sparkles, Network, BookOpen, Bot, Zap, MessageSquare,
+  Vote, Sparkles, Network, BookOpen, Bot, Zap, MessageSquare, Menu, X,
 } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -61,6 +61,7 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [walletMenu, setWalletMenu] = useState(false);
   const [showSurprise, setShowSurprise] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const setPage = useCallback((p) => {
     setPageState(p);
@@ -125,6 +126,27 @@ export default function App() {
           .ix-post-cta { width: 48px; height: 48px; border-radius: 50%; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
         }
         .ix-mobile-bar { display: none; }
+        .ix-mobile-menu-btn { display: none; }
+        @media (max-width: 640px) {
+          .ix-mobile-menu-btn {
+            display: inline-flex; position: fixed; top: 10px; right: 10px;
+            z-index: 200; width: 40px; height: 40px; border-radius: 50%;
+            border: 1px solid ${t.border}; background: ${t.bgCard};
+            align-items: center; justify-content: center; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(0,0,0,.35);
+          }
+          .ix-mobile-drawer-backdrop {
+            position: fixed; inset: 0; background: rgba(0,0,0,.6);
+            backdrop-filter: blur(3px); z-index: 300;
+          }
+          .ix-mobile-drawer {
+            position: fixed; top: 0; right: 0; bottom: 0; width: min(86vw, 320px);
+            background: ${t.bg}; border-left: 1px solid ${t.border};
+            display: flex; flex-direction: column; z-index: 301;
+            animation: ixSlideIn .2s ease-out;
+          }
+          @keyframes ixSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        }
         @media (max-width: 640px) {
           .ix-shell { grid-template-columns: 1fr; }
           .ix-sidebar { display: none; }
@@ -293,6 +315,53 @@ export default function App() {
           <span>Messages</span>
         </button>
       </nav>
+
+      {/* Mobile top-right menu button + drawer: exposes ALL nav items including desktop-only ones */}
+      <button className="ix-mobile-menu-btn" aria-label="Open menu" onClick={() => setMobileNavOpen(true)}>
+        <Menu size={20} color={t.text} />
+      </button>
+
+      {mobileNavOpen && (
+        <div className="ix-mobile-drawer-backdrop" onClick={() => setMobileNavOpen(false)}>
+          <aside className="ix-mobile-drawer" onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${t.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Shield size={20} color={t.accent} />
+                <span style={{ fontSize: 16, fontWeight: 800, color: t.white }}>Iron<span style={{ color: t.accent }}>Shield</span></span>
+              </div>
+              <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: t.textMuted }}>
+                <X size={18} />
+              </button>
+            </div>
+            <nav style={{ display: "flex", flexDirection: "column", padding: 8, gap: 2 }}>
+              {PRIMARY.map(({ key, label, Icon }) => (
+                <button key={key} onClick={() => { setPage(key); setMobileNavOpen(false); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 14, padding: "12px 14px",
+                    border: "none", background: page === key ? t.bgSurface : "transparent",
+                    color: page === key ? t.white : t.text, cursor: "pointer",
+                    borderRadius: 10, fontSize: 15, fontWeight: page === key ? 700 : 500, textAlign: "left",
+                  }}>
+                  <Icon size={20} color={page === key ? t.accent : t.text} />
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <div style={{ marginTop: "auto", padding: 12, borderTop: `1px solid ${t.border}`, display: "flex", gap: 8 }}>
+              <button onClick={() => { setIsDark(!isDark); }}
+                style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 12px", border: `1px solid ${t.border}`, background: "transparent", color: t.text, borderRadius: 10, cursor: "pointer", fontSize: 13 }}>
+                {isDark ? <Sun size={14} /> : <Moon size={14} />} Theme
+              </button>
+              {connected && (
+                <button onClick={() => { signOut(); setMobileNavOpen(false); }}
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 12px", border: `1px solid ${t.border}`, background: "transparent", color: t.red, borderRadius: 10, cursor: "pointer", fontSize: 13 }}>
+                  <LogOut size={14} /> Disconnect
+                </button>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
     </div>
