@@ -24,10 +24,12 @@ async function loadLiveKit() {
   if (LK) return LK;
   if (LK_FAILED) return null;
   try {
-    // Use a runtime variable so the bundler doesn't hard-fail on missing module.
-    const cm = "livekit-client";
-    const rm = "@livekit/components-react";
-    const [client, react] = await Promise.all([import(/* webpackIgnore: true */ cm), import(/* webpackIgnore: true */ rm)]);
+    // Normal dynamic imports — packages are in package.json. Turbopack
+    // creates separate chunks so they don't bloat the main bundle.
+    const [client, react] = await Promise.all([
+      import("livekit-client"),
+      import("@livekit/components-react"),
+    ]);
     LK = { client, react };
     return LK;
   } catch (e) {
@@ -74,7 +76,7 @@ export default function LiveStage({
       }
     })();
     return () => { cancelled = true; };
-  }, [roomId, wallet, joined, voiceEnabled]);
+  }, [roomId, wallet, joined, voiceEnabled, myRole]);
 
   const real = tokenInfo && !tokenInfo.mocked && lk;
 

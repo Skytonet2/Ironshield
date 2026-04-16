@@ -152,9 +152,10 @@ export async function fetchWalletTokens(accountId) {
 //   NEP-141:     ft_transfer on the token contract with receiver_id = recipient.
 //                Requires recipient to be storage-registered on that token.
 //
-// The 90/10 treasury split is accounted off-chain in backend/routes/tips.route.js
-// until the on-chain tips contract ships. The net tip to creator still equals
-// the sent amount — treasury takes its cut from *platform fees* elsewhere.
+// Uses the universal walletActions helper so action format works across
+// MeteorWallet (NAJ-style) and MyNearWallet (typed-style).
+import { transferAction, functionCallAction, sendTx, sendTxBatch, extractTxHash } from "@/lib/walletActions";
+
 export const TIPS_CONTRACT = "tips.ironshield.near";
 
 export async function callTipPost({ selector, accountId, postId, token, amount, anonymous, recipient }) {
@@ -185,58 +186,34 @@ export async function callTipPost({ selector, accountId, postId, token, amount, 
 
   if (token.contractId === NATIVE_NEAR) {
     // Native NEAR transfer straight to the creator.
-    result = await wallet.signAndSendTransaction({
-      signerId: accountId,
-      receiverId: String(recipient),
-      actions: [{
-        type: "Transfer",
-        params: { deposit: amountBase },
-      }],
-    });
+    const action = transferAction(amountBase);
+    result = await sendTx(wallet, accountId, String(recipient), [action]);
   } else {
-    // NEP-141 ft_transfer. Recipient must have storage_deposit registered on
-    // the token contract — we attach it defensively (0.00125 N, idempotent).
+    // NEP-141 ft_transfer. Defensive storage_deposit first (0.00125 N, idempotent).
     const STORAGE = "1250000000000000000000"; // 0.00125 N
-    result = await wallet.signAndSendTransactions({
-      transactions: [
-        {
-          signerId: accountId,
-          receiverId: token.contractId,
-          actions: [{
-            type: "FunctionCall",
-            params: {
-              methodName: "storage_deposit",
-              args: { account_id: String(recipient), registration_only: true },
-              gas: "30000000000000",
-              deposit: STORAGE,
-            },
-          }],
-        },
-        {
-          signerId: accountId,
-          receiverId: token.contractId,
-          actions: [{
-            type: "FunctionCall",
-            params: {
-              methodName: "ft_transfer",
-              args: {
-                receiver_id: String(recipient),
-                amount: amountBase,
-                memo,
-              },
-              gas: "30000000000000",
-              deposit: "1",
-            },
-          }],
-        },
-      ],
-    });
+    const storageTx = {
+      signerId: accountId,
+      receiverId: token.contractId,
+      actionPairs: [functionCallAction({
+        methodName: "storage_deposit",
+        args: { account_id: String(recipient), registration_only: true },
+        gas: "30000000000000",
+        deposit: STORAGE,
+      })],
+    };
+    const transferTx = {
+      signerId: accountId,
+      receiverId: token.contractId,
+      actionPairs: [functionCallAction({
+        methodName: "ft_transfer",
+        args: { receiver_id: String(recipient), amount: amountBase, memo },
+        gas: "30000000000000",
+        deposit: "1",
+      })],
+    };
+    result = await sendTxBatch(wallet, [storageTx, transferTx]);
   }
 
-  const first = Array.isArray(result) ? result[result.length - 1] : result;
-  const txHash =
-    first?.transaction?.hash ||
-    first?.transaction_outcome?.id ||
-    null;
+  const txHash = extractTxHash(result);
   return { txHash, result, mocked: false, amountBase, memo };
 }

@@ -3,6 +3,8 @@
 // Uses the existing @near-wallet-selector session. Deducts NEAR directly from
 // the user's wallet and returns the transaction hash.
 
+import { transferAction, sendTx, extractTxHash } from "@/lib/walletActions";
+
 export const PLATFORM_TREASURY = process.env.NEXT_PUBLIC_TREASURY_ACCOUNT || "ironshield.near";
 
 // Balance check helper: returns available NEAR as a Number.
@@ -21,7 +23,7 @@ export async function getAvailableNear(accountId) {
 export function toYocto(near) {
   const [w, f = ""] = String(near).split(".");
   const padded = (f + "0".repeat(24)).slice(0, 24);
-  return BigInt(w || "0") * 1_000_000_000_000_000_000_000_000n + BigInt(padded || "0");
+  return (BigInt(w || "0") * 1_000_000_000_000_000_000_000_000n + BigInt(padded || "0")).toString();
 }
 
 /**
@@ -40,17 +42,10 @@ export async function payNear({ selector, accountId, amountNear, memo = "" }) {
   }
 
   const wallet = await selector.wallet();
-  const yocto = toYocto(amountNear).toString();
+  const yocto = toYocto(amountNear);
+  const action = transferAction(yocto);
 
-  const result = await wallet.signAndSendTransaction({
-    signerId: accountId,
-    receiverId: PLATFORM_TREASURY,
-    actions: [{
-      type: "Transfer",
-      params: { deposit: yocto },
-    }],
-  });
-
-  const txHash = result?.transaction?.hash || result?.transaction_outcome?.id || null;
+  const result = await sendTx(wallet, accountId, PLATFORM_TREASURY, [action]);
+  const txHash = extractTxHash(result);
   return { txHash, result, memo };
 }
