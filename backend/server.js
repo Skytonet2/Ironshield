@@ -37,6 +37,7 @@ app.use("/api/tips",          require("./routes/tips.route"));
 app.use("/api/rooms",         require("./routes/rooms.route"));
 app.use("/api/livekit",       require("./routes/livekit.route"));
 app.use("/api/revenue",       require("./routes/revenue.route"));
+app.use("/api/push",          require("./routes/push.route"));
 
 // Root
 app.get("/", (req, res) => {

@@ -4,12 +4,12 @@ const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
 const { enqueue } = require("../services/batchWorker");
+const { createAndPush } = require("../services/pushNotify");
 
 async function notify(userId, type, actorId, postId) {
   if (!userId || userId === actorId) return;
-  await db.query(
-    "INSERT INTO feed_notifications (user_id, type, actor_id, post_id) VALUES ($1,$2,$3,$4)",
-    [userId, type, actorId, postId]);
+  // createAndPush writes the notification row AND sends a push.
+  createAndPush({ userId, actorId, postId, type }).catch(() => {});
 }
 
 // POST /api/social/like  body: { postId }

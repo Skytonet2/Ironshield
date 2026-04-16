@@ -431,3 +431,14 @@ CREATE TABLE IF NOT EXISTS feed_room_messages (
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_feed_rm_room ON feed_room_messages(room_id, created_at DESC);
+
+-- Push notification subscriptions (Web Push API / VAPID)
+CREATE TABLE IF NOT EXISTS feed_push_subscriptions (
+  id           SERIAL PRIMARY KEY,
+  user_id      INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  endpoint     TEXT NOT NULL UNIQUE,
+  subscription JSONB NOT NULL,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_feed_push_user ON feed_push_subscriptions(user_id);

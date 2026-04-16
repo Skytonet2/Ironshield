@@ -4,9 +4,11 @@ import {
   Shield, Sun, Moon, LogOut, Wallet, Home as HomeIcon, Hash, Bell,
   Mail, Bookmark, Users, User, MoreHorizontal, Feather, Rocket, Coins,
   Vote, Sparkles, Network, BookOpen, Bot, Zap, MessageSquare, Menu, X, Mic,
+  Download, BellRing, Share2,
 } from "lucide-react";
 import { useThemeInfo, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
+import { usePWA } from "@/lib/usePWA";
 
 import HomePage       from "@/components/HomePage";
 import AdminPanel     from "@/components/AdminPanel";
@@ -63,6 +65,9 @@ export default function App() {
   const [walletMenu, setWalletMenu] = useState(false);
   const [showSurprise, setShowSurprise] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(true);
+
+  const pwa = usePWA(address);
 
   const setPage = useCallback((p) => {
     const entry = PRIMARY.find(x => x.key === p);
@@ -255,6 +260,18 @@ export default function App() {
                 <MenuItem t={t} onClick={() => setShowAdmin(true)}>
                   <Hash size={16} /> Dashboard settings
                 </MenuItem>
+                <MenuItem t={t} onClick={async () => {
+                  if (pwa.pushEnabled) { await pwa.disablePush(); }
+                  else { await pwa.enablePush(); }
+                  setWalletMenu(false);
+                }} color={pwa.pushEnabled ? t.green : t.text}>
+                  <BellRing size={16} /> {pwa.pushEnabled ? "Notifications on" : "Enable notifications"}
+                </MenuItem>
+                {pwa.canInstall && (
+                  <MenuItem t={t} onClick={async () => { await pwa.promptInstall(); setWalletMenu(false); }}>
+                    <Download size={16} /> Install app
+                  </MenuItem>
+                )}
                 <MenuItem t={t} onClick={signOut} color={t.red}>
                   <LogOut size={16} /> Disconnect
                 </MenuItem>
@@ -285,6 +302,39 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* PWA Install banner */}
+      {showInstallBanner && !pwa.isInstalled && (pwa.canInstall || pwa.isIOS) && (
+        <div style={{
+          position: "fixed", bottom: 68, left: 8, right: 8, zIndex: 150,
+          background: `linear-gradient(135deg, ${t.bgCard}, ${t.bgSurface})`,
+          border: `1px solid ${t.accent}44`,
+          borderRadius: 16, padding: "14px 16px",
+          display: "flex", alignItems: "center", gap: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,.6)",
+        }}>
+          <img src="/mascot.png" alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: "cover" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: t.white, fontSize: 14, fontWeight: 700 }}>Install IronShield</div>
+            <div style={{ color: t.textMuted, fontSize: 11 }}>
+              {pwa.isIOS
+                ? <>Tap <Share2 size={11} style={{ verticalAlign: "middle" }} /> then "Add to Home Screen"</>
+                : "Add to your home screen for the full experience"}
+            </div>
+          </div>
+          {pwa.canInstall && (
+            <button onClick={async () => { await pwa.promptInstall(); setShowInstallBanner(false); }}
+              style={{ padding: "8px 16px", background: t.accent, color: "#fff", border: "none",
+                borderRadius: 999, cursor: "pointer", fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>
+              Install
+            </button>
+          )}
+          <button onClick={() => setShowInstallBanner(false)}
+            style={{ background: "none", border: "none", color: t.textMuted, cursor: "pointer", padding: 4 }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Mobile bottom tab bar: Profile | Agent | Home | Notifications | Messages */}
       <nav className="ix-mobile-bar">

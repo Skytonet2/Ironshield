@@ -21,7 +21,16 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata = {
   title: "IronShield | NEAR Protocol",
   description: "AI Security. On-Chain. Unstoppable.",
-  icons: { icon: "/icon.svg" },
+  icons: { icon: "/icon.svg", apple: "/mascot.png" },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "IronShield",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default function RootLayout({ children }) {
@@ -29,6 +38,10 @@ export default function RootLayout({ children }) {
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
       <head>
         <link rel="preload" as="image" href="/mascot.webp" type="image/webp" />
+        <meta name="theme-color" content="#3b82f6" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <link rel="apple-touch-icon" href="/mascot.png" />
         <style dangerouslySetInnerHTML={{ __html: `
           /* Simple pre-React loader: pure CSS, no JS required */
           #ic-pre-loader {

@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { createAndPush } = require("../services/pushNotify");
 
 // Holding-period proxy: users created ≥ 7 days ago count as "held
 // $IRONCLAW 7+ days" for the purposes of the 10% treasury split. New
@@ -72,12 +73,16 @@ router.post("/", requireWallet, async (req, res, next) => {
       ]
     );
 
-    // Notify author of the tip (unless anonymous — then store actor_id=null).
-    await db.query(
-      `INSERT INTO feed_notifications (user_id, type, actor_id, post_id)
-       VALUES ($1, 'tip', $2, $3)`,
-      [author_id, anonymous ? null : tipper.id, postId]
-    );
+    // Notify author of the tip (push + DB row).
+    createAndPush({
+      userId: author_id,
+      actorId: anonymous ? null : tipper.id,
+      postId,
+      type: "tip",
+      body: anonymous
+        ? `Someone tipped your post ${Number(amountHuman).toFixed(2)} ${tokenSymbol || "tokens"}`
+        : undefined,
+    }).catch(() => {});
 
     res.json({
       ok: true,
