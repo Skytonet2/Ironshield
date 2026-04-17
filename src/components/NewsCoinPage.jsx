@@ -23,6 +23,14 @@ function api(path, { method = "GET", body, wallet } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   }).then(async r => {
     const text = await r.text();
+    // If the backend returns HTML (e.g. SPA fallback because NEXT_PUBLIC_BACKEND_URL
+    // isn't configured in prod), don't crash the UI with "Unexpected token '<'".
+    const looksHtml = text.trimStart().startsWith("<");
+    if (looksHtml) {
+      const err = new Error(`Backend unreachable (HTTP ${r.status}). Set NEXT_PUBLIC_BACKEND_URL.`);
+      err.backendDown = true;
+      throw err;
+    }
     let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
     if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
     return data;
@@ -949,14 +957,52 @@ export default function NewsCoinPage() {
     loadingRef.current = true;
     if (!append) setLoading(true);
     try {
-      const params = new URLSearchParams({ filter: tab, offset: String(pageNum * PAGE_SIZE), limit: String(PAGE_SIZE) });
-      if (wallet) params.set("wallet", wallet);
-      const data = await api(`/api/newscoin/list?${params}`);
-      const list = Array.isArray(data?.coins) ? data.coins : Array.isArray(data) ? data : [];
+      // Try backend indexer first (has mcap/volume/sparkline data).
+      let list = [];
+      try {
+        const params = new URLSearchParams({ filter: tab, offset: String(pageNum * PAGE_SIZE), limit: String(PAGE_SIZE) });
+        if (wallet) params.set("wallet", wallet);
+        const data = await api(`/api/newscoin/list?${params}`);
+        list = Array.isArray(data?.coins) ? data.coins : Array.isArray(data) ? data : [];
+      } catch (err) {
+        // Backend down or missing — we'll rely entirely on on-chain data.
+        if (!err?.backendDown) console.warn("NewsCoin backend error:", err?.message || err);
+      }
+
+      // Always merge in on-chain coins from the factory so newly-minted coins
+      // show up immediately even if the backend indexer hasn't seen them yet.
+      try {
+        const { getAllCoinsOnChain } = await import("@/lib/newscoin");
+        const onchain = await getAllCoinsOnChain({
+          fromIndex: pageNum * PAGE_SIZE,
+          limit: PAGE_SIZE,
+        });
+        // Merge by coinAddress OR storyId — backend rows may use tx hashes
+        // as contractAddress until the indexer catches up.
+        const seenAddr = new Set(list.map(c => c.coinAddress || c.contractAddress).filter(Boolean));
+        const seenStory = new Set(list.map(c => String(c.storyId)).filter(Boolean));
+        for (const c of onchain) {
+          if (seenAddr.has(c.coinAddress)) continue;
+          if (seenStory.has(String(c.storyId))) continue;
+          list.push(c);
+        }
+      } catch (chainErr) {
+        console.warn("NewsCoin on-chain fetch error:", chainErr?.message || chainErr);
+      }
+
+      // Sort: newest first for "new", mcap desc for "top", otherwise keep mixed.
+      if (tab === "new") {
+        list.sort((a, b) => {
+          const ai = a._index ?? 0;
+          const bi = b._index ?? 0;
+          return bi - ai;
+        });
+      }
+
       if (append) {
         setCoins(prev => {
-          const ids = new Set(prev.map(c => c.id));
-          return [...prev, ...list.filter(c => !ids.has(c.id))];
+          const seen = new Set(prev.map(c => c.coinAddress || c.id));
+          return [...prev, ...list.filter(c => !seen.has(c.coinAddress || c.id))];
         });
       } else {
         setCoins(list);
