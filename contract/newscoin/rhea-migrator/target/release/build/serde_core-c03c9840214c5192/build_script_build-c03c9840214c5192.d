@@ -1,5 +1,0 @@
-C:\Users\SKYTONET\ironshield\.claude\worktrees\zealous-kalam\contract\newscoin\rhea-migrator\target\release\build\serde_core-c03c9840214c5192\build_script_build-c03c9840214c5192.exe: C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_core-1.0.228\build.rs
-
-C:\Users\SKYTONET\ironshield\.claude\worktrees\zealous-kalam\contract\newscoin\rhea-migrator\target\release\build\serde_core-c03c9840214c5192\build_script_build-c03c9840214c5192.d: C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_core-1.0.228\build.rs
-
-C:\Users\SKYTONET\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_core-1.0.228\build.rs:
