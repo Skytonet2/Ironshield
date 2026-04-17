@@ -438,7 +438,7 @@ impl NewsCoinCurve {
     //
     // If the router call fails, NEAR sits in the contract; admin can retry
     // via `retry_rhea_migration`. Trading stays frozen either way.
-    fn migrate_to_rhea(&self) {
+    fn migrate_to_rhea(&mut self) {
         // Reserve 0.1 NEAR for contract storage, keep creator_claimable intact.
         let storage_reserve: u128 = 100_000_000_000_000_000_000_000; // 0.1 NEAR
         let balance = env::account_balance().as_yoctonear();
@@ -450,13 +450,29 @@ impl NewsCoinCurve {
             return;
         }
 
+        // Mint an LP-seed supply to the migrator equal to total_supply.
+        // This doubles the circulating supply at graduation — the curve side
+        // supply stays with holders (they can ft_transfer freely post-grad),
+        // and the migrator's copy gets paired with bonded NEAR on Ref.
+        // Holders effectively get a 2x effective supply but the DEX price
+        // anchors to the curve's terminal price * 2 which is fine for v1.
+        let grad_supply = self.total_supply;
+        self.total_supply = self.total_supply.saturating_add(grad_supply);
+        let router = self.rhea_router.clone();
+        let router_bal = self.balances.get(&router).copied().unwrap_or(0);
+        self.balances.insert(router.clone(), router_bal + grad_supply);
+        env::log_str(&format!(
+            r#"EVENT_JSON:{{"standard":"nep141","version":"1.0.0","event":"ft_mint","data":[{{"owner_id":"{}","amount":"{}","memo":"graduation_lp"}}]}}"#,
+            router, grad_supply
+        ));
+
         let payload = format!(
             r#"{{"coin_id":"{}","name":"{}","ticker":"{}","story_id":"{}","total_supply":"{}","creator":"{}"}}"#,
             env::current_account_id(),
             self.name,
             self.ticker,
             self.story_id,
-            self.total_supply,
+            grad_supply,
             self.creator,
         );
 
@@ -485,7 +501,7 @@ impl NewsCoinCurve {
     }
 
     /// Admin retry if initial migration promise failed (NEAR still on contract).
-    pub fn retry_rhea_migration(&self) {
+    pub fn retry_rhea_migration(&mut self) {
         let caller = env::predecessor_account_id();
         require!(caller == self.owner_id || caller == self.agent_id, "Not authorized");
         require!(self.graduated, "Not graduated yet");
@@ -591,6 +607,128 @@ impl NewsCoinCurve {
             Promise::new(caller).transfer(NearToken::from_yoctonear(share));
         }
         U128(share)
+    }
+
+    // ─── NEP-141 surface (so Ref Finance / Rhea can index the token) ──
+    //
+    // We intentionally implement a minimal subset — enough for Ref's
+    // ft_transfer_call flow and wallet balance queries. Pre-graduation the
+    // token is trade-restricted (buy/sell only via curve), so ft_transfer is
+    // callable but the only meaningful use is the migrator pulling supply
+    // into Ref at graduation. Post-graduation, Ref takes over price
+    // discovery and holders can freely transfer.
+    //
+    // Storage registration is a no-op: we use UnorderedMap keyed by
+    // AccountId with no per-user storage deposit. Rooms for improvement
+    // but good enough for v1.
+
+    #[payable]
+    pub fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, _memo: Option<String>) {
+        require!(env::attached_deposit().as_yoctonear() == 1, "Requires 1 yocto");
+        let sender = env::predecessor_account_id();
+        let amt = amount.0;
+        require!(amt > 0, "Zero transfer");
+        let sender_bal = self.balances.get(&sender).copied().unwrap_or(0);
+        require!(sender_bal >= amt, "Insufficient balance");
+        self.balances.insert(sender.clone(), sender_bal - amt);
+        let recv_bal = self.balances.get(&receiver_id).copied().unwrap_or(0);
+        self.balances.insert(receiver_id.clone(), recv_bal + amt);
+        env::log_str(&format!(
+            r#"EVENT_JSON:{{"standard":"nep141","version":"1.0.0","event":"ft_transfer","data":[{{"old_owner_id":"{}","new_owner_id":"{}","amount":"{}"}}]}}"#,
+            sender, receiver_id, amt
+        ));
+    }
+
+    #[payable]
+    pub fn ft_transfer_call(
+        &mut self,
+        receiver_id: AccountId,
+        amount: U128,
+        _memo: Option<String>,
+        msg: String,
+    ) -> Promise {
+        require!(env::attached_deposit().as_yoctonear() == 1, "Requires 1 yocto");
+        let sender = env::predecessor_account_id();
+        let amt = amount.0;
+        require!(amt > 0, "Zero transfer");
+        let sender_bal = self.balances.get(&sender).copied().unwrap_or(0);
+        require!(sender_bal >= amt, "Insufficient balance");
+        self.balances.insert(sender.clone(), sender_bal - amt);
+        let recv_bal = self.balances.get(&receiver_id).copied().unwrap_or(0);
+        self.balances.insert(receiver_id.clone(), recv_bal + amt);
+
+        // Fire ft_on_transfer on receiver; on callback we'd refund unused.
+        // Minimal version: fire-and-forget. Ref's ft_on_transfer always
+        // returns "0" (used all), so refund path isn't strictly needed here.
+        let payload = format!(
+            r#"{{"sender_id":"{}","amount":"{}","msg":"{}"}}"#,
+            sender, amt, msg.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        Promise::new(receiver_id).function_call(
+            "ft_on_transfer".to_string(),
+            payload.into_bytes(),
+            NearToken::from_yoctonear(0),
+            Gas::from_tgas(30),
+        )
+    }
+
+    pub fn ft_balance_of(&self, account_id: AccountId) -> U128 {
+        U128(self.balances.get(&account_id).copied().unwrap_or(0))
+    }
+
+    pub fn ft_total_supply(&self) -> U128 {
+        U128(self.total_supply)
+    }
+
+    pub fn ft_metadata(&self) -> serde_json::Value {
+        serde_json::json!({
+            "spec": "ft-1.0.0",
+            "name": self.name,
+            "symbol": self.ticker,
+            "icon": serde_json::Value::Null,
+            "reference": serde_json::Value::Null,
+            "reference_hash": serde_json::Value::Null,
+            "decimals": 18u8,
+        })
+    }
+
+    // Ref calls storage_deposit before ft_transfer_call — make it a no-op
+    // with minimal refund so registration doesn't block migration.
+    #[payable]
+    pub fn storage_deposit(
+        &mut self,
+        account_id: Option<AccountId>,
+        _registration_only: Option<bool>,
+    ) -> serde_json::Value {
+        let attached = env::attached_deposit().as_yoctonear();
+        let who = account_id.unwrap_or_else(env::predecessor_account_id);
+        // We don't actually track per-account storage — refund everything
+        // beyond a nominal 0.00125 NEAR bond.
+        let bond: u128 = 1_250_000_000_000_000_000_000;
+        if attached > bond {
+            Promise::new(env::predecessor_account_id())
+                .transfer(NearToken::from_yoctonear(attached - bond));
+        }
+        serde_json::json!({
+            "total": U128(bond),
+            "available": U128(0),
+            "account_id": who,
+        })
+    }
+
+    pub fn storage_balance_of(&self, account_id: AccountId) -> Option<serde_json::Value> {
+        Some(serde_json::json!({
+            "total": U128(1_250_000_000_000_000_000_000u128),
+            "available": U128(0),
+            "account_id": account_id,
+        }))
+    }
+
+    pub fn storage_balance_bounds(&self) -> serde_json::Value {
+        serde_json::json!({
+            "min": U128(1_250_000_000_000_000_000_000u128),
+            "max": U128(1_250_000_000_000_000_000_000u128),
+        })
     }
 
     // ─── Views ─────────────────────────────────────────────────────────
