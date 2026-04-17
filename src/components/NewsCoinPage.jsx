@@ -10,7 +10,7 @@ import { Btn, Badge } from "@/components/Primitives";
 import { functionCallAction, sendTx, extractTxHash } from "@/lib/walletActions";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
-const FACTORY = "newscoin_factory.near";
+const FACTORY = "newscoin-factory.ironshield.near";
 const ORANGE = "#f97316";
 
 // ── Helpers ────────────────────────────────────────────────────────────
