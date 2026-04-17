@@ -37,6 +37,7 @@ pub struct NewsCoinFactory {
     revenue_wallet: AccountId,
     agent_id: AccountId,
     registry_id: AccountId,
+    rhea_router: AccountId,
     story_coins: UnorderedMap<String, Vec<AccountId>>,
     all_coins: Vector<CoinInfo>,
     creation_fee: u128,
@@ -53,12 +54,14 @@ impl NewsCoinFactory {
         revenue_wallet: AccountId,
         agent_id: AccountId,
         registry_id: AccountId,
+        rhea_router: AccountId,
     ) -> Self {
         Self {
             owner_id,
             revenue_wallet,
             agent_id,
             registry_id,
+            rhea_router,
             story_coins: UnorderedMap::new(StorageKey::StoryCoins),
             all_coins: Vector::new(StorageKey::AllCoins),
             creation_fee: DEFAULT_CREATION_FEE,
@@ -95,6 +98,11 @@ impl NewsCoinFactory {
     pub fn update_registry(&mut self, registry_id: AccountId) {
         self.assert_owner();
         self.registry_id = registry_id;
+    }
+
+    pub fn update_rhea_router(&mut self, rhea_router: AccountId) {
+        self.assert_owner();
+        self.rhea_router = rhea_router;
     }
 
     // ─── Create ─────────────────────────────────────────────────────
@@ -159,6 +167,8 @@ impl NewsCoinFactory {
             "creator": creator,
             "agent_id": self.agent_id,
             "revenue_wallet": self.revenue_wallet,
+            "rhea_router": self.rhea_router,
+            "registry_id": self.registry_id,
             "name": name,
             "ticker": ticker,
             "story_id": story_id,

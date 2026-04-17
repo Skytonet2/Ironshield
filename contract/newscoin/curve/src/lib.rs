@@ -33,6 +33,7 @@ const DEFAULT_COOLDOWN: u64 = 60 * 60 * 1_000_000_000;               // 1 hour
 const PRICE_SCALE: u128 = 1_000_000_000_000_000_000; // 1e18
 
 const GAS_FOR_TRANSFER: Gas = Gas::from_tgas(10);
+const GAS_FOR_RHEA_MIGRATE: Gas = Gas::from_tgas(80);
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -72,6 +73,8 @@ pub struct NewsCoinCurve {
     pub creator: AccountId,        // original minter
     pub agent_id: AccountId,       // ironclaw-agent.near
     pub revenue_wallet: AccountId, // ironshield-revenue.near
+    pub rhea_router: AccountId,    // Rhea Finance pool creator / migrator
+    pub registry_id: AccountId,    // NewsCoin registry for stats updates
 
     pub name: String,
     pub ticker: String,
@@ -113,6 +116,8 @@ impl NewsCoinCurve {
         creator: AccountId,
         agent_id: AccountId,
         revenue_wallet: AccountId,
+        rhea_router: AccountId,
+        registry_id: AccountId,
         name: String,
         ticker: String,
         story_id: String,
@@ -141,6 +146,8 @@ impl NewsCoinCurve {
             creator,
             agent_id,
             revenue_wallet,
+            rhea_router,
+            registry_id,
             name,
             ticker,
             story_id,
@@ -343,8 +350,7 @@ impl NewsCoinCurve {
                 r#"EVENT_JSON:{{"standard":"newscoin","version":"1.0","event":"graduated","data":[{{"mcap_usd":"{}","supply":"{}"}}]}}"#,
                 mcap, self.total_supply
             ));
-            // Rhea migration stub — in prod this calls out to Rhea Finance
-            // to seed a pool with the contract's NEAR balance + remaining supply.
+            self.migrate_to_rhea();
         }
 
         U128(tokens)
@@ -419,6 +425,71 @@ impl NewsCoinCurve {
         self.creator_claimable = 0;
         Promise::new(caller).transfer(NearToken::from_yoctonear(amt));
         U128(amt)
+    }
+
+    // ─── Rhea Finance graduation ──────────────────────────────────────
+    //
+    // On graduation we hand the bonded NEAR + remaining supply metadata to
+    // `rhea_router`. The router contract (deployed separately) seeds a Rhea
+    // liquidity pool. Here we:
+    //   1. Transfer bonded NEAR (minus creator_claimable, minus storage buffer)
+    //   2. Cross-contract call rhea_router.migrate_coin({name, ticker, supply, ...})
+    //   3. Ping registry so UI can flip to "Trade on Rhea" CTA
+    //
+    // If the router call fails, NEAR sits in the contract; admin can retry
+    // via `retry_rhea_migration`. Trading stays frozen either way.
+    fn migrate_to_rhea(&self) {
+        // Reserve 0.1 NEAR for contract storage, keep creator_claimable intact.
+        let storage_reserve: u128 = 100_000_000_000_000_000_000_000; // 0.1 NEAR
+        let balance = env::account_balance().as_yoctonear();
+        let reserved = self.creator_claimable.saturating_add(storage_reserve);
+        let migratable = balance.saturating_sub(reserved);
+
+        if migratable == 0 {
+            env::log_str("EVENT_JSON:{\"standard\":\"newscoin\",\"version\":\"1.0\",\"event\":\"rhea_migration_skipped\",\"data\":[{\"reason\":\"no_balance\"}]}");
+            return;
+        }
+
+        let payload = format!(
+            r#"{{"coin_id":"{}","name":"{}","ticker":"{}","story_id":"{}","total_supply":"{}","creator":"{}"}}"#,
+            env::current_account_id(),
+            self.name,
+            self.ticker,
+            self.story_id,
+            self.total_supply,
+            self.creator,
+        );
+
+        Promise::new(self.rhea_router.clone())
+            .function_call(
+                "migrate_coin".to_string(),
+                payload.into_bytes(),
+                NearToken::from_yoctonear(migratable),
+                GAS_FOR_RHEA_MIGRATE,
+            );
+
+        // Mark graduated in registry (best-effort, separate promise).
+        let reg_payload = format!(
+            r#"{{"coin_id":"{}","mcap_usd":"{}","volume_24h":"0","holders":{},"graduated":true}}"#,
+            env::current_account_id(),
+            self.mcap_usd(),
+            self.balances.len(),
+        );
+        Promise::new(self.registry_id.clone())
+            .function_call(
+                "update_coin_stats".to_string(),
+                reg_payload.into_bytes(),
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(15),
+            );
+    }
+
+    /// Admin retry if initial migration promise failed (NEAR still on contract).
+    pub fn retry_rhea_migration(&self) {
+        let caller = env::predecessor_account_id();
+        require!(caller == self.owner_id || caller == self.agent_id, "Not authorized");
+        require!(self.graduated, "Not graduated yet");
+        self.migrate_to_rhea();
     }
 
     // ─── Agent curve management ───────────────────────────────────────
@@ -607,7 +678,7 @@ fn mul_scaled(a: u128, b: u128) -> u128 {
     let cross = a_hi.saturating_mul(b_lo).saturating_add(a_lo.saturating_mul(b_hi));
     let lo = a_lo.saturating_mul(b_lo);
     // Combine: result = (cross << 64) + lo ... then / PRICE_SCALE
-    let combined = (cross.saturating_shl(64)).saturating_add(lo);
+    let combined = cross.checked_shl(64).unwrap_or(u128::MAX).saturating_add(lo);
     combined / PRICE_SCALE
 }
 
