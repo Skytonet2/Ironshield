@@ -42,6 +42,13 @@ function api(path, { method = "GET", body, wallet, raw } = {}) {
     body: raw ? body : body ? JSON.stringify(body) : undefined,
   }).then(async r => {
     const text = await r.text();
+    // If the backend isn't deployed (SPA HTML fallback or CDN 404 page), don't
+    // crash the UI with "Unexpected token '<'". Surface a clean, recognizable error.
+    if (text.trimStart().startsWith("<")) {
+      const err = new Error("Backend unavailable — some features (DMs, AI, calls) need the IronShield backend online.");
+      err.backendDown = true;
+      throw err;
+    }
     let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
     if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
     return data;
