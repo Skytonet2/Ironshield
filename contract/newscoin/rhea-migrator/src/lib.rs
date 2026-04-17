@@ -51,6 +51,8 @@ pub enum MigrationStatus {
     Pending,
     Wrapped,
     PoolCreated { pool_id: u64 },
+    WnearDeposited { pool_id: u64 },
+    TokenDeposited { pool_id: u64 },
     LiquiditySeeded { pool_id: u64 },
     Failed { step: String, error: String },
 }
@@ -253,25 +255,15 @@ impl RheaMigrator {
             coin_id, pool_id
         ));
 
-        // Step 3: ask the curve contract to ft_transfer its total_supply worth
-        // of tokens to Ref with msg telling Ref to deposit into our pool.
-        // The curve's NEP-141 ft_transfer_call will move tokens → Ref, and
-        // Ref's ft_on_transfer will credit our account's pool balance.
-        //
-        // IMPORTANT: For step 3 to work, the curve must have minted the
-        // "graduated supply" to this migrator contract. That happens in the
-        // curve's migrate_to_rhea() via an ft_transfer pre-call.
-        //
-        // Here we push wNEAR into the pool. Token side is pushed by the curve.
-        let ft_msg = format!(r#"{{"actions":[{{"pool_id":{},"token_in":"{}","amount_in":"{}","min_amount_out":"0"}}]}}"#,
-            pool_id, self.wrap_near, wrap_amount.0);
-
+        // Step 3: deposit wNEAR balance into Ref. Empty msg = "just credit
+        // our account's Ref balance, don't swap". We'll do the same for the
+        // coin token, then call add_liquidity to commit both into the pool.
         Promise::new(self.wrap_near.clone())
             .function_call(
                 "ft_transfer_call".to_string(),
                 format!(
-                    r#"{{"receiver_id":"{}","amount":"{}","msg":"{}"}}"#,
-                    self.ref_finance, wrap_amount.0, ft_msg.replace('"', "\\\"")
+                    r#"{{"receiver_id":"{}","amount":"{}","msg":""}}"#,
+                    self.ref_finance, wrap_amount.0
                 ).into_bytes(),
                 NearToken::from_yoctonear(1),
                 GAS_FT_TRANSFER_CALL,
@@ -279,30 +271,132 @@ impl RheaMigrator {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_CALLBACK)
-                    .on_lp_seeded(coin_id, pool_id, total_supply),
+                    .on_wnear_deposited(coin_id, pool_id, wrap_amount, total_supply),
             )
     }
 
-    // ─── Step 3 callback: wNEAR side seeded ────────────────────────────
+    // ─── Step 3 callback: wNEAR deposited to Ref ───────────────────────
     #[private]
-    pub fn on_lp_seeded(
+    pub fn on_wnear_deposited(
         &mut self,
         coin_id: AccountId,
         pool_id: u64,
-        _total_supply: U128,
-        #[callback_result] seed_result: Result<U128, PromiseError>,
+        wrap_amount: U128,
+        total_supply: U128,
+        #[callback_result] result: Result<U128, PromiseError>,
+    ) -> Promise {
+        let mut m = self.migrations.get(&coin_id).cloned()
+            .unwrap_or_else(|| env::panic_str("Migration not found"));
+
+        if result.is_err() {
+            m.status = MigrationStatus::Failed {
+                step: "ft_transfer_call(wNEAR)".to_string(),
+                error: "Ref refused wNEAR deposit".to_string(),
+            };
+            m.updated_at = env::block_timestamp();
+            self.migrations.insert(coin_id.clone(), m);
+            env::panic_str("wNEAR deposit failed — admin can retry");
+        }
+
+        m.status = MigrationStatus::WnearDeposited { pool_id };
+        m.updated_at = env::block_timestamp();
+        self.migrations.insert(coin_id.clone(), m);
+
+        env::log_str(&format!(
+            r#"EVENT_JSON:{{"standard":"newscoin-migrator","version":"1.0","event":"wnear_deposited","data":[{{"coin_id":"{}","amount":"{}"}}]}}"#,
+            coin_id, wrap_amount.0
+        ));
+
+        // Step 4: deposit coin tokens (from the NEP-141 balance the curve
+        // minted to us at graduation) into Ref.
+        Promise::new(coin_id.clone())
+            .function_call(
+                "ft_transfer_call".to_string(),
+                format!(
+                    r#"{{"receiver_id":"{}","amount":"{}","msg":""}}"#,
+                    self.ref_finance, total_supply.0
+                ).into_bytes(),
+                NearToken::from_yoctonear(1),
+                GAS_FT_TRANSFER_CALL,
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_CALLBACK)
+                    .on_token_deposited(coin_id, pool_id, wrap_amount, total_supply),
+            )
+    }
+
+    // ─── Step 4 callback: coin tokens deposited to Ref ─────────────────
+    #[private]
+    pub fn on_token_deposited(
+        &mut self,
+        coin_id: AccountId,
+        pool_id: u64,
+        wrap_amount: U128,
+        total_supply: U128,
+        #[callback_result] result: Result<U128, PromiseError>,
+    ) -> Promise {
+        let mut m = self.migrations.get(&coin_id).cloned()
+            .unwrap_or_else(|| env::panic_str("Migration not found"));
+
+        if result.is_err() {
+            m.status = MigrationStatus::Failed {
+                step: "ft_transfer_call(coin)".to_string(),
+                error: "Ref refused coin deposit".to_string(),
+            };
+            m.updated_at = env::block_timestamp();
+            self.migrations.insert(coin_id.clone(), m);
+            env::panic_str("Coin deposit failed — admin can retry");
+        }
+
+        m.status = MigrationStatus::TokenDeposited { pool_id };
+        m.updated_at = env::block_timestamp();
+        self.migrations.insert(coin_id.clone(), m);
+
+        env::log_str(&format!(
+            r#"EVENT_JSON:{{"standard":"newscoin-migrator","version":"1.0","event":"token_deposited","data":[{{"coin_id":"{}","amount":"{}"}}]}}"#,
+            coin_id, total_supply.0
+        ));
+
+        // Step 5: finalize LP — commit both deposits into the pool.
+        // Ref's add_liquidity expects amounts in the SAME order as the pool's
+        // tokens array, which we passed as [coin_id, wrap_near].
+        Promise::new(self.ref_finance.clone())
+            .function_call(
+                "add_liquidity".to_string(),
+                format!(
+                    r#"{{"pool_id":{},"amounts":["{}","{}"]}}"#,
+                    pool_id, total_supply.0, wrap_amount.0
+                ).into_bytes(),
+                NearToken::from_millinear(10), // 0.01 NEAR for shares storage
+                GAS_ADD_POOL,
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_CALLBACK)
+                    .on_liquidity_added(coin_id, pool_id),
+            )
+    }
+
+    // ─── Step 5 callback: LP shares minted — migration complete ────────
+    #[private]
+    pub fn on_liquidity_added(
+        &mut self,
+        coin_id: AccountId,
+        pool_id: u64,
+        #[callback_result] result: Result<serde_json::Value, PromiseError>,
     ) {
         let mut m = self.migrations.get(&coin_id).cloned()
             .unwrap_or_else(|| env::panic_str("Migration not found"));
 
-        if seed_result.is_err() {
+        if result.is_err() {
             m.status = MigrationStatus::Failed {
-                step: "ft_transfer_call(wNEAR)".to_string(),
-                error: "Ref refused deposit".to_string(),
+                step: "add_liquidity".to_string(),
+                error: "Ref refused add_liquidity".to_string(),
             };
             m.updated_at = env::block_timestamp();
             self.migrations.insert(coin_id, m);
-            env::panic_str("LP seed failed");
+            env::panic_str("add_liquidity failed — admin can retry");
         }
 
         m.status = MigrationStatus::LiquiditySeeded { pool_id };
