@@ -5,8 +5,13 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const agent = require("../services/agentConnector");
+
+let AccessToken;
+try { ({ AccessToken } = require("livekit-server-sdk")); } catch { AccessToken = null; }
 
 function pair(a, b) { return a < b ? [a, b] : [b, a]; }
+function dmCallRoomName(conversationId) { return `ironclaw-dm-${conversationId}`; }
 
 // GET /api/dm/conversations
 router.get("/conversations", requireWallet, async (req, res, next) => {
@@ -58,6 +63,89 @@ router.post("/conversation", requireWallet, async (req, res, next) => {
       r = await db.query("INSERT INTO feed_conversations (participant_a, participant_b) VALUES ($1,$2) RETURNING *", [a, b]);
     }
     res.json({ conversationId: r.rows[0].id, peer: { id: peer.id, wallet: peer.wallet_address, username: peer.username, dmPubkey: peer.dm_pubkey } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/assistant  body: { message }
+router.post("/assistant", requireWallet, async (req, res, next) => {
+  try {
+    const message = String(req.body?.message || "").trim();
+    if (!message) return res.status(400).json({ error: "message required" });
+    const reply = await agent.personalAssistant({ wallet: req.wallet, message });
+    res.json({
+      reply,
+      assistant: {
+        id: "ironclaw-assistant",
+        wallet: "ironclaw.ai",
+        username: "ironclaw_ai",
+        displayName: "IronClaw AI",
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/:conversationId/call-token
+router.post("/:conversationId/call-token", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const cid = parseInt(req.params.conversationId, 10);
+    if (!Number.isFinite(cid)) return res.status(400).json({ error: "invalid conversation id" });
+
+    const conv = await db.query(
+      `SELECT c.*,
+              ua.id AS a_id, ua.wallet_address AS a_wallet, ua.username AS a_username, ua.display_name AS a_name, ua.pfp_url AS a_pfp,
+              ub.id AS b_id, ub.wallet_address AS b_wallet, ub.username AS b_username, ub.display_name AS b_name, ub.pfp_url AS b_pfp
+         FROM feed_conversations c
+         JOIN feed_users ua ON ua.id = c.participant_a
+         JOIN feed_users ub ON ub.id = c.participant_b
+        WHERE c.id=$1 AND (c.participant_a=$2 OR c.participant_b=$2)`,
+      [cid, me.id]
+    );
+    if (!conv.rows.length) return res.status(403).json({ error: "not a participant" });
+
+    const row = conv.rows[0];
+    const peer = row.a_id === me.id
+      ? { id: row.b_id, wallet: row.b_wallet, username: row.b_username, displayName: row.b_name, pfpUrl: row.b_pfp }
+      : { id: row.a_id, wallet: row.a_wallet, username: row.a_username, displayName: row.a_name, pfpUrl: row.a_pfp };
+
+    const url = process.env.LIVEKIT_URL || "";
+    const apiKey = process.env.LIVEKIT_API_KEY || "";
+    const apiSecret = process.env.LIVEKIT_API_SECRET || "";
+    const roomName = dmCallRoomName(cid);
+
+    if (!apiKey || !apiSecret || !url || !AccessToken) {
+      return res.json({
+        token: null,
+        url: null,
+        roomName,
+        identity: me.wallet_address,
+        peer,
+        mocked: true,
+      });
+    }
+
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: me.wallet_address,
+      name: me.display_name || me.username || me.wallet_address,
+      ttl: 60 * 60 * 2,
+    });
+    at.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      canUpdateOwnMetadata: true,
+    });
+
+    res.json({
+      token: await at.toJwt(),
+      url,
+      roomName,
+      identity: me.wallet_address,
+      peer,
+      mocked: false,
+    });
   } catch (e) { next(e); }
 });
 
