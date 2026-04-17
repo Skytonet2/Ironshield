@@ -807,6 +807,16 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
               onOpenHistory={() => onOpenTipHistory?.(post)}
             />
             <Action icon={Share2} onClick={onShare} t={t} hover={t.accent} />
+            <Action
+              icon={Coins}
+              onClick={() => hasCoins ? onOpenCoin?.(post) : onMintCoin?.(post)}
+              t={t}
+              hover="#f97316"
+              count={hasCoins ? coins.length : undefined}
+              active={hasCoins}
+              fill={hasCoins}
+              title={hasCoins ? `${coins.length}/3 coins • view/trade` : "Coin this story"}
+            />
           </div>
         </div>
       </div>
@@ -847,10 +857,10 @@ function TipAction({ t, tipCount, tipTotalUsd, tier, onTip, onOpenHistory }) {
     </div>
   );
 }
-function Action({ icon: Icon, count, active, hover, onClick, fill, t }) {
+function Action({ icon: Icon, count, active, hover, onClick, fill, t, title }) {
   const color = active ? hover : t.textMuted;
   return (
-    <button onClick={onClick} style={{
+    <button onClick={onClick} title={title} style={{
       display: "inline-flex", alignItems: "center", gap: 4, background: "none",
       border: "none", color, cursor: "pointer", fontSize: 13, padding: "4px 8px",
       borderRadius: 999, transition: "background .15s",
@@ -859,6 +869,72 @@ function Action({ icon: Icon, count, active, hover, onClick, fill, t }) {
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
       <Icon size={17} fill={fill ? color : "none"} /> {count > 0 && <span>{count}</span>}
     </button>
+  );
+}
+
+/* NewsCoinSidebar — desktop-only left column showing recent coins, with a
+   compact row per coin (ticker, name, mcap, 24h change). Click → jump to
+   NewsCoin page. Refreshes every 20s. */
+function NewsCoinSidebar({ t }) {
+  const [coins, setCoins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const data = await api("/api/newscoin/list?filter=trending&from=0&limit=8");
+        if (alive) { setCoins(data?.coins || data || []); }
+      } catch (_) {}
+      if (alive) setLoading(false);
+    };
+    load();
+    const id = setInterval(load, 20000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 6px 10px", marginBottom: 6 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: t.white, fontWeight: 800, fontSize: 14 }}>
+          <Coins size={16} color="#f97316" /> NewsCoin
+        </div>
+        <span style={{ fontSize: 10, color: "#f97316", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Live</span>
+      </div>
+      <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.bgCard, overflow: "hidden" }}>
+        {loading && <div style={{ padding: 12, fontSize: 12, color: t.textMuted }}>Loading…</div>}
+        {!loading && coins.length === 0 && (
+          <div style={{ padding: 12, fontSize: 12, color: t.textMuted }}>No coined stories yet. Be first — tap the Coins icon under any post.</div>
+        )}
+        {coins.map((c, i) => (
+          <button key={c.contract_address || c.address || i}
+            onClick={() => { try { window.dispatchEvent(new CustomEvent("ironshield:navigate", { detail: "NewsCoin" })); } catch (_) {} }}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, width: "100%",
+              padding: "10px 12px", background: "none", border: "none",
+              borderBottom: i < coins.length - 1 ? `1px solid ${t.border}` : "none",
+              cursor: "pointer", color: t.text, textAlign: "left",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = t.bgSurface}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#f9731622", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#f97316", fontWeight: 800, fontSize: 11, flexShrink: 0 }}>
+              ${(c.ticker || "?").slice(0, 3)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.white, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {c.name || c.ticker || "Untitled"}
+              </div>
+              <div style={{ fontSize: 11, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {c.mcap_usd ? `$${Number(c.mcap_usd).toLocaleString()}` : "—"}
+                {c.change_24h != null && (
+                  <span style={{ marginLeft: 6, color: c.change_24h >= 0 ? "#22c55e" : t.red }}>
+                    {c.change_24h >= 0 ? "+" : ""}{Number(c.change_24h).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 function MenuRow({ children, onClick, color, t }) {
@@ -1759,13 +1835,18 @@ export default function IronFeedPage({ openWallet }) {
   };
 
   return (
-    <div className={`ix-feed-wrap ${railOpen ? "rail-on" : "rail-off"}`} style={{ maxWidth: 1100, margin: "0 auto" }}>
+    <div className={`ix-feed-wrap ${railOpen ? "rail-on" : "rail-off"}`} style={{ maxWidth: 1400, margin: "0 auto" }}>
       <style>{`
         .ix-feed-wrap { display: grid; gap: 0; }
-        .ix-feed-wrap.rail-on  { grid-template-columns: minmax(0,1fr) 340px; }
-        .ix-feed-wrap.rail-off { grid-template-columns: minmax(0,1fr); }
+        .ix-feed-wrap.rail-on  { grid-template-columns: 280px minmax(0,1fr) 340px; }
+        .ix-feed-wrap.rail-off { grid-template-columns: 280px minmax(0,1fr); }
         .ix-feed-col { border-left: 1px solid ${t.border}; border-right: 1px solid ${t.border}; min-height: 100vh; min-width: 0; }
         .ix-feed-header { position: sticky; top: 0; z-index: 5; background: ${t.bg}cc; backdrop-filter: blur(8px); border-bottom: 1px solid ${t.border}; }
+        .ix-left-col {
+          padding: 12px 12px 40px;
+          position: sticky; top: 0; align-self: start;
+          max-height: 100vh; overflow-y: auto;
+        }
         .ix-right-col {
           padding: 8px 16px 40px;
           position: sticky; top: 0; align-self: start;
@@ -1778,6 +1859,11 @@ export default function IronFeedPage({ openWallet }) {
           display: inline-flex; align-items: center; justify-content: center;
           cursor: pointer; color: ${t.text};
         }
+        @media (max-width: 1200px) {
+          .ix-feed-wrap.rail-on  { grid-template-columns: minmax(0,1fr) 340px; }
+          .ix-feed-wrap.rail-off { grid-template-columns: minmax(0,1fr); }
+          .ix-left-col { display: none; }
+        }
         @media (max-width: 960px) {
           .ix-feed-wrap.rail-on, .ix-feed-wrap.rail-off { grid-template-columns: 1fr; }
           .ix-right-col, .ix-rail-toggle { display: none; }
@@ -1787,6 +1873,10 @@ export default function IronFeedPage({ openWallet }) {
           .ix-feed-wrap { margin: 0; }
         }
       `}</style>
+      {/* Left column — NewsCoin live feed (desktop only) */}
+      <aside className="ix-left-col">
+        <NewsCoinSidebar t={t} openWallet={openWallet} />
+      </aside>
       <button className="ix-rail-toggle" aria-label={railOpen ? "Hide sidebar" : "Show sidebar"}
         onClick={() => setRailOpen(v => !v)} title={railOpen ? "Hide right sidebar" : "Show right sidebar"}>
         {railOpen ? <X size={18} /> : <Sparkles size={18} color={t.accent} />}

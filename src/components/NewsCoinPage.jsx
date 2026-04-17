@@ -491,6 +491,17 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
     setErr(""); setMinting(true);
     try {
       const w = await selector.wallet();
+      // Check fee waiver on-chain
+      let deposit = "2000000000000000000000000"; // 2 NEAR default
+      try {
+        const acct = await (await import("@/lib/contexts")).getReadAccount();
+        const waived = await acct.viewFunction({
+          contractId: FACTORY,
+          methodName: "is_fee_waived",
+          args: { account_id: wallet },
+        });
+        if (waived) deposit = "0";
+      } catch (_) { /* fallback to paid */ }
       const action = functionCallAction({
         methodName: "create_coin",
         args: {
@@ -499,7 +510,7 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
           ticker: ticker.trim().toUpperCase(),
           headline: (post?.content || "").slice(0, 280),
         },
-        deposit: "2000000000000000000000000", // 2 NEAR
+        deposit,
         gas: "300000000000000",
       });
       const result = await sendTx(w, wallet, FACTORY, [action]);

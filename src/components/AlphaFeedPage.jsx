@@ -3,10 +3,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Rss, TrendingUp, Zap, Droplets, Flame, Globe,
   ChevronDown, ChevronUp, ThumbsUp, MessageCircle,
-  Send, Wallet, RefreshCw, ExternalLink, X
+  Send, Wallet, RefreshCw, ExternalLink, X, Coins
 } from "lucide-react";
 import { Section, Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
+import { MintModal } from "./NewsCoinPage";
 
 // ── Constants ────────────────────────────────────────────────────
 const BACKEND_URL =
@@ -355,7 +356,7 @@ function CommentThread({ itemId, t, connected, address, showModal }) {
 }
 
 // ── Feed Item Card ────────────────────────────────────────────────
-function FeedCard({ item, t, connected, address, showModal }) {
+function FeedCard({ item, t, connected, address, showModal, onCoin }) {
   const [expanded, setExpanded]     = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [upvotes, setUpvotes]       = useState(item.upvotes || 0);
@@ -518,6 +519,29 @@ function FeedCard({ item, t, connected, address, showModal }) {
           {commentCount > 0 ? commentCount : "Comment"}
         </button>
 
+        {/* Coin this alpha */}
+        <button
+          onClick={() => {
+            if (!connected) { showModal(); return; }
+            onCoin?.(item);
+          }}
+          title="Coin this alpha story"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "6px 14px", borderRadius: 20,
+            border: `1px solid ${t.border}`,
+            background: "transparent",
+            color: "#f97316",
+            fontSize: 13, fontWeight: 600, cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "#f9731614"; e.currentTarget.style.borderColor = "#f9731655"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = t.border; }}
+        >
+          <Coins size={14} />
+          Coin
+        </button>
+
         {/* External link */}
         {item.link && item.link !== "#" && (
           <a
@@ -558,7 +582,7 @@ function FeedCard({ item, t, connected, address, showModal }) {
 // ── Main page ─────────────────────────────────────────────────────
 export default function AlphaFeedPage({ openWallet }) {
   const t = useTheme();
-  const { connected, address, showModal } = useWallet();
+  const { connected, address, showModal, selector } = useWallet();
 
   const [items, setItems]             = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -566,6 +590,7 @@ export default function AlphaFeedPage({ openWallet }) {
   const [activeCategory, setActiveCategory] = useState("all");
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshing, setRefreshing]   = useState(false);
+  const [mintItem, setMintItem]       = useState(null);
   const intervalRef = useRef(null);
 
   // ── Fetch ──────────────────────────────────────────────────────
@@ -735,6 +760,7 @@ export default function AlphaFeedPage({ openWallet }) {
               connected={connected}
               address={address}
               showModal={openWalletFn}
+              onCoin={(it) => setMintItem(it)}
             />
           ))}
         </div>
@@ -768,6 +794,21 @@ export default function AlphaFeedPage({ openWallet }) {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
+
+      {/* Mint NewsCoin modal (triggered by FeedCard Coin button) */}
+      {mintItem && (
+        <MintModal
+          post={{
+            id: mintItem.id,
+            story_id: mintItem.id,
+            content: mintItem.title || mintItem.content || "",
+          }}
+          wallet={address}
+          selector={selector}
+          onClose={() => setMintItem(null)}
+          onMinted={() => setMintItem(null)}
+        />
+      )}
     </Section>
   );
 }

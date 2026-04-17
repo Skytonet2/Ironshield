@@ -87,8 +87,13 @@ export default function App() {
     setMounted(true);
     setPageState(getPageFromHash());
     const onHash = () => setPageState(getPageFromHash());
+    const onNav = (e) => { if (e?.detail) setPage(e.detail); };
     window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    window.addEventListener("ironshield:navigate", onNav);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("ironshield:navigate", onNav);
+    };
   }, []);
 
   const openWallet = () => showModal();
