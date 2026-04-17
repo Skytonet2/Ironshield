@@ -13,6 +13,7 @@ import { usePWA } from "@/lib/usePWA";
 import HomePage       from "@/components/HomePage";
 import AdminPanel     from "@/components/AdminPanel";
 import MascotSystem   from "@/components/MascotSystem";
+import DMToast        from "@/components/DMToast";
 
 const StakingPage    = lazy(() => import("@/components/StakingPage"));
 const AlphaFeedPage  = lazy(() => import("@/components/AlphaFeedPage"));
@@ -428,6 +429,11 @@ export default function App() {
       )}
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+
+      <DMToast onOpenDM={(peer, convId) => {
+        setPage("Feed");
+        try { window.dispatchEvent(new CustomEvent("ix-open-dm", { detail: { peer, convId } })); } catch (_) {}
+      }} />
     </div>
   );
 }

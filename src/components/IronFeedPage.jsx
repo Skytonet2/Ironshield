@@ -5,7 +5,7 @@ import {
   Search, Bell, User, MessageSquare, Sparkles, Star, Building2, Bot, Shield,
   Trash2, MoreHorizontal, Loader2, UserPlus, UserMinus, UserCheck, Link as LinkIcon,
   Smile, MapPin, Calendar, BarChart3, Home as HomeIcon, ArrowLeft,
-  Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins, Phone,
+  Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins, Phone, Eye,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -720,6 +720,16 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
   const [reposts, setReposts] = useState(post.reposts);
   const [menuOpen, setMenuOpen] = useState(false);
   const [coins, setCoins] = useState([]);
+  // Impressions: start from server value if any, bump once when first seen
+  // in this browser session (tracked in localStorage so we don't double-count).
+  const [impressions, setImpressions] = useState(() => {
+    const serverVal = Number(post.impressions || 0);
+    if (typeof window === "undefined") return serverVal;
+    try {
+      const stored = JSON.parse(localStorage.getItem("ix_impr_v1") || "{}");
+      return Math.max(serverVal, Number(stored[post.id] || 0));
+    } catch { return serverVal; }
+  });
   const ref = useRef(null);
 
   // Fetch any NewsCoins attached to this story
@@ -743,14 +753,34 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
   const locked      = !!post.gate && !gateEval.met;
 
   useEffect(() => {
-    if (!viewerWallet || !ref.current) return;
-    let visibleSince = null, sent = false;
+    if (!ref.current) return;
+    let visibleSince = null, sent = false, countedImpression = false;
     const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting && !visibleSince) visibleSince = Date.now();
-      else if (!e.isIntersecting && visibleSince) {
+      if (e.isIntersecting) {
+        if (!visibleSince) visibleSince = Date.now();
+        // Count one impression the first time ≥50% of the card is visible.
+        if (!countedImpression) {
+          countedImpression = true;
+          setImpressions(v => {
+            const next = v + 1;
+            try {
+              const stored = JSON.parse(localStorage.getItem("ix_impr_v1") || "{}");
+              stored[post.id] = next;
+              // cap the bag to most-recent 500 posts so storage doesn't bloat
+              const keys = Object.keys(stored);
+              if (keys.length > 500) delete stored[keys[0]];
+              localStorage.setItem("ix_impr_v1", JSON.stringify(stored));
+            } catch {}
+            return next;
+          });
+          // Best-effort server ping. Ignores failures (backend may be offline).
+          api("/api/feed/impression", { method: "POST", wallet: viewerWallet || undefined,
+            body: { postId: post.id } }).catch(() => {});
+        }
+      } else if (!e.isIntersecting && visibleSince) {
         const dwell = Date.now() - visibleSince;
         visibleSince = null;
-        if (dwell >= 5000 && !sent) {
+        if (viewerWallet && dwell >= 5000 && !sent) {
           sent = true;
           api("/api/feed/engagement", { method: "POST", wallet: viewerWallet,
             body: { postId: post.id, dwellMs: dwell } }).catch(() => {});
@@ -952,6 +982,14 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
               fill={hasCoins}
               title={hasCoins ? `${coins.length}/3 coins • view/trade` : "Coin this story"}
             />
+            <Action
+              icon={Eye}
+              count={impressions}
+              t={t}
+              hover={t.accent}
+              onClick={(e) => e.stopPropagation()}
+              title={`${impressions} impressions`}
+            />
           </div>
         </div>
       </div>
@@ -1016,11 +1054,25 @@ function NewsCoinSidebar({ t }) {
   useEffect(() => {
     let alive = true;
     const load = async () => {
+      let list = [];
       try {
         const data = await api("/api/newscoin/list?filter=trending&from=0&limit=8");
-        if (alive) { setCoins(data?.coins || data || []); }
+        list = data?.coins || data || [];
+      } catch (_) { /* backend offline or returning HTML — fall through */ }
+      // Always merge in on-chain coins so the sidebar populates even without
+      // a backend (production deploys don't ship one).
+      try {
+        const { getAllCoinsOnChain } = await import("@/lib/newscoin");
+        const onchain = await getAllCoinsOnChain({ fromIndex: 0, limit: 8 });
+        const seen = new Set(list.map(c => c.coinAddress || c.contract_address).filter(Boolean));
+        for (const c of onchain) {
+          if (!seen.has(c.coinAddress)) list.push({ ...c, contract_address: c.coinAddress });
+        }
       } catch (_) {}
-      if (alive) setLoading(false);
+      if (alive) {
+        setCoins(list.slice(0, 8));
+        setLoading(false);
+      }
     };
     load();
     const id = setInterval(load, 20000);
@@ -2173,7 +2225,16 @@ export default function IronFeedPage({ openWallet }) {
     };
     parse();
     window.addEventListener("hashchange", parse);
-    return () => window.removeEventListener("hashchange", parse);
+    const onOpenDM = (e) => {
+      const d = e?.detail || {};
+      if (d.peer) setDmPeer(d.peer.wallet || d.peer.username || d.peer);
+      setOpenDMs(true);
+    };
+    window.addEventListener("ix-open-dm", onOpenDM);
+    return () => {
+      window.removeEventListener("hashchange", parse);
+      window.removeEventListener("ix-open-dm", onOpenDM);
+    };
   }, [wallet]);
 
   const load = useCallback(async (reset = true) => {

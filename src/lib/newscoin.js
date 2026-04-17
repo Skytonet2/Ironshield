@@ -32,6 +32,52 @@ export async function getCoinsForStory(storyId) {
   return account.viewFunction({ contractId: FACTORY_CONTRACT, methodName: "get_coins_for_story", args: { story_id: storyId } });
 }
 
+// Fetch the canonical coin list straight from the factory contract. This is
+// the trustless source of truth — used when the backend indexer is offline,
+// or to merge in coins that were just minted and haven't been indexed yet.
+// Returns coins in the same shape the frontend expects from /api/newscoin/list.
+export async function getAllCoinsOnChain({ fromIndex = 0, limit = 50 } = {}) {
+  const account = await getReadAccount();
+  const raw = await account.viewFunction({
+    contractId: FACTORY_CONTRACT,
+    methodName: "get_all_coins",
+    args: { from_index: fromIndex, limit },
+  });
+  if (!Array.isArray(raw)) return [];
+  return raw.map((c, idx) => {
+    // created_at on-chain is block_timestamp in ns
+    const ts = Number(c.created_at || 0) / 1e6; // → ms
+    const ageMs = Math.max(0, Date.now() - ts);
+    const ageHours = ageMs / 3_600_000;
+    const age = ageHours < 1
+      ? `${Math.max(1, Math.round(ageHours * 60))}m`
+      : ageHours < 24
+        ? `${Math.round(ageHours)}h`
+        : `${Math.round(ageHours / 24)}d`;
+    return {
+      id: c.coin_address,          // stable id for dedupe
+      coinAddress: c.coin_address,
+      storyId: c.story_id,
+      name: c.name,
+      ticker: c.ticker,
+      creator: c.creator,
+      mcap: 0,
+      mcapUsd: 0,
+      price: 0,
+      priceNear: 0,
+      volume24h: 0,
+      change24h: 0,
+      age,
+      tradeCount: 0,
+      graduated: false,
+      sparkline: [],
+      post: c.story_id ? { id: c.story_id, content: "", author: c.creator } : null,
+      _source: "chain",
+      _index: fromIndex + idx,
+    };
+  });
+}
+
 export async function getTopHolders(coinAddress, limit = 20) {
   const account = await getReadAccount();
   return account.viewFunction({ contractId: coinAddress, methodName: "get_top_holders", args: { limit } });
