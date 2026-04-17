@@ -38,6 +38,7 @@ app.use("/api/rooms",         require("./routes/rooms.route"));
 app.use("/api/livekit",       require("./routes/livekit.route"));
 app.use("/api/revenue",       require("./routes/revenue.route"));
 app.use("/api/push",          require("./routes/push.route"));
+app.use("/api/newscoin",      require("./routes/newscoin.route"));
 
 // Root
 app.get("/", (req, res) => {

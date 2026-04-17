@@ -5,7 +5,7 @@ import {
   Search, Bell, User, MessageSquare, Sparkles, Star, Building2, Bot, Shield,
   Trash2, MoreHorizontal, Loader2, UserPlus, UserMinus, UserCheck, Link as LinkIcon,
   Smile, MapPin, Calendar, BarChart3, Home as HomeIcon, ArrowLeft,
-  Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon,
+  Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -18,6 +18,7 @@ import {
 } from "@/lib/ironclaw";
 import { TipModal, TipHistoryDrawer } from "@/components/TipModal";
 import EarnDashboard from "@/components/EarnDashboard";
+import { CoinBadge, CoinModal, MintModal } from "@/components/NewsCoinPage";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -576,14 +577,26 @@ function GatePicker({ t, initial, onClose, onSave }) {
 }
 
 /* ───────────────────── PostCard ───────────────────── */
-function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBoost, onOpenProfile, openWallet, onTip, onOpenTipHistory }) {
+function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBoost, onOpenProfile, openWallet, onTip, onOpenTipHistory, onOpenCoin, onMintCoin }) {
   const t = useTheme();
   const [liked, setLiked] = useState(post.likedByMe);
   const [likes, setLikes] = useState(post.likes);
   const [reposted, setReposted] = useState(post.repostedByMe);
   const [reposts, setReposts] = useState(post.reposts);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [coins, setCoins] = useState([]);
   const ref = useRef(null);
+
+  // Fetch any NewsCoins attached to this story
+  useEffect(() => {
+    if (!post?.id) return;
+    let cancelled = false;
+    fetch(`${API}/api/newscoin/story/${post.id}`)
+      .then(r => r.ok ? r.json() : { coins: [] })
+      .then(d => { if (!cancelled) setCoins(d.coins || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [post?.id]);
 
   // Monetization layer: tip totals, glow tier (USD-denominated since tips
   // can be paid in any wallet-held token), gate evaluation.
@@ -638,9 +651,13 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
   const isMine = viewerWallet && author.wallet_address === viewerWallet;
 
   // Glow-tier styling: inset ring + outer shadow in the tier color.
-  const glowRing = tier
-    ? { boxShadow: `inset 0 0 0 1px ${tier.color}55, 0 0 18px ${tier.color}22` }
-    : {};
+  // If the post has been coined, orange NewsCoin glow overrides the tip glow.
+  const hasCoins = coins.length > 0;
+  const glowRing = hasCoins
+    ? { boxShadow: `inset 0 0 0 1px #f9731655, 0 0 22px #f9731633` }
+    : tier
+      ? { boxShadow: `inset 0 0 0 1px ${tier.color}55, 0 0 18px ${tier.color}22` }
+      : {};
 
   return (
     <article ref={ref} onClick={locked ? undefined : onOpenComments} style={{
@@ -694,6 +711,14 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
                 <LinkIcon size={9} /> on-chain
               </a>
             )}
+            {hasCoins && (
+              <div onClick={e => { e.stopPropagation(); onOpenCoin?.(post, coins); }}>
+                <CoinBadge coins={coins} />
+                <span style={{ fontSize: 10, color: "#f97316", marginLeft: 4, fontWeight: 700 }}>
+                  {coins.length}/3
+                </span>
+              </div>
+            )}
             <div style={{ marginLeft: "auto", position: "relative" }} onClick={e => e.stopPropagation()}>
               <button onClick={() => setMenuOpen(v => !v)} style={{ background: "none", border: "none", color: t.textMuted, cursor: "pointer", padding: 4 }}>
                 <MoreHorizontal size={16} />
@@ -702,6 +727,11 @@ function PostCard({ post, viewerWallet, onRefresh, onOpenComments, onShare, onBo
                 <div style={{ position: "absolute", right: 0, top: 24, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10, minWidth: 200, padding: 4, zIndex: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
                   onMouseLeave={() => setMenuOpen(false)}>
                   {isMine && <MenuRow t={t} onClick={onBoost}><Sparkles size={13} /> Boost: $5/wk</MenuRow>}
+                  {coins.length < 3 && (
+                    <MenuRow t={t} color="#f97316" onClick={() => { setMenuOpen(false); onMintCoin?.(post); }}>
+                      <Coins size={13} /> {coins.length === 0 ? "Coin this story" : `Add coin (${coins.length}/3)`}
+                    </MenuRow>
+                  )}
                   {isMine && <MenuRow t={t} color={t.red} onClick={del}><Trash2 size={13} /> Delete</MenuRow>}
                   {!isMine && <MenuRow t={t}>Mute @{author.username}</MenuRow>}
                 </div>
@@ -1674,6 +1704,8 @@ export default function IronFeedPage({ openWallet }) {
   const [boostPost, setBoostPost] = useState(null);
   const [tipPost, setTipPost] = useState(null);
   const [tipHistoryPost, setTipHistoryPost] = useState(null);
+  const [coinPost, setCoinPost] = useState(null);   // { post, coins } for CoinModal
+  const [mintPost, setMintPost] = useState(null);   // post for MintModal
   const [railOpen, setRailOpen] = useState(true);
 
   // Deep-link support: #/Feed?profile=alice.near  or  #/Feed?invite=bob.near
@@ -1796,6 +1828,8 @@ export default function IronFeedPage({ openWallet }) {
             onOpenProfile={(w) => setOpenProfile(w)}
             onTip={(post) => wallet ? setTipPost(post) : openWallet?.()}
             onOpenTipHistory={(post) => setTipHistoryPost(post)}
+            onOpenCoin={(post, coins) => setCoinPost({ post, coins })}
+            onMintCoin={(post) => wallet ? setMintPost(post) : openWallet?.()}
             openWallet={openWallet} />
         ))}
         <InfiniteScrollSentinel cursor={cursor} loading={loading} onMore={() => load(false)} t={t} />
@@ -1841,6 +1875,24 @@ export default function IronFeedPage({ openWallet }) {
       {tipHistoryPost && <TipHistoryDrawer post={tipHistoryPost}
         onClose={() => setTipHistoryPost(null)}
         openTipModal={() => { setTipPost(tipHistoryPost); setTipHistoryPost(null); }} />}
+      {coinPost && (
+        <CoinModal
+          coin={coinPost.coins[0]}
+          post={{ ...coinPost.post, coins: coinPost.coins }}
+          wallet={wallet}
+          selector={selector}
+          onClose={() => setCoinPost(null)}
+        />
+      )}
+      {mintPost && (
+        <MintModal
+          post={mintPost}
+          wallet={wallet}
+          selector={selector}
+          onClose={() => setMintPost(null)}
+          onMinted={() => { setMintPost(null); load(true); }}
+        />
+      )}
     </div>
   );
 }
