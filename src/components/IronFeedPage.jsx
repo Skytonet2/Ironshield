@@ -5,7 +5,7 @@ import {
   Search, Bell, User, MessageSquare, Sparkles, Star, Building2, Bot, Shield,
   Trash2, MoreHorizontal, Loader2, UserPlus, UserMinus, UserCheck, Link as LinkIcon,
   Smile, MapPin, Calendar, BarChart3, Home as HomeIcon, ArrowLeft,
-  Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins,
+  Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins, Phone,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -19,6 +19,7 @@ import {
 import { TipModal, TipHistoryDrawer } from "@/components/TipModal";
 import EarnDashboard from "@/components/EarnDashboard";
 import { CoinBadge, CoinModal, MintModal } from "@/components/NewsCoinPage";
+import DMCallPanel from "@/components/DMCallPanel";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -185,6 +186,7 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
   const t = useTheme();
   const fileRef = useRef(null);
   const taRef = useRef(null);
+  const ideaReqRef = useRef(0);
   const [content, setContent] = useState("");
   const [media, setMedia] = useState(null); // { url, type }
   const [uploading, setUploading] = useState(false);
@@ -197,6 +199,9 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
   // Composer mode — "post" (500 char) or "article" (long-form, requires title)
   const [kind, setKind] = useState("post");
   const [title, setTitle] = useState("");
+  const [ideaLoading, setIdeaLoading] = useState(false);
+  const [ideaErr, setIdeaErr] = useState("");
+  const [ideaSuggestion, setIdeaSuggestion] = useState(null);
   const MAX = kind === "article" ? 50000 : 500;
   const left = MAX - content.length;
   const { suggestions: mentionSugg, query: mentionQuery } = useMentionSuggestions(content, wallet);
@@ -208,6 +213,58 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
   };
 
   const pick = () => fileRef.current?.click();
+
+  const requestIdea = useCallback(async (draft = content, draftKind = kind, draftTitle = title) => {
+    const trimmed = String(draft || "").trim();
+    if (!wallet || trimmed.length < 24) {
+      setIdeaSuggestion(null);
+      setIdeaErr("");
+      setIdeaLoading(false);
+      return null;
+    }
+    const reqId = Date.now() + Math.random();
+    ideaReqRef.current = reqId;
+    setIdeaLoading(true);
+    setIdeaErr("");
+    try {
+      const r = await api("/api/feed-agent/suggest-format", {
+        method: "POST",
+        wallet,
+        body: { content: trimmed, kind: draftKind, title: draftTitle },
+      });
+      if (ideaReqRef.current !== reqId) return null;
+      setIdeaSuggestion(r.suggestion || null);
+      return r.suggestion || null;
+    } catch (e) {
+      if (ideaReqRef.current !== reqId) return null;
+      setIdeaErr(e.message || "Idea assist failed");
+      return null;
+    } finally {
+      if (ideaReqRef.current === reqId) setIdeaLoading(false);
+    }
+  }, [content, kind, title, wallet]);
+
+  useEffect(() => {
+    const trimmed = content.trim();
+    if (!wallet || trimmed.length < 24) {
+      setIdeaSuggestion(null);
+      setIdeaErr("");
+      setIdeaLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => { requestIdea(content, kind, title); }, 900);
+    return () => clearTimeout(timer);
+  }, [content, kind, requestIdea, title, wallet]);
+
+  const applyIdeaFormat = (format) => {
+    if (!format?.content) return;
+    const nextKind = format.kind === "article" ? "article" : "post";
+    setKind(nextKind);
+    setTitle(nextKind === "article" ? (format.title || "") : "");
+    setContent(format.content.slice(0, nextKind === "article" ? 50000 : 500));
+    setIdeaSuggestion((prev) => prev ? { ...prev, recommendedFormat: format.label || prev.recommendedFormat } : prev);
+    setTimeout(() => taRef.current?.focus(), 0);
+  };
 
   const onFile = async (e) => {
     const f = e.target.files?.[0];
@@ -271,6 +328,7 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
       const r = await api("/api/posts", { method: "POST", wallet, body });
       onPosted?.(r.post);
       setContent(""); setMedia(null); setGate(null); setTitle(""); setKind("post");
+      setIdeaSuggestion(null); setIdeaErr(""); setIdeaLoading(false);
       if (onchainWarn) setErr(onchainWarn);
     } catch (e) {
       const m = e.message || "";
@@ -378,6 +436,9 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
             <div style={{ display: "flex", gap: 4 }}>
               <IconBtn onClick={pick} disabled={uploading} t={t}><ImageIcon size={18} color={t.accent} /></IconBtn>
               <IconBtn onClick={() => setEmojiOpen(v => !v)} t={t}><Smile size={18} color={t.accent} /></IconBtn>
+              <IconBtn onClick={() => requestIdea(content, kind, title)} disabled={!content.trim() || ideaLoading} t={t}>
+                {ideaLoading ? <Loader2 size={18} className="ix-spin" color={t.amber} /> : <Sparkles size={18} color={ideaSuggestion ? t.amber : t.accent} />}
+              </IconBtn>
               <IconBtn onClick={() => setGateOpen(true)} t={t}>
                 <Lock size={18} color={gate ? t.amber : t.accent} />
               </IconBtn>
@@ -409,6 +470,80 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
               }}>{posting ? "Posting…" : uploading ? "Uploading…" : "Post"}</button>
             </div>
           </div>
+          {(ideaLoading || ideaSuggestion || ideaErr) && (
+            <div style={{
+              marginTop: 12,
+              padding: 12,
+              borderRadius: 14,
+              border: `1px solid ${ideaSuggestion ? `${t.amber}55` : t.border}`,
+              background: ideaSuggestion ? `${t.amber}10` : t.bgSurface,
+              display: "grid",
+              gap: 10,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Sparkles size={15} color={t.amber} />
+                <div style={{ color: t.white, fontSize: 13, fontWeight: 800 }}>Idea coach</div>
+                <div style={{ color: t.textDim, fontSize: 11 }}>
+                  {ideaLoading ? "Reading your draft…" : (ideaSuggestion?.summary || "IronClaw is reshaping your post")}
+                </div>
+              </div>
+              {ideaErr && <div style={{ color: "#fca5a5", fontSize: 12 }}>{ideaErr}</div>}
+              {ideaSuggestion?.formats?.length > 0 && (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {ideaSuggestion.formats.slice(0, 3).map((format) => (
+                    <div key={format.id || format.label} style={{
+                      borderRadius: 12,
+                      border: `1px solid ${t.border}`,
+                      background: t.bgCard,
+                      padding: 10,
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                        <div>
+                          <div style={{ color: t.white, fontSize: 13, fontWeight: 800 }}>
+                            {format.label}
+                            {ideaSuggestion.recommendedFormat === format.label && (
+                              <span style={{
+                                marginLeft: 8,
+                                fontSize: 10,
+                                color: t.amber,
+                                background: `${t.amber}22`,
+                                border: `1px solid ${t.amber}44`,
+                                borderRadius: 999,
+                                padding: "2px 6px",
+                                verticalAlign: "middle",
+                              }}>Recommended</span>
+                            )}
+                          </div>
+                          <div style={{ color: t.textDim, fontSize: 11, marginTop: 2 }}>{format.why}</div>
+                        </div>
+                        <button onClick={() => applyIdeaFormat(format)} style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: "none",
+                          background: t.accent,
+                          color: "#fff",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}>Use this</button>
+                      </div>
+                      <div style={{
+                        marginTop: 8,
+                        color: t.text,
+                        fontSize: 12,
+                        lineHeight: 1.45,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}>
+                        {format.title ? `${format.title}\n` : ""}{format.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {err && (
             <p style={{ color: t.red || "#ef4444", fontSize: 12, marginTop: 8 }}>{err}</p>
           )}
@@ -1396,15 +1531,50 @@ function AdBoostModal({ post, wallet, selector, onClose }) {
 }
 
 /* ───────────────────── DM (search + invite) ───────────────────── */
+function buildDmCallInvite(conversationId) {
+  return `[[IRONCALL:${conversationId}:${Date.now().toString(36)}]] Join me in a secure IronShield voice call.`;
+}
+
+function parseSpecialDmMessage(text = "") {
+  const match = /^\[\[IRONCALL:(\d+):([a-z0-9]+)\]\]\s*(.*)$/i.exec(String(text).trim());
+  if (!match) return null;
+  return {
+    type: "call_invite",
+    conversationId: Number(match[1]),
+    note: match[3] || "Join me in a secure IronShield voice call.",
+  };
+}
+
 function DMsModal({ wallet, onClose, initialPeer }) {
   const t = useTheme();
   const [convs, setConvs] = useState([]);
   const [active, setActive] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [assistantMessages, setAssistantMessages] = useState([
+    {
+      id: "ironclaw-welcome",
+      role: "assistant",
+      content: "I'm your IronClaw personal AI. Ask me to draft replies, reshape a post, research a token, or think through a launch idea.",
+      created_at: new Date().toISOString(),
+    },
+  ]);
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
   const [searchResult, setSearchResult] = useState(null);
   const [kp, setKp] = useState(null);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [callState, setCallState] = useState({ open: false, conversationId: null, peer: null });
+
+  const assistantConversation = {
+    id: "ironclaw-assistant",
+    kind: "assistant",
+    peer: {
+      id: "ironclaw-assistant",
+      wallet: "ironclaw.ai",
+      username: "ironclaw_ai",
+      displayName: "IronClaw AI",
+    },
+  };
 
   // Local keypair + register pubkey with backend once
   useEffect(() => {
@@ -1422,7 +1592,7 @@ function DMsModal({ wallet, onClose, initialPeer }) {
   }, [wallet]);
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
-    if (active) {
+    if (active && active.kind !== "assistant") {
       const poll = setInterval(async () => {
         try { const r = await api(`/api/dm/${active.id}/messages`, { wallet }); setMessages(r.messages.slice().reverse()); } catch {}
       }, 1200);
@@ -1434,6 +1604,7 @@ function DMsModal({ wallet, onClose, initialPeer }) {
 
   const open = async (c) => {
     setActive(c);
+    if (c.kind === "assistant") return;
     const r = await api(`/api/dm/${c.id}/messages`, { wallet });
     setMessages(r.messages.slice().reverse());
     api(`/api/dm/${c.id}/read`, { method: "POST", wallet }).catch(() => {});
@@ -1466,31 +1637,62 @@ function DMsModal({ wallet, onClose, initialPeer }) {
     alert("Invite link copied: paste it into Telegram, X, Discord, etc.");
   };
 
-  const send = async () => {
-    if (!text.trim() || !active) return;
-    const peerPub = active.peer?.dmPubkey;
-    let encryptedPayload, nonce;
+  const encodeForPeer = (plainText, peerPub) => {
     if (kp && peerPub) {
       try {
-        const enc = naclEncrypt(text, peerPub, kp);
-        encryptedPayload = enc.encryptedPayload; nonce = enc.nonce;
-      } catch {
-        encryptedPayload = btoa(unescape(encodeURIComponent(text)));
-        nonce = btoa(String(Date.now()));
-      }
-    } else {
-      // Peer hasn't registered a pubkey yet → fallback plaintext-b64 (will upgrade on next session)
-      encryptedPayload = btoa(unescape(encodeURIComponent(text)));
-      nonce = btoa(String(Date.now()));
+        return naclEncrypt(plainText, peerPub, kp);
+      } catch {}
     }
+    return {
+      encryptedPayload: btoa(unescape(encodeURIComponent(plainText))),
+      nonce: btoa(String(Date.now())),
+    };
+  };
+
+  const sendCallInvite = async (conversation) => {
+    if (!conversation || conversation.kind === "assistant") return;
+    const enc = encodeForPeer(buildDmCallInvite(conversation.id), conversation.peer?.dmPubkey);
+    await api("/api/dm/send", {
+      method: "POST",
+      wallet,
+      body: { conversationId: conversation.id, encryptedPayload: enc.encryptedPayload, nonce: enc.nonce },
+    });
+  };
+
+  const joinCall = async (conversation, { announce = false } = {}) => {
+    if (!conversation || conversation.kind === "assistant") return;
+    if (announce) {
+      try { await sendCallInvite(conversation); } catch {}
+    }
+    setCallState({ open: true, conversationId: conversation.id, peer: conversation.peer });
+  };
+
+  const send = async () => {
+    const bodyText = text.trim();
+    if (!bodyText || !active) return;
+    if (active.kind === "assistant") {
+      setAssistantMessages(m => [...m, { id: `assistant-user-${Date.now()}`, role: "user", content: bodyText, created_at: new Date().toISOString() }]);
+      setText("");
+      setAssistantBusy(true);
+      try {
+        const r = await api("/api/dm/assistant", { method: "POST", wallet, body: { message: bodyText } });
+        setAssistantMessages(m => [...m, { id: `assistant-reply-${Date.now()}`, role: "assistant", content: r.reply, created_at: new Date().toISOString() }]);
+      } catch (e) {
+        setAssistantMessages(m => [...m, { id: `assistant-error-${Date.now()}`, role: "assistant", content: `I hit an error: ${e.message}`, created_at: new Date().toISOString() }]);
+      } finally {
+        setAssistantBusy(false);
+      }
+      return;
+    }
+    const enc = encodeForPeer(bodyText, active.peer?.dmPubkey);
     const tempId = "tmp-" + Date.now();
-    const optimistic = { id: tempId, encrypted_payload: encryptedPayload, nonce, from_id: -1, to_id: active.peer.id, created_at: new Date().toISOString(), _plain: text };
+    const optimistic = { id: tempId, encrypted_payload: enc.encryptedPayload, nonce: enc.nonce, from_id: -1, to_id: active.peer.id, created_at: new Date().toISOString(), _plain: bodyText };
     setMessages(m => [...m, optimistic]);
     setText("");
     try {
       const r = await api("/api/dm/send", { method: "POST", wallet,
-        body: { conversationId: active.id, encryptedPayload, nonce } });
-      setMessages(m => m.map(x => x.id === tempId ? { ...r.message, _plain: text } : x));
+        body: { conversationId: active.id, encryptedPayload: enc.encryptedPayload, nonce: enc.nonce } });
+      setMessages(m => m.map(x => x.id === tempId ? { ...r.message, _plain: bodyText } : x));
     } catch (e) {
       setMessages(m => m.filter(x => x.id !== tempId));
       alert(e.message);
@@ -1506,6 +1708,60 @@ function DMsModal({ wallet, onClose, initialPeer }) {
     // Legacy base64 fallback
     try { return decodeURIComponent(escape(atob(m.encrypted_payload))); } catch { return "(encrypted)"; }
   };
+
+  const renderBubble = (message, decodedText, mine) => {
+    const special = parseSpecialDmMessage(decodedText);
+    if (special?.type === "call_invite") {
+      return (
+        <div style={{
+          background: `${t.accent}14`,
+          color: t.text,
+          padding: "10px 12px",
+          borderRadius: 16,
+          maxWidth: "82%",
+          border: `1px solid ${t.accent}44`,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <Phone size={14} color={t.accent} />
+            <div style={{ color: t.white, fontSize: 13, fontWeight: 800 }}>Voice call invite</div>
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.45 }}>{special.note}</div>
+          <button onClick={() => joinCall(active)} style={{
+            marginTop: 10,
+            padding: "7px 12px",
+            borderRadius: 999,
+            border: "none",
+            background: t.accent,
+            color: "#fff",
+            fontWeight: 800,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}>
+            <Phone size={13} /> Join call
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div style={{
+        background: mine ? t.accent : t.bgSurface,
+        color: mine ? "#fff" : t.text,
+        padding: "8px 12px",
+        borderRadius: 14,
+        maxWidth: "75%",
+        fontSize: 14,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      }}>{decodedText}</div>
+    );
+  };
+
+  const currentMessages = active?.kind === "assistant" ? assistantMessages : messages;
+  const activeSubtitle = active?.kind === "assistant"
+    ? "Powered by the IRONCLAW backend"
+    : shortWallet(active?.peer?.wallet || "");
 
   return (
     <Modal onClose={onClose} title="Messages" maxWidth={820}>
@@ -1523,6 +1779,37 @@ function DMsModal({ wallet, onClose, initialPeer }) {
       `}</style>
       <div className="ix-dm-grid">
         <div className="ix-dm-list">
+          <button onClick={() => open(assistantConversation)} style={{
+            width: "100%",
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            padding: 10,
+            borderRadius: 12,
+            border: `1px solid ${active?.kind === "assistant" ? `${t.accent}55` : t.border}`,
+            background: active?.kind === "assistant" ? `${t.accent}18` : t.bgSurface,
+            color: t.text,
+            cursor: "pointer",
+            textAlign: "left",
+            marginBottom: 10,
+          }}>
+            <div style={{
+              width: 34,
+              height: 34,
+              borderRadius: "50%",
+              background: `${t.accent}22`,
+              display: "grid",
+              placeItems: "center",
+              color: t.accent,
+              flexShrink: 0,
+            }}>
+              <Bot size={16} />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ color: t.white, fontSize: 13, fontWeight: 800 }}>IronClaw AI</div>
+              <div style={{ color: t.textDim, fontSize: 11 }}>Personal agent in your message box</div>
+            </div>
+          </button>
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
             <input placeholder="search wallet / username" value={search}
               onChange={e => setSearch(e.target.value)}
@@ -1584,35 +1871,116 @@ function DMsModal({ wallet, onClose, initialPeer }) {
                 alignItems: "center", gap: 6, background: "none", border: "none",
                 color: t.accent, cursor: "pointer", fontSize: 14, padding: "4px 0",
               }}><ArrowLeft size={16} /> Back</button>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                paddingBottom: 10,
+                marginBottom: 10,
+                borderBottom: `1px solid ${t.border}`,
+              }}>
+                {active.kind === "assistant"
+                  ? (
+                    <div style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: "50%",
+                      display: "grid",
+                      placeItems: "center",
+                      background: `${t.accent}22`,
+                      color: t.accent,
+                      flexShrink: 0,
+                    }}><Bot size={18} /></div>
+                  )
+                  : <Avatar user={{ pfp_url: active.peer?.pfpUrl, username: active.peer?.username }} size={38} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: t.white, fontSize: 14, fontWeight: 800 }}>
+                    {active.kind === "assistant" ? "IronClaw AI" : (active.peer?.displayName || active.peer?.username || "Conversation")}
+                  </div>
+                  <div style={{ color: t.textDim, fontSize: 11 }}>{activeSubtitle}</div>
+                </div>
+                {active.kind !== "assistant" && (
+                  <button onClick={() => joinCall(active, { announce: true })} style={{
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: t.accent,
+                    color: "#fff",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}>
+                    <Phone size={14} /> Call
+                  </button>
+                )}
+              </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-                {messages.map(m => {
-                  const mine = m.from_id !== active.peer.id;
+                {currentMessages.map(m => {
+                  const mine = active.kind === "assistant" ? m.role === "user" : m.from_id !== active.peer.id;
+                  const decodedText = active.kind === "assistant" ? m.content : decode(m);
                   const ts = m.created_at ? new Date(m.created_at) : null;
                   const timeStr = ts ? ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
                   return (
                     <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", marginBottom: 8 }}>
-                      <div style={{
-                        background: mine ? t.accent : t.bgSurface,
-                        color: mine ? "#fff" : t.text,
-                        padding: "8px 12px", borderRadius: 14, maxWidth: "75%", fontSize: 14,
-                        whiteSpace: "pre-wrap", wordBreak: "break-word",
-                      }}>{decode(m)}</div>
+                      {renderBubble(m, decodedText, mine)}
                       <div style={{ fontSize: 10, color: t.textDim, marginTop: 2, padding: "0 4px" }}>
                         {timeStr}{mine ? " · sent" : ""}
                       </div>
                     </div>
                   );
                 })}
+                {assistantBusy && active.kind === "assistant" && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div style={{
+                      background: t.bgSurface,
+                      color: t.text,
+                      padding: "10px 12px",
+                      borderRadius: 14,
+                      fontSize: 13,
+                    }}>
+                      IronClaw is thinking…
+                    </div>
+                  </div>
+                )}
               </div>
               <div style={{ display: "flex", gap: 6, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
                 <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
-                  placeholder="Encrypted message..." style={inputStyle(t)} />
+                  placeholder={active.kind === "assistant" ? "Ask IronClaw anything…" : "Encrypted message..."} style={inputStyle(t)} />
                 <Btn primary onClick={send} disabled={!text.trim()}><Send size={14} /></Btn>
               </div>
+              {active.kind === "assistant" && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                  {[
+                    "Turn this idea into a launch post",
+                    "Draft a reply to a skeptical investor",
+                    "Summarize the value prop in 3 bullets",
+                  ].map((prompt) => (
+                    <button key={prompt} onClick={() => setText(prompt)} style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: `1px solid ${t.border}`,
+                      background: t.bgSurface,
+                      color: t.text,
+                      fontSize: 11,
+                      cursor: "pointer",
+                    }}>{prompt}</button>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
+      <DMCallPanel
+        open={callState.open}
+        t={t}
+        wallet={wallet}
+        conversationId={callState.conversationId}
+        peer={callState.peer}
+        onClose={() => setCallState({ open: false, conversationId: null, peer: null })}
+      />
     </Modal>
   );
 }

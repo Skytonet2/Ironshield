@@ -228,6 +228,35 @@ const dispatch = async (taskType, userPrompt, systemPrompt) => {
   }
 };
 
+const complete = async ({ systemPrompt, userPrompt, maxTokens = 600, expectJson = false }) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: maxTokens,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`NEAR AI returned ${res.status}: ${await res.text()}`);
+    const json = await res.json();
+    const text = json.choices?.[0]?.message?.content || (expectJson ? "{}" : "");
+    const clean = text.replace(/```json|```/g, "").trim();
+    return expectJson ? JSON.parse(clean || "{}") : clean;
+  } catch (err) {
+    clearTimeout(timeout);
+    throw new Error(`Agent completion failed: ${err.message}`);
+  }
+};
+
 exports.summarize = (payload) => dispatch("summary",
   `Analyze the following REAL chat messages (${payload.messageCount} messages from the last ${payload.range}).
 
@@ -367,30 +396,62 @@ If you cannot determine risk, set riskLevel to "UNKNOWN" and recommend manual re
 );
 
 exports.chat = (payload) => {
-  const controller = new AbortController();
-  const timeout    = setTimeout(() => controller.abort(), 30000);
-  return (async () => {
-    try {
-      const res = await fetch(ENDPOINT, {
-        method:  "POST",
-        signal:  controller.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 600,
-          messages: [
-            { role: "system", content: generalAIPrompt() },
-            { role: "user",   content: payload.message },
-          ],
-        }),
-      });
-      clearTimeout(timeout);
-      if (!res.ok) throw new Error(`NEAR AI returned ${res.status}: ${await res.text()}`);
-      const json = await res.json();
-      return json.choices?.[0]?.message?.content || "I couldn't process that. Try rephrasing your question.";
-    } catch (err) {
-      clearTimeout(timeout);
-      throw new Error(`Agent chat failed: ${err.message}`);
-    }
-  })();
+  return complete({
+    systemPrompt: generalAIPrompt(),
+    userPrompt: payload.message,
+    maxTokens: 600,
+    expectJson: false,
+  }).then((reply) => reply || "I couldn't process that. Try rephrasing your question.");
 };
+
+exports.personalAssistant = (payload) => complete({
+  systemPrompt: `${generalAIPrompt()}
+
+You are also acting as a PERSONAL AI AGENT inside IronFeed direct messages.
+
+DM-SPECIFIC RULES:
+- The user is authenticated by wallet. Tailor the response to their draft, wallet-linked identity, and goals.
+- Help with posting, messaging, crypto research, fact-checking, and product guidance.
+- If asked to draft a post or reply, give copy that is ready to paste.
+- Keep responses compact enough to feel natural inside a DM thread.
+- When useful, propose 2-4 crisp options instead of one monologue.
+`,
+  userPrompt: `Wallet: ${payload.wallet || "unknown"}\n\nUser DM:\n${payload.message}`,
+  maxTokens: 700,
+  expectJson: false,
+}).then((reply) => reply || "I'm here. Tell me what you want to work on.");
+
+exports.suggestPostFormats = (payload) => complete({
+  systemPrompt: `You are IronClaw, helping a user reshape a social post draft into stronger publishing formats.
+
+Return valid JSON only with this exact shape:
+{
+  "summary": "short sentence about the current draft",
+  "recommendedFormat": "short label",
+  "formats": [
+    {
+      "id": "short-kebab-id",
+      "label": "Short label",
+      "kind": "post or article",
+      "why": "one sentence",
+      "title": "title only when kind=article, else empty string",
+      "content": "ready-to-paste rewritten draft"
+    }
+  ]
+}
+
+RULES:
+- Return exactly 3 format options.
+- At least 1 option must be "article".
+- Non-article options must be 500 characters or fewer.
+- Article option needs a useful title.
+- Preserve the user's core meaning, but improve structure, punch, and clarity.
+- Do not use markdown fences.
+`,
+  userPrompt: `Original kind: ${payload.kind || "post"}
+Original title: ${payload.title || ""}
+Draft:
+${payload.content || ""}`,
+  maxTokens: 900,
+  expectJson: true,
+});

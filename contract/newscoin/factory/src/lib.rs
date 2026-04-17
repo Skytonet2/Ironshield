@@ -161,6 +161,28 @@ impl NewsCoinFactory {
         self.rhea_router = rhea_router;
     }
 
+    /// Remove an orphan coin entry (sub-account never successfully deployed).
+    /// Owner only. Takes the index in `all_coins` and scrubs it from both
+    /// `all_coins` and `story_coins[story_id]`.
+    pub fn admin_remove_orphan_coin(&mut self, index: u32, story_id: String) {
+        self.assert_owner();
+        let len = self.all_coins.len();
+        assert!(index < len, "index out of bounds");
+        // Swap-remove in Vector to drop the entry.
+        let ci = self.all_coins.get(index).unwrap().clone();
+        self.all_coins.swap_remove(index);
+        // Remove the coin_address from the story's vector.
+        if let Some(mut addrs) = self.story_coins.get(&story_id).cloned() {
+            addrs.retain(|a| a != &ci.coin_address);
+            if addrs.is_empty() {
+                self.story_coins.remove(&story_id);
+            } else {
+                self.story_coins.insert(story_id, addrs);
+            }
+        }
+        env::log_str(&format!("Orphan coin removed: {}", ci.coin_address));
+    }
+
     // ─── Create ─────────────────────────────────────────────────────
 
     #[payable]
@@ -255,7 +277,11 @@ impl NewsCoinFactory {
         // 1. Deploy curve contract to sub-account
         // 2. Send creation_fee to revenue_wallet
         // 3. Call registry to index
-        let deploy_deposit = NearToken::from_millinear(500); // 0.5 NEAR for storage
+        //
+        // The curve WASM is ~280KB; NEAR requires ~1 NEAR per 100KB of state,
+        // so the sub-account needs ~2.8 NEAR locked for storage + a little
+        // headroom for runtime state. 3 NEAR is safe.
+        let deploy_deposit = NearToken::from_near(3);
         let fee_amount = NearToken::from_yoctonear(if is_waived { 0 } else { self.creation_fee });
 
         let registry_args = near_sdk::serde_json::json!({
