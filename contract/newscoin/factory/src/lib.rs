@@ -17,6 +17,7 @@ const GAS_FOR_REGISTRY: Gas = Gas::from_tgas(20);
 enum StorageKey {
     StoryCoins,
     AllCoins,
+    FeeWaived,
 }
 
 #[near(serializers = [borsh, json])]
@@ -44,6 +45,8 @@ pub struct NewsCoinFactory {
     coin_counter: u64,
     /// The compiled WASM of the curve contract, stored on-chain for deployment.
     curve_wasm: Vec<u8>,
+    /// Accounts that can create coins without paying the creation_fee.
+    fee_waived: near_sdk::store::LookupSet<AccountId>,
 }
 
 #[near]
@@ -67,7 +70,58 @@ impl NewsCoinFactory {
             creation_fee: DEFAULT_CREATION_FEE,
             coin_counter: 0,
             curve_wasm: Vec::new(),
+            fee_waived: near_sdk::store::LookupSet::new(StorageKey::FeeWaived),
         }
+    }
+
+    /// Migration from v0 (pre-waiver) state. Call once after redeploy.
+    /// Reads the old struct without the fee_waived field and adds an empty set.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate_v1() -> Self {
+        #[derive(near_sdk::borsh::BorshDeserialize)]
+        #[borsh(crate = "near_sdk::borsh")]
+        struct OldFactory {
+            owner_id: AccountId,
+            revenue_wallet: AccountId,
+            agent_id: AccountId,
+            registry_id: AccountId,
+            rhea_router: AccountId,
+            story_coins: UnorderedMap<String, Vec<AccountId>>,
+            all_coins: Vector<CoinInfo>,
+            creation_fee: u128,
+            coin_counter: u64,
+            curve_wasm: Vec<u8>,
+        }
+        let old: OldFactory = env::state_read().expect("No old state");
+        Self {
+            owner_id: old.owner_id,
+            revenue_wallet: old.revenue_wallet,
+            agent_id: old.agent_id,
+            registry_id: old.registry_id,
+            rhea_router: old.rhea_router,
+            story_coins: old.story_coins,
+            all_coins: old.all_coins,
+            creation_fee: old.creation_fee,
+            coin_counter: old.coin_counter,
+            curve_wasm: old.curve_wasm,
+            fee_waived: near_sdk::store::LookupSet::new(StorageKey::FeeWaived),
+        }
+    }
+
+    /// Add an account to the fee-waived list. Owner only.
+    pub fn add_fee_waived(&mut self, account_id: AccountId) {
+        self.assert_owner();
+        self.fee_waived.insert(account_id);
+    }
+
+    pub fn remove_fee_waived(&mut self, account_id: AccountId) {
+        self.assert_owner();
+        self.fee_waived.remove(&account_id);
+    }
+
+    pub fn is_fee_waived(&self, account_id: AccountId) -> bool {
+        self.fee_waived.contains(&account_id)
     }
 
     // ─── Admin ──────────────────────────────────────────────────────
@@ -117,12 +171,16 @@ impl NewsCoinFactory {
         ticker: String,
         headline: String,
     ) -> Promise {
+        let caller = env::predecessor_account_id();
+        let is_waived = self.fee_waived.contains(&caller);
         let deposit = env::attached_deposit();
-        assert!(
-            deposit.as_yoctonear() >= self.creation_fee,
-            "Attached deposit must be at least {} yoctoNEAR",
-            self.creation_fee
-        );
+        if !is_waived {
+            assert!(
+                deposit.as_yoctonear() >= self.creation_fee,
+                "Attached deposit must be at least {} yoctoNEAR",
+                self.creation_fee
+            );
+        }
         assert!(!story_id.is_empty(), "story_id must not be empty");
         assert!(!name.is_empty(), "name must not be empty");
         assert!(ticker.len() >= 2 && ticker.len() <= 10, "ticker must be 2-10 chars");
@@ -138,7 +196,7 @@ impl NewsCoinFactory {
             MAX_COINS_PER_STORY
         );
 
-        let creator = env::predecessor_account_id();
+        let creator = caller.clone();
         let coin_index = self.coin_counter;
         self.coin_counter += 1;
 
@@ -198,7 +256,7 @@ impl NewsCoinFactory {
         // 2. Send creation_fee to revenue_wallet
         // 3. Call registry to index
         let deploy_deposit = NearToken::from_millinear(500); // 0.5 NEAR for storage
-        let fee_amount = NearToken::from_yoctonear(self.creation_fee);
+        let fee_amount = NearToken::from_yoctonear(if is_waived { 0 } else { self.creation_fee });
 
         let registry_args = near_sdk::serde_json::json!({
             "story_id": story_id,

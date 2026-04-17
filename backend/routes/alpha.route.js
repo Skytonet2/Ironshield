@@ -5,11 +5,87 @@ const ENDPOINT = process.env.NEAR_AI_ENDPOINT || "https://cloud-api.near.ai/v1/c
 const API_KEY  = process.env.NEAR_AI_KEY       || "";
 const MODEL    = process.env.NEAR_AI_MODEL     || "Qwen/Qwen3-30B-A3B-Instruct-2507";
 
-// In-memory cache — refreshed every 5 minutes
+// In-memory cache — refreshed every 2 minutes (real-time alpha)
 let cache = { items: [], ts: 0 };
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 2 * 60 * 1000;
 
 const CATEGORIES = ["news", "kol", "trending", "airdrops", "chaos"];
+
+// ─── Real-time RSS sources ──────────────────────────────────────────
+// Lightweight RSS parser (regex-based, no external dep) — pulls the
+// latest crypto headlines from major outlets so the Alpha feed has
+// fresh, real content even when NEAR AI is cold or rate-limited.
+const RSS_SOURCES = [
+  { url: "https://www.coindesk.com/arc/outboundfeeds/rss/",     source: "CoinDesk",  handle: "coindesk.com",  category: "news", avatarColor: "#10b981" },
+  { url: "https://decrypt.co/feed",                              source: "Decrypt",   handle: "decrypt.co",    category: "news", avatarColor: "#10b981" },
+  { url: "https://cointelegraph.com/rss",                        source: "Cointelegraph", handle: "cointelegraph.com", category: "news", avatarColor: "#10b981" },
+  { url: "https://www.theblock.co/rss.xml",                      source: "The Block", handle: "theblock.co",   category: "news", avatarColor: "#10b981" },
+];
+
+function stripHtml(s) {
+  return String(s || "")
+    .replace(/<!\[CDATA\[|\]\]>/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+    .trim();
+}
+
+function parseRssItems(xml, src, maxItems = 6) {
+  const items = [];
+  const re = /<item\b[\s\S]*?<\/item>/gi;
+  const matches = xml.match(re) || [];
+  for (const block of matches.slice(0, maxItems)) {
+    const pick = (tag) => {
+      const m = block.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+      return m ? stripHtml(m[1]) : "";
+    };
+    const title = pick("title");
+    const link  = pick("link");
+    const desc  = pick("description") || pick("summary");
+    const pub   = pick("pubDate") || pick("published") || pick("updated");
+    if (!title) continue;
+    const ts = pub ? new Date(pub).getTime() || Date.now() : Date.now();
+    items.push({
+      id: `rss-${src.source}-${ts}-${title.slice(0, 24).replace(/\s+/g, "_")}`,
+      category: src.category,
+      source: src.source,
+      handle: src.handle,
+      avatar: src.source.slice(0, 2).toUpperCase(),
+      avatarColor: src.avatarColor,
+      timestamp: ts,
+      title,
+      content: desc ? desc.slice(0, 320) : title,
+      body: desc,
+      url: link,
+      link,
+      upvotes: 0,
+      tags: [],
+    });
+  }
+  return items;
+}
+
+async function fetchRssAll() {
+  const out = [];
+  await Promise.all(RSS_SOURCES.map(async (src) => {
+    try {
+      const controller = new AbortController();
+      const to = setTimeout(() => controller.abort(), 6000);
+      const r = await fetch(src.url, {
+        signal: controller.signal,
+        headers: { "User-Agent": "IronShield-Alpha/1.0 (+https://ironshield.near.page)" },
+      });
+      clearTimeout(to);
+      if (!r.ok) return;
+      const xml = await r.text();
+      out.push(...parseRssItems(xml, src, 5));
+    } catch (_) { /* skip source on error */ }
+  }));
+  // Newest first, cap to 25 so the page isn't flooded
+  out.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  return out.slice(0, 25);
+}
 
 // Seed feed used whenever NEAR AI hasn't returned anything yet (cold start or
 // NEAR_AI_KEY unset). Hand-curated so the Alpha page never looks empty.
@@ -97,9 +173,17 @@ async function fetchFeed() {
   const now = Date.now();
   if (cache.items.length && now - cache.ts < CACHE_TTL) return cache.items;
 
+  // Always start by pulling fresh RSS headlines — this is the "real-time" tier.
+  let rssItems = [];
+  try { rssItems = await fetchRssAll(); } catch (_) {}
+
   if (!API_KEY) {
-    // No AI configured — use the seeded feed so the page is never empty
-    cache = { items: seedFeed(), ts: now };
+    // No AI configured — prefer RSS (real), fall back to seed so the page
+    // is never empty, and sprinkle a couple of seed KOL/airdrop/chaos items
+    // to keep the category filters non-empty.
+    const seeds = seedFeed().filter(s => s.category !== "news");
+    const items = rssItems.length ? [...rssItems, ...seeds] : seedFeed();
+    cache = { items, ts: now };
     return cache.items;
   }
 
@@ -132,17 +216,32 @@ async function fetchFeed() {
       text = text.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
     }
 
-    const items = JSON.parse(text);
-    if (Array.isArray(items) && items.length > 0) {
-      cache = { items, ts: now };
-      return items;
+    const aiItems = JSON.parse(text);
+    if (Array.isArray(aiItems) && aiItems.length > 0) {
+      // Normalize AI items the same way the seed feed is normalized so the
+      // FeedCard gets consistent fields (content, avatar, link, ts as ms).
+      const normalized = aiItems.map(i => ({
+        ...i,
+        timestamp: i.timestamp ? (new Date(i.timestamp).getTime() || Date.now()) : Date.now(),
+        content: i.content || i.body || i.title,
+        upvotes: i.upvotes || 0,
+        avatar: (i.source || "??").slice(0, 2).toUpperCase(),
+        avatarColor: { news: "#10b981", kol: "#f59e0b", trending: "#8b5cf6", airdrops: "#06b6d4", chaos: "#ef4444" }[i.category] || "#3b82f6",
+        link: i.url || i.link || null,
+      }));
+      // Merge: RSS first (real & dated), then AI for curation across other categories
+      const merged = [...rssItems, ...normalized];
+      merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      cache = { items: merged, ts: now };
+      return cache.items;
     }
   } catch (err) {
     clearTimeout(timeout);
     console.warn("[Alpha] AI feed fetch failed:", err.message);
   }
 
-  // Last resort: seed so we never return empty
+  // Last resort: RSS if we have it, else seed so we never return empty
+  if (rssItems.length) { cache = { items: rssItems, ts: now }; return cache.items; }
   if (!cache.items.length) cache = { items: seedFeed(), ts: now };
   return cache.items;
 }

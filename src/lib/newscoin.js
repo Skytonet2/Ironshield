@@ -39,14 +39,26 @@ export async function getTopHolders(coinAddress, limit = 20) {
 
 // ─── Write methods (require wallet) ─────────────────────────────────
 
-// Create a new coin for a story (2 NEAR creation fee)
+// Create a new coin for a story (2 NEAR creation fee; 0 if waived on-chain)
 export async function createCoin({ selector, accountId, storyId, name, ticker, headline }) {
   const wallet = await selector.wallet();
+  // Check if the caller is on the fee-waiver list — if so, attach 0 NEAR.
+  let deposit = toYocto(2);
+  try {
+    const acct = await getReadAccount();
+    const waived = await acct.viewFunction({
+      contractId: FACTORY_CONTRACT,
+      methodName: "is_fee_waived",
+      args: { account_id: accountId },
+    });
+    if (waived) deposit = "0";
+  } catch (_) { /* ignore; fall back to paid */ }
+
   const action = functionCallAction({
     methodName: "create_coin",
     args: { story_id: storyId, name, ticker, headline },
-    gas: "300000000000000",  // 300 TGas (deploys sub-contract)
-    deposit: toYocto(2),     // 2 NEAR creation fee
+    gas: "300000000000000",
+    deposit,
   });
   const result = await sendTx(wallet, accountId, FACTORY_CONTRACT, [action]);
   return { txHash: extractTxHash(result), result };

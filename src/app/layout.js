@@ -112,7 +112,7 @@ export default function RootLayout({ children }) {
             <div className="ic-brand">Iron<span>Shield</span></div>
             <div className="ic-track">
               <div className="ic-rail"><div className="ic-fill" /></div>
-              <div className="ic-mascot"><img src="/mascot.webp" alt="" /></div>
+              <div className="ic-mascot"><img src="/mascot.png" alt="" /></div>
             </div>
             <div className="ic-status">Loading IronShield…</div>
             <a href="./" className="ic-reload" id="ic-reload-btn">Reload page</a>
