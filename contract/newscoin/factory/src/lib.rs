@@ -192,6 +192,9 @@ impl NewsCoinFactory {
         name: String,
         ticker: String,
         headline: String,
+        // Optional creator tokenomics — pass None to use defaults.
+        graduation_mcap_usd: Option<near_sdk::json_types::U128>,
+        max_supply: Option<near_sdk::json_types::U128>,
     ) -> Promise {
         let caller = env::predecessor_account_id();
         let is_waived = self.fee_waived.contains(&caller);
@@ -254,6 +257,8 @@ impl NewsCoinFactory {
             "name": name,
             "ticker": ticker,
             "story_id": story_id,
+            "graduation_mcap_usd": graduation_mcap_usd,
+            "max_supply": max_supply,
         })
         .to_string()
         .into_bytes();

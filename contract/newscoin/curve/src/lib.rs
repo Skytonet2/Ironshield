@@ -21,7 +21,13 @@ const BPS_DENOMINATOR: u128 = 10_000;
 const DEFAULT_PROTOCOL_FEE_BPS: u16 = 100; // 1%
 const DEFAULT_CREATOR_FEE_BPS: u16 = 50;   // 0.5%
 const CREATOR_BURN_BPS: u128 = 7_000;      // 70% of single-sell burns
-const GRADUATION_MCAP_USD: u128 = 70_000;  // threshold
+const GRADUATION_MCAP_USD: u128 = 70_000;  // fallback/default threshold (USD)
+// Safety rails so a malicious/misconfigured creator can't pick absurd values.
+const MIN_GRADUATION_MCAP_USD: u128 = 1_000;       // $1k floor
+const MAX_GRADUATION_MCAP_USD: u128 = 10_000_000;  // $10M ceiling
+// Optional supply cap bounds (tokens at 1e18 decimals). 0 disables the cap.
+const MIN_MAX_SUPPLY_TOKENS: u128 = 1_000;
+const MAX_MAX_SUPPLY_TOKENS: u128 = 1_000_000_000_000; // 1T tokens
 const NEAR_PRICE_USD_CENTS: u128 = 520;    // $5.20 — adminable later
 
 // Timing (nanoseconds)
@@ -102,6 +108,14 @@ pub struct NewsCoinCurve {
     pub graduated: bool,
     pub killed: bool,
 
+    // Creator-configurable tokenomics (new in v2)
+    // graduation_mcap_usd = USD mcap threshold at which the coin bonds to Rhea.
+    //                       If 0 (legacy coins), falls back to GRADUATION_MCAP_USD.
+    // max_supply          = hard cap on tokens minted (in 1e18 units).
+    //                       0 = unlimited (legacy behaviour).
+    pub graduation_mcap_usd: u128,
+    pub max_supply: u128,
+
     // Holders used for kill refunds
     pub refunds: UnorderedMap<AccountId, u128>,
     pub refund_pool: u128,
@@ -121,7 +135,25 @@ impl NewsCoinCurve {
         name: String,
         ticker: String,
         story_id: String,
+        // Optional creator-configured tokenomics. Pass 0 / None to keep defaults.
+        graduation_mcap_usd: Option<U128>,
+        max_supply: Option<U128>,
     ) -> Self {
+        // Validate creator-supplied values. Fall back to defaults on None.
+        let grad_usd: u128 = graduation_mcap_usd.map(|v| v.0).unwrap_or(GRADUATION_MCAP_USD);
+        require!(
+            grad_usd == 0 || (grad_usd >= MIN_GRADUATION_MCAP_USD && grad_usd <= MAX_GRADUATION_MCAP_USD),
+            "graduation_mcap_usd out of range"
+        );
+        let cap_tokens: u128 = max_supply.map(|v| v.0).unwrap_or(0);
+        if cap_tokens > 0 {
+            require!(
+                cap_tokens >= MIN_MAX_SUPPLY_TOKENS && cap_tokens <= MAX_MAX_SUPPLY_TOKENS,
+                "max_supply out of range"
+            );
+        }
+        // Store max_supply at 1e18 precision internally to match total_supply units.
+        let max_supply_scaled = cap_tokens.saturating_mul(PRICE_SCALE);
         // Default curve: 3 piecewise segments - gentle start, acceleration, steep.
         let default_segments = vec![
             CurveSegment {
@@ -164,6 +196,8 @@ impl NewsCoinCurve {
             creator_claimable: 0,
             graduated: false,
             killed: false,
+            graduation_mcap_usd: grad_usd,
+            max_supply: max_supply_scaled,
             refunds: UnorderedMap::new(StorageKey::Refunds),
             refund_pool: 0,
         }
@@ -318,8 +352,20 @@ impl NewsCoinCurve {
         let net = attached.saturating_sub(protocol_fee).saturating_sub(creator_fee);
 
         let segs = self.effective_segments();
-        let tokens = self.tokens_for_near(&segs, net);
+        let mut tokens = self.tokens_for_near(&segs, net);
         require!(tokens > 0, "Buy amount too small");
+
+        // Enforce creator hard cap (max_supply stored at 1e18 precision, 0 = uncapped)
+        if self.max_supply > 0 {
+            let remaining = self.max_supply.saturating_sub(self.total_supply);
+            require!(remaining > 0, "Hard cap reached — no more tokens can be minted");
+            if tokens > remaining {
+                // Cap the mint; caller gets what's left at this segment pricing.
+                // (Anything above the cap is considered overbuy and refunded off-chain
+                // by the agent, or re-try with a smaller deposit.)
+                tokens = remaining;
+            }
+        }
 
         // Mint to trader
         let prev = self.balances.get(&trader).copied().unwrap_or(0);
@@ -343,8 +389,9 @@ impl NewsCoinCurve {
             trader, tokens, attached, price, mcap
         ));
 
-        // Graduation check
-        if !self.graduated && mcap >= GRADUATION_MCAP_USD {
+        // Graduation check — use creator-configured threshold when set.
+        let grad_threshold = if self.graduation_mcap_usd > 0 { self.graduation_mcap_usd } else { GRADUATION_MCAP_USD };
+        if !self.graduated && mcap >= grad_threshold {
             self.graduated = true;
             env::log_str(&format!(
                 r#"EVENT_JSON:{{"standard":"newscoin","version":"1.0","event":"graduated","data":[{{"mcap_usd":"{}","supply":"{}"}}]}}"#,
@@ -367,7 +414,7 @@ impl NewsCoinCurve {
 
         // Creator sell restrictions
         if trader == self.creator {
-            require!(self.graduated, "Creator cannot sell before bonding ($70k mcap)");
+            require!(self.graduated, "Creator cannot sell before bonding");
             // Post-graduation single-sell: burn 70%, only 30% actually sells
             let burn = (to_sell * CREATOR_BURN_BPS) / BPS_DENOMINATOR;
             let remaining = to_sell.saturating_sub(burn);
@@ -747,6 +794,8 @@ impl NewsCoinCurve {
             "creator_claimable": U128(self.creator_claimable),
             "protocol_fee_bps": self.protocol_fee_bps,
             "creator_fee_bps": self.creator_fee_bps,
+            "graduation_mcap_usd": U128(if self.graduation_mcap_usd > 0 { self.graduation_mcap_usd } else { GRADUATION_MCAP_USD }),
+            "max_supply": U128(self.max_supply),
         })
     }
 

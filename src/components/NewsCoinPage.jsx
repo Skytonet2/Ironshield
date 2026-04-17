@@ -496,6 +496,10 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
   const t = useTheme();
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
+  // Creator-configurable tokenomics. Blank = use contract default.
+  const [maxSupply, setMaxSupply] = useState("");        // tokens, whole units (e.g. 1_000_000_000)
+  const [hardcapUsd, setHardcapUsd] = useState("");      // USD mcap that triggers bonding
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [suggesting, setSuggesting] = useState(true);
   const [minting, setMinting] = useState(false);
   const [err, setErr] = useState("");
@@ -532,6 +536,23 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
         });
         if (waived) deposit = "0";
       } catch (_) { /* fallback to paid */ }
+      // Build optional tokenomics args. Numbers are validated before send.
+      let graduation_mcap_usd = null;
+      let max_supply_u128 = null;
+      if (hardcapUsd) {
+        const n = Math.floor(Number(hardcapUsd));
+        if (!Number.isFinite(n) || n < 1000 || n > 10_000_000) {
+          throw new Error("Hardcap must be between $1,000 and $10,000,000");
+        }
+        graduation_mcap_usd = String(n);
+      }
+      if (maxSupply) {
+        const n = Math.floor(Number(maxSupply));
+        if (!Number.isFinite(n) || n < 1000 || n > 1_000_000_000_000) {
+          throw new Error("Max supply must be between 1,000 and 1,000,000,000,000");
+        }
+        max_supply_u128 = String(n);
+      }
       const action = functionCallAction({
         methodName: "create_coin",
         args: {
@@ -539,6 +560,8 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
           name: name.trim(),
           ticker: ticker.trim().toUpperCase(),
           headline: (post?.content || "").slice(0, 280),
+          graduation_mcap_usd, // null = default
+          max_supply: max_supply_u128, // null = uncapped
         },
         deposit,
         gas: "300000000000000",
@@ -623,7 +646,7 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
             </div>
 
             {/* Ticker input */}
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: t.textDim, display: "block", marginBottom: 4 }}>Ticker Symbol</label>
               <input
                 value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())}
@@ -632,6 +655,61 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
                 maxLength={10}
               />
             </div>
+
+            {/* Advanced tokenomics toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(v => !v)}
+              style={{
+                background: "transparent", border: "none", color: ORANGE,
+                fontSize: 12, cursor: "pointer", padding: "4px 0", marginBottom: 8,
+                display: "flex", alignItems: "center", gap: 4,
+              }}
+            >
+              <ChevronDown
+                size={12}
+                style={{ transform: showAdvanced ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }}
+              />
+              Advanced tokenomics {showAdvanced ? "" : "(optional)"}
+            </button>
+
+            {showAdvanced && (
+              <div style={{
+                padding: 12, borderRadius: 10, background: t.bgSurface,
+                border: `1px solid ${t.border}`, marginBottom: 16,
+              }}>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, color: t.textDim, display: "block", marginBottom: 4 }}>
+                    Max Supply (tokens)
+                  </label>
+                  <input
+                    value={maxSupply}
+                    onChange={e => setMaxSupply(e.target.value.replace(/[^\d]/g, ""))}
+                    placeholder="Leave blank = uncapped"
+                    style={inputStyle(t)}
+                    inputMode="numeric"
+                  />
+                  <div style={{ fontSize: 11, color: t.textDim, marginTop: 4 }}>
+                    Hard cap on total tokens ever minted. Range: 1,000 – 1,000,000,000,000.
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: t.textDim, display: "block", marginBottom: 4 }}>
+                    Bonding Hardcap (USD mcap)
+                  </label>
+                  <input
+                    value={hardcapUsd}
+                    onChange={e => setHardcapUsd(e.target.value.replace(/[^\d]/g, ""))}
+                    placeholder="Default: 70000"
+                    style={inputStyle(t)}
+                    inputMode="numeric"
+                  />
+                  <div style={{ fontSize: 11, color: t.textDim, marginTop: 4 }}>
+                    USD market cap that triggers bonding to Rhea. Range: $1,000 – $10,000,000.
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -644,7 +722,7 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
         }}>
           <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
           <div>
-            <strong>Creator sell restriction:</strong> Before bonding ($70k mcap), you cannot sell.
+            <strong>Creator sell restriction:</strong> Before bonding (your hardcap), you cannot sell.
             After bonding, a single sell burns 70% of your tokens.
           </div>
         </div>
