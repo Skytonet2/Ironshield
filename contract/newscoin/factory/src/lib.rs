@@ -1,6 +1,6 @@
 use near_sdk::{near, env, AccountId, NearToken, PanicOnDefault, Promise, Gas, BorshStorageKey};
 use near_sdk::store::{UnorderedMap, Vector};
-use near_sdk::json_types::U128;
+use near_sdk::json_types::{U128, Base64VecU8};
 use near_sdk::serde::{Deserialize, Serialize};
 
 /// 2 NEAR creation fee
@@ -73,11 +73,13 @@ impl NewsCoinFactory {
     // ─── Admin ──────────────────────────────────────────────────────
 
     /// Upload the curve contract WASM. Owner only. Call once after factory deploy.
-    pub fn store_curve_wasm(&mut self, #[serializer(borsh)] wasm: Vec<u8>) {
+    pub fn store_curve_wasm(&mut self, wasm: Base64VecU8) {
         self.assert_owner();
-        assert!(!wasm.is_empty(), "WASM must not be empty");
-        self.curve_wasm = wasm;
-        env::log_str("Curve WASM stored");
+        let bytes: Vec<u8> = wasm.into();
+        assert!(!bytes.is_empty(), "WASM must not be empty");
+        let len = bytes.len();
+        self.curve_wasm = bytes;
+        env::log_str(&format!("Curve WASM stored ({} bytes)", len));
     }
 
     pub fn update_revenue_wallet(&mut self, new_wallet: AccountId) {
