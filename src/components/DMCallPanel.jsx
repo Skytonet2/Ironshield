@@ -170,7 +170,11 @@ export default function DMCallPanel({ open, t, wallet, conversationId, peer, onC
           headers: { "Content-Type": "application/json", "x-wallet": wallet },
           body: JSON.stringify({}),
         });
-        const j = await r.json();
+        const raw = await r.text();
+        if (raw.trimStart().startsWith("<")) {
+          throw new Error("Voice calls need the IronShield backend online (LiveKit token service).");
+        }
+        let j; try { j = JSON.parse(raw); } catch { throw new Error(`Bad response from call service (${r.status})`); }
         if (!r.ok) throw new Error(j.error || `token ${r.status}`);
         if (cancelled) return;
         setTokenInfo(j);

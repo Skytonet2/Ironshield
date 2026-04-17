@@ -217,6 +217,12 @@ export function CoinModal({ coin: initialCoin, post, wallet, selector, onClose }
     setErr(""); setSuccess(""); setLoading(true);
     try {
       const w = await selector.wallet();
+      // The coin itself IS the curve contract. Address comes from one of:
+      //   coin.coinAddress (on-chain fetch)  |  coin.curve_contract (backend)  |  coin.id (backend slug)
+      const coinAddress = coin.coinAddress || coin.curve_contract || coin.id;
+      if (!coinAddress || !String(coinAddress).includes(".")) {
+        throw new Error("Coin address not found — refresh the page");
+      }
       let action;
       if (tab === "buy") {
         // Convert NEAR to yoctoNEAR
@@ -225,28 +231,44 @@ export function CoinModal({ coin: initialCoin, post, wallet, selector, onClose }
         const yocto = (BigInt(whole || "0") * 1_000_000_000_000_000_000_000_000n + BigInt(padded || "0")).toString();
         action = functionCallAction({
           methodName: "buy",
-          args: { coin_id: coin.id },
+          args: {},
           gas: "100000000000000",
           deposit: yocto,
         });
-        await sendTx(w, wallet, FACTORY, [action]);
+        await sendTx(w, wallet, coinAddress, [action]);
       } else {
-        // Sell: amount is token count
-        const tokenAmount = String(Math.floor(amt * 1e18));
+        // Sell: amount is token count (18 decimals)
+        const [whole, frac = ""] = String(amt).split(".");
+        const padded = (frac + "0".repeat(18)).slice(0, 18);
+        const tokenAmount = (BigInt(whole || "0") * 1_000_000_000_000_000_000n + BigInt(padded || "0")).toString();
         action = functionCallAction({
           methodName: "sell",
-          args: { coin_id: coin.id, amount: tokenAmount },
+          args: { amount: tokenAmount },
           gas: "100000000000000",
           deposit: "1",
         });
-        await sendTx(w, wallet, coin.curve_contract || FACTORY, [action]);
+        await sendTx(w, wallet, coinAddress, [action]);
       }
       setSuccess(`${tab === "buy" ? "Bought" : "Sold"} successfully!`);
       setAmount("");
-      // Refresh coin data
+      // Refresh coin + user balance. Try backend first (richer data),
+      // fall back to the chain so allocation updates even when backend is offline.
       try {
         const updated = await api(`/api/newscoin/${coin.id}`);
         if (updated) setCoin(prev => ({ ...prev, ...updated }));
+      } catch {}
+      try {
+        const { getCoinBalance, getCurveState } = await import("@/lib/newscoin");
+        const [balU128, curve] = await Promise.all([
+          getCoinBalance(coinAddress, wallet).catch(() => null),
+          getCurveState(coinAddress).catch(() => null),
+        ]);
+        setCoin(prev => ({
+          ...prev,
+          coinAddress,
+          user_balance: balU128 ? Number(BigInt(balU128) / 1_000_000_000_000n) / 1e6 : prev?.user_balance,
+          total_supply: curve?.total_supply ? Number(BigInt(curve.total_supply) / 1_000_000_000_000n) / 1e6 : prev?.total_supply,
+        }));
       } catch {}
     } catch (e) {
       const msg = e?.message || String(e);
