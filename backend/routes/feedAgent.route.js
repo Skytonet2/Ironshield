@@ -4,6 +4,7 @@ const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
 const { verifyTransfer } = require("../services/txVerify");
+const agent = require("../services/agentConnector");
 
 // Wallets that bypass payment for premium features (team / founders).
 const FEE_WAIVED = new Set(["skyto.near"]);
@@ -72,6 +73,59 @@ router.get("/mine/info", requireWallet, async (req, res, next) => {
     const user = await getOrCreateUser(req.wallet);
     const r = await db.query("SELECT * FROM feed_ironclaw_agents WHERE owner_id=$1 AND active=TRUE ORDER BY deployed_at DESC LIMIT 1", [user.id]);
     res.json({ agent: r.rows[0] || null });
+  } catch (e) { next(e); }
+});
+
+router.post("/suggest-format", requireWallet, async (req, res, next) => {
+  try {
+    const content = String(req.body?.content || "").trim();
+    const kind = String(req.body?.kind || "post").trim();
+    const title = String(req.body?.title || "").trim();
+    if (!content) return res.status(400).json({ error: "content required" });
+
+    let suggestion;
+    try {
+      suggestion = await agent.suggestPostFormats({ content, kind, title, wallet: req.wallet });
+    } catch {
+      suggestion = null;
+    }
+
+    if (!suggestion?.formats?.length) {
+      const trimmed = content.replace(/\s+/g, " ").trim();
+      const baseTitle = title || trimmed.slice(0, 54) || "Idea";
+      suggestion = {
+        summary: "This draft has a strong core idea and could land better with clearer packaging.",
+        recommendedFormat: trimmed.length > 240 ? "Mini article" : "Punchy post",
+        formats: [
+          {
+            id: "punchy-post",
+            label: "Punchy post",
+            kind: "post",
+            why: "Best when you want a sharp single-post take.",
+            title: "",
+            content: trimmed.slice(0, 500),
+          },
+          {
+            id: "thread-opener",
+            label: "Thread opener",
+            kind: "post",
+            why: "Good when the idea needs a hook and follow-up context.",
+            title: "",
+            content: `1/ ${trimmed.slice(0, 496)}`,
+          },
+          {
+            id: "mini-article",
+            label: "Mini article",
+            kind: "article",
+            why: "Useful when the idea wants more framing and a clearer thesis.",
+            title: baseTitle,
+            content: `${trimmed}\n\nWhy this matters:\n- \n- \n\nWhat happens next:\n- `,
+          },
+        ],
+      };
+    }
+
+    res.json({ suggestion });
   } catch (e) { next(e); }
 });
 
