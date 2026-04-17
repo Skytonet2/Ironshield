@@ -1,0 +1,1 @@
+C:\Users\SKYTONET\ironshield\.claude\worktrees\zealous-kalam\contract\newscoin\rhea-migrator\target\wasm32-unknown-unknown\release\libnewscoin_rhea_migrator.rlib: C:\Users\SKYTONET\ironshield\.claude\worktrees\zealous-kalam\contract\newscoin\rhea-migrator\src\lib.rs
