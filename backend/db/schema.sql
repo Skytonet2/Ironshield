@@ -442,3 +442,58 @@ CREATE TABLE IF NOT EXISTS feed_push_subscriptions (
   updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_feed_push_user ON feed_push_subscriptions(user_id);
+
+-- ═══════════════════════════════════════════════════════════════
+-- NewsCoin: tradeable news tokens on bonding curves
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS feed_newscoins (
+  id SERIAL PRIMARY KEY,
+  story_id TEXT NOT NULL,
+  contract_address TEXT UNIQUE,
+  name TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  creator TEXT NOT NULL,
+  headline TEXT,
+  mcap NUMERIC DEFAULT 0,
+  mcap_usd NUMERIC DEFAULT 0,
+  price NUMERIC DEFAULT 0,
+  volume_24h NUMERIC DEFAULT 0,
+  change_24h NUMERIC DEFAULT 0,
+  trade_count INTEGER DEFAULT 0,
+  graduated BOOLEAN DEFAULT FALSE,
+  killed BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_newscoins_story ON feed_newscoins(story_id);
+CREATE INDEX IF NOT EXISTS idx_newscoins_creator ON feed_newscoins(creator);
+CREATE INDEX IF NOT EXISTS idx_newscoins_mcap ON feed_newscoins(mcap_usd DESC);
+
+CREATE TABLE IF NOT EXISTS feed_newscoin_trades (
+  id SERIAL PRIMARY KEY,
+  coin_id INTEGER REFERENCES feed_newscoins(id),
+  trader TEXT NOT NULL,
+  trade_type TEXT NOT NULL CHECK (trade_type IN ('buy', 'sell')),
+  token_amount NUMERIC NOT NULL,
+  near_amount NUMERIC NOT NULL,
+  price NUMERIC NOT NULL,
+  tx_hash TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_newscoin_trades_coin ON feed_newscoin_trades(coin_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS feed_newscoin_holdings (
+  coin_id INTEGER REFERENCES feed_newscoins(id),
+  wallet TEXT NOT NULL,
+  balance NUMERIC DEFAULT 0,
+  cost_basis NUMERIC DEFAULT 0,
+  PRIMARY KEY (coin_id, wallet)
+);
+
+CREATE TABLE IF NOT EXISTS feed_newscoin_sparklines (
+  id SERIAL PRIMARY KEY,
+  coin_id INTEGER REFERENCES feed_newscoins(id),
+  price NUMERIC NOT NULL,
+  recorded_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_newscoin_sparklines ON feed_newscoin_sparklines(coin_id, recorded_at DESC);

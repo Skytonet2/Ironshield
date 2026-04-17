@@ -1,0 +1,259 @@
+use near_sdk::{near, env, AccountId, NearToken, PanicOnDefault, Promise, Gas, BorshStorageKey};
+use near_sdk::store::{UnorderedMap, Vector};
+use near_sdk::json_types::U128;
+use near_sdk::serde::{Deserialize, Serialize};
+
+/// 2 NEAR creation fee
+const DEFAULT_CREATION_FEE: u128 = 2_000_000_000_000_000_000_000_000;
+/// Max coins per story
+const MAX_COINS_PER_STORY: usize = 3;
+/// Gas for deploying a sub-account
+const GAS_FOR_DEPLOY: Gas = Gas::from_tgas(100);
+/// Gas for registry call
+const GAS_FOR_REGISTRY: Gas = Gas::from_tgas(20);
+
+#[derive(BorshStorageKey)]
+#[near]
+enum StorageKey {
+    StoryCoins,
+    AllCoins,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone)]
+pub struct CoinInfo {
+    pub story_id: String,
+    pub coin_address: AccountId,
+    pub name: String,
+    pub ticker: String,
+    pub creator: AccountId,
+    pub created_at: u64,
+}
+
+#[near(contract_state)]
+#[derive(PanicOnDefault)]
+pub struct NewsCoinFactory {
+    owner_id: AccountId,
+    revenue_wallet: AccountId,
+    agent_id: AccountId,
+    registry_id: AccountId,
+    story_coins: UnorderedMap<String, Vec<AccountId>>,
+    all_coins: Vector<CoinInfo>,
+    creation_fee: u128,
+    coin_counter: u64,
+    /// The compiled WASM of the curve contract, stored on-chain for deployment.
+    curve_wasm: Vec<u8>,
+}
+
+#[near]
+impl NewsCoinFactory {
+    #[init]
+    pub fn new(
+        owner_id: AccountId,
+        revenue_wallet: AccountId,
+        agent_id: AccountId,
+        registry_id: AccountId,
+    ) -> Self {
+        Self {
+            owner_id,
+            revenue_wallet,
+            agent_id,
+            registry_id,
+            story_coins: UnorderedMap::new(StorageKey::StoryCoins),
+            all_coins: Vector::new(StorageKey::AllCoins),
+            creation_fee: DEFAULT_CREATION_FEE,
+            coin_counter: 0,
+            curve_wasm: Vec::new(),
+        }
+    }
+
+    // ─── Admin ──────────────────────────────────────────────────────
+
+    /// Upload the curve contract WASM. Owner only. Call once after factory deploy.
+    pub fn store_curve_wasm(&mut self, #[serializer(borsh)] wasm: Vec<u8>) {
+        self.assert_owner();
+        assert!(!wasm.is_empty(), "WASM must not be empty");
+        self.curve_wasm = wasm;
+        env::log_str("Curve WASM stored");
+    }
+
+    pub fn update_revenue_wallet(&mut self, new_wallet: AccountId) {
+        self.assert_owner();
+        self.revenue_wallet = new_wallet;
+    }
+
+    pub fn update_agent(&mut self, new_agent: AccountId) {
+        self.assert_owner();
+        self.agent_id = new_agent;
+    }
+
+    pub fn update_creation_fee(&mut self, fee: U128) {
+        self.assert_owner();
+        self.creation_fee = fee.0;
+    }
+
+    pub fn update_registry(&mut self, registry_id: AccountId) {
+        self.assert_owner();
+        self.registry_id = registry_id;
+    }
+
+    // ─── Create ─────────────────────────────────────────────────────
+
+    #[payable]
+    pub fn create_coin(
+        &mut self,
+        story_id: String,
+        name: String,
+        ticker: String,
+        headline: String,
+    ) -> Promise {
+        let deposit = env::attached_deposit();
+        assert!(
+            deposit.as_yoctonear() >= self.creation_fee,
+            "Attached deposit must be at least {} yoctoNEAR",
+            self.creation_fee
+        );
+        assert!(!story_id.is_empty(), "story_id must not be empty");
+        assert!(!name.is_empty(), "name must not be empty");
+        assert!(ticker.len() >= 2 && ticker.len() <= 10, "ticker must be 2-10 chars");
+        assert!(!self.curve_wasm.is_empty(), "Curve WASM not stored yet");
+
+        // Check max 3 coins per story
+        let existing = self.story_coins.get(&story_id);
+        let count = existing.map_or(0, |v| v.len());
+        assert!(
+            count < MAX_COINS_PER_STORY,
+            "Story already has {} coins (max {})",
+            count,
+            MAX_COINS_PER_STORY
+        );
+
+        let creator = env::predecessor_account_id();
+        let coin_index = self.coin_counter;
+        self.coin_counter += 1;
+
+        // Sub-account: coin0.factory.near, coin1.factory.near, etc.
+        let sub_account_str = format!("coin{}.{}", coin_index, env::current_account_id());
+        let coin_address: AccountId = sub_account_str
+            .parse()
+            .unwrap_or_else(|_| env::panic_str("Invalid sub-account"));
+
+        // Record locally
+        let coin_info = CoinInfo {
+            story_id: story_id.clone(),
+            coin_address: coin_address.clone(),
+            name: name.clone(),
+            ticker: ticker.clone(),
+            creator: creator.clone(),
+            created_at: env::block_timestamp(),
+        };
+        self.all_coins.push(coin_info);
+
+        let mut addrs = self.story_coins.get(&story_id).cloned().unwrap_or_default();
+        addrs.push(coin_address.clone());
+        self.story_coins.insert(story_id.clone(), addrs);
+
+        // Init args for the curve contract
+        let init_args = near_sdk::serde_json::json!({
+            "owner_id": env::current_account_id(),
+            "creator": creator,
+            "agent_id": self.agent_id,
+            "revenue_wallet": self.revenue_wallet,
+            "name": name,
+            "ticker": ticker,
+            "story_id": story_id,
+        })
+        .to_string()
+        .into_bytes();
+
+        // Emit event
+        let event = near_sdk::serde_json::json!({
+            "standard": "newscoin",
+            "version": "1.0",
+            "event": "coin_created",
+            "data": [{
+                "story_id": story_id,
+                "coin_address": coin_address,
+                "name": name,
+                "ticker": ticker,
+                "creator": creator,
+                "headline": headline,
+            }]
+        });
+        env::log_str(&format!("EVENT_JSON:{}", event));
+
+        // 1. Deploy curve contract to sub-account
+        // 2. Send creation_fee to revenue_wallet
+        // 3. Call registry to index
+        let deploy_deposit = NearToken::from_millinear(500); // 0.5 NEAR for storage
+        let fee_amount = NearToken::from_yoctonear(self.creation_fee);
+
+        let registry_args = near_sdk::serde_json::json!({
+            "story_id": story_id,
+            "coin_address": coin_address,
+            "creator": creator,
+            "name": name,
+            "ticker": ticker,
+        })
+        .to_string()
+        .into_bytes();
+
+        Promise::new(coin_address.clone())
+            .create_account()
+            .transfer(deploy_deposit)
+            .deploy_contract(self.curve_wasm.clone())
+            .function_call("new".to_string(), init_args, NearToken::from_yoctonear(0), GAS_FOR_DEPLOY)
+            .then(
+                Promise::new(self.revenue_wallet.clone()).transfer(fee_amount),
+            )
+            .then(
+                Promise::new(self.registry_id.clone()).function_call(
+                    "register_coin".to_string(),
+                    registry_args,
+                    NearToken::from_yoctonear(0),
+                    GAS_FOR_REGISTRY,
+                ),
+            )
+    }
+
+    // ─── Views ──────────────────────────────────────────────────────
+
+    pub fn get_coins_for_story(&self, story_id: String) -> Vec<AccountId> {
+        self.story_coins.get(&story_id).cloned().unwrap_or_default()
+    }
+
+    pub fn get_all_coins(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<CoinInfo> {
+        let start = from_index.unwrap_or(0) as usize;
+        let lim = limit.unwrap_or(50).min(100) as usize;
+        let len = self.all_coins.len() as usize;
+        if start >= len {
+            return vec![];
+        }
+        let end = (start + lim).min(len);
+        (start..end)
+            .map(|i| self.all_coins.get(i as u32).unwrap().clone())
+            .collect()
+    }
+
+    pub fn get_coin_count(&self) -> u32 {
+        self.all_coins.len()
+    }
+
+    pub fn get_creation_fee(&self) -> U128 {
+        U128(self.creation_fee)
+    }
+
+    pub fn get_owner(&self) -> AccountId {
+        self.owner_id.clone()
+    }
+
+    // ─── Internal ───────────────────────────────────────────────────
+
+    fn assert_owner(&self) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            self.owner_id,
+            "Only owner can call this method"
+        );
+    }
+}
