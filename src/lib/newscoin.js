@@ -85,8 +85,11 @@ export async function getTopHolders(coinAddress, limit = 20) {
 
 // ─── Write methods (require wallet) ─────────────────────────────────
 
-// Create a new coin for a story (2 NEAR creation fee; 0 if waived on-chain)
-export async function createCoin({ selector, accountId, storyId, name, ticker, headline }) {
+// Create a new coin for a story (2 NEAR creation fee; 0 if waived on-chain).
+// Optional tokenomics:
+//   graduationMcapUsd: number  USD mcap at which the coin bonds to Rhea (default 70_000)
+//   maxSupply:         number  hard cap on total tokens minted (default uncapped)
+export async function createCoin({ selector, accountId, storyId, name, ticker, headline, graduationMcapUsd, maxSupply }) {
   const wallet = await selector.wallet();
   // Check if the caller is on the fee-waiver list — if so, attach 0 NEAR.
   let deposit = toYocto(2);
@@ -102,7 +105,14 @@ export async function createCoin({ selector, accountId, storyId, name, ticker, h
 
   const action = functionCallAction({
     methodName: "create_coin",
-    args: { story_id: storyId, name, ticker, headline },
+    args: {
+      story_id: storyId,
+      name,
+      ticker,
+      headline,
+      graduation_mcap_usd: graduationMcapUsd != null ? String(graduationMcapUsd) : null,
+      max_supply: maxSupply != null ? String(maxSupply) : null,
+    },
     gas: "300000000000000",
     deposit,
   });
