@@ -6,8 +6,8 @@ import { getReadAccount } from "@/lib/contexts";
 import { toYocto } from "@/lib/payments";
 
 // Contract addresses
-export const FACTORY_CONTRACT = "newscoin_factory.near";
-export const REGISTRY_CONTRACT = "newscoin_registry.near";
+export const FACTORY_CONTRACT = "newscoin-factory.ironshield.near";
+export const REGISTRY_CONTRACT = "newscoin-registry.ironshield.near";
 
 // ─── View methods (read-only, no wallet needed) ─────────────────────
 
