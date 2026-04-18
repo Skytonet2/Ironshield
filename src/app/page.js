@@ -406,7 +406,23 @@ export default function App() {
                 </button>
               ))}
             </nav>
-            <div style={{ marginTop: "auto", padding: 12, borderTop: `1px solid ${t.border}`, display: "flex", gap: 8 }}>
+            <div style={{ marginTop: "auto", padding: 12, borderTop: `1px solid ${t.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                onClick={async () => {
+                  if (!connected) return openWallet();
+                  if (pwa.pushEnabled) await pwa.disablePush();
+                  else await pwa.enablePush();
+                  setMobileNavOpen(false);
+                }}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  padding: "10px 12px", border: `1px solid ${t.border}`, background: "transparent",
+                  color: pwa.pushEnabled ? t.green : t.text, borderRadius: 10, cursor: "pointer", fontSize: 13,
+                }}
+              >
+                <BellRing size={14} /> {pwa.pushEnabled ? "Notifications on" : "Enable notifications"}
+              </button>
+              <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => { setIsDark(!isDark); }}
                 style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 12px", border: `1px solid ${t.border}`, background: "transparent", color: t.text, borderRadius: 10, cursor: "pointer", fontSize: 13 }}>
                 {isDark ? <Sun size={14} /> : <Moon size={14} />} Theme
@@ -417,6 +433,7 @@ export default function App() {
                   <LogOut size={14} /> Disconnect
                 </button>
               )}
+              </div>
             </div>
           </aside>
         </div>
