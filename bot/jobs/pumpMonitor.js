@@ -21,7 +21,7 @@ async function runOnce(bot) {
              (SELECT price FROM feed_newscoin_trades t WHERE t.coin_id=c.id ORDER BY t.created_at DESC LIMIT 1) AS price_now,
              (SELECT price FROM feed_newscoin_trades t WHERE t.coin_id=c.id AND t.created_at < NOW() - INTERVAL '10 minutes' ORDER BY t.created_at DESC LIMIT 1) AS price_prev
         FROM feed_newscoins c
-       WHERE c.is_killed = FALSE
+       WHERE c.killed = FALSE
     `);
 
     for (const c of coins) {
