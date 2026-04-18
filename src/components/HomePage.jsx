@@ -2,6 +2,7 @@
 import { Shield, Wallet, Vote, Cpu, Coins, Feather } from "lucide-react";
 import { Badge, Btn, Section } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
+import AnimatedMascot from "./AnimatedMascot";
 
 import {
   IlliaQuote,
@@ -39,7 +40,14 @@ export default function HomePage({ setPage, openWallet }) {
                      radial-gradient(ellipse at 80% 100%, #9b5de509 0%, transparent 50%)`,
       }}>
         <Section style={{ padding: "130px 24px 80px" }}>
-          <div style={{ maxWidth: 780 }}>
+          <div className="ix-hero-grid" style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 30, alignItems: "center" }}>
+            <style>{`
+              @media (max-width: 980px) {
+                .ix-hero-grid { grid-template-columns: 1fr !important; }
+                .ix-hero-mascot { justify-content: flex-start !important; margin-top: 20px; }
+              }
+            `}</style>
+            <div style={{ maxWidth: 780 }}>
             <Badge color={t.green}>LIVE ON NEAR PROTOCOL</Badge>
 
             <h1 style={{ fontSize: 58, fontWeight: 800, color: t.white, lineHeight: 1.08, marginTop: 20, letterSpacing: "-1.5px" }}>
@@ -49,7 +57,7 @@ export default function HomePage({ setPage, openWallet }) {
             </h1>
 
             <p style={{ fontSize: 18, color: t.textMuted, marginTop: 22, lineHeight: 1.7, maxWidth: 620 }}>
-              The NEAR ecosystem's AI agent. <span style={{ color: t.white, fontWeight: 600 }}>Governed by holders.</span>{" "}
+              The NEAR ecosystem&apos;s AI agent. <span style={{ color: t.white, fontWeight: 600 }}>Governed by holders.</span>{" "}
               <span style={{ color: t.white, fontWeight: 600 }}>Funded by missions.</span>{" "}
               <span style={{ color: t.white, fontWeight: 600 }}>Defended by data.</span>
             </p>
@@ -83,6 +91,10 @@ export default function HomePage({ setPage, openWallet }) {
                     <Feather size={16} /> IronFeed
                   </Btn>
               }
+            </div>
+            </div>
+            <div className="ix-hero-mascot" style={{ display: "flex", justifyContent: "center" }}>
+              <AnimatedMascot size={440} />
             </div>
           </div>
 
