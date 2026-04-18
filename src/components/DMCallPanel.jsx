@@ -87,7 +87,9 @@ function CallInner({ useParticipants, useLocalParticipant, t, wallet, peer, mute
 
   useEffect(() => {
     if (!localParticipant) return;
-    localParticipant.setMicrophoneEnabled(!muted).catch(() => setMuted(true));
+    // Never auto-mute on transient errors (minimize, visibility change, etc.)
+    // — swallow and let the user control mute state explicitly.
+    localParticipant.setMicrophoneEnabled(!muted).catch(() => {});
   }, [localParticipant, muted, setMuted]);
 
   const byIdentity = useMemo(() => {
@@ -276,7 +278,7 @@ export default function DMCallPanel({
             position: "fixed",
             top: 12,
             right: 12,
-            zIndex: 220,
+            zIndex: 10020,
             background: t.bgCard,
             border: `1px solid ${t.border}`,
             borderRadius: 12,
@@ -315,7 +317,7 @@ export default function DMCallPanel({
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 120,
+        zIndex: 10010,
         background: "rgba(0,0,0,.72)",
         backdropFilter: "blur(8px)",
         display: "grid",
