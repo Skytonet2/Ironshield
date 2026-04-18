@@ -263,15 +263,14 @@ export default function DMCallPanel({
 
   const isReal = tokenInfo && !tokenInfo.mocked && lk;
 
-  if (minimized) {
-    return (
-      <>
-        {/* Keep LiveKit mounted while minimized so call audio session stays alive. */}
-        <div style={{ display: "none" }}>
-          {!loading && !error && isReal && (
-            <CallStage lk={lk} tokenInfo={tokenInfo} t={t} wallet={wallet} peer={peer} muted={muted} setMuted={setMuted} />
-          )}
-        </div>
+  // CRITICAL: the modal tree is rendered identically whether minimized or not
+  // — we just hide it with visibility/pointer-events. That keeps <LiveKitRoom>
+  // in the same React position so it never unmounts/reconnects when the user
+  // minimizes and restores. Previously we had two separate JSX trees which
+  // caused LiveKit to tear down the audio session on every toggle.
+  return (
+    <>
+      {minimized && (
         <div
           style={{
             position: "fixed",
@@ -295,7 +294,7 @@ export default function DMCallPanel({
               Ongoing call · {peer?.displayName || peer?.username || shortWallet(peer?.wallet || "")}
             </div>
             <div style={{ color: t.textDim, fontSize: 10 }}>
-              {loading ? "Connecting…" : error ? "Connection issue" : "Tap to reopen"}
+              {loading ? "Connecting…" : error ? "Connection issue" : "Live · tap Open"}
             </div>
           </div>
           <button onClick={onResume} style={{
@@ -311,11 +310,7 @@ export default function DMCallPanel({
             End
           </button>
         </div>
-      </>
-    );
-  }
-
-  return (
+      )}
     <div
       style={{
         position: "fixed",
@@ -326,6 +321,8 @@ export default function DMCallPanel({
         display: "grid",
         placeItems: "center",
         padding: 20,
+        visibility: minimized ? "hidden" : "visible",
+        pointerEvents: minimized ? "none" : "auto",
       }}
       onClick={onMinimize}
     >
@@ -481,5 +478,6 @@ export default function DMCallPanel({
         <style>{`.ix-spin { animation: ixSpin 1s linear infinite; } @keyframes ixSpin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
+    </>
   );
 }
