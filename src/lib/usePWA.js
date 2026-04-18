@@ -136,20 +136,33 @@ export function usePWA(wallet) {
   }, [installPrompt]);
 
   const enablePush = useCallback(async () => {
-    if (!wallet) return false;
-    if (typeof Notification === "undefined") return false;
+    if (!wallet) {
+      return { ok: false, reason: "wallet_required", message: "Connect your wallet first." };
+    }
+    // iOS Safari only exposes Notification / PushManager when the site is
+    // installed to Home Screen. In a regular Safari tab the API is missing
+    // entirely, so tell the user to install the PWA instead of silently
+    // failing.
+    const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone);
+    if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      if (isIOS && !isStandalone) {
+        return { ok: false, reason: "ios_needs_install", message: "On iOS, tap Share → Add to Home Screen, then open IronShield from the home-screen icon to enable notifications." };
+      }
+      return { ok: false, reason: "unsupported", message: "This browser doesn't support web push notifications." };
+    }
 
     const perm = await Notification.requestPermission();
     if (perm !== "granted") {
       setPushDenied(perm === "denied");
-      return false;
+      return { ok: false, reason: perm, message: perm === "denied" ? "Notifications were blocked. Re-enable them in your browser/site settings." : "Notification permission wasn't granted." };
     }
 
     prompted.current = true;
     const sub = await subscribePush(wallet);
     const ok = !!sub;
     setPushEnabled(ok);
-    return ok;
+    return ok ? { ok: true } : { ok: false, reason: "subscribe_failed", message: "Push subscribe failed. Make sure the backend is reachable and VAPID keys are set." };
   }, [wallet]);
 
   const disablePush = useCallback(async () => {

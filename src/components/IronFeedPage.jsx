@@ -20,6 +20,7 @@ import { TipModal, TipHistoryDrawer } from "@/components/TipModal";
 import EarnDashboard from "@/components/EarnDashboard";
 import { CoinBadge, CoinModal, MintModal } from "@/components/NewsCoinPage";
 import DMCallPanel from "@/components/DMCallPanel";
+import { useCall } from "@/lib/callContext";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -1622,7 +1623,8 @@ function DMsModal({ wallet, onClose, initialPeer }) {
   const [searchResult, setSearchResult] = useState(null);
   const [kp, setKp] = useState(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
-  const [callState, setCallState] = useState({ open: false, conversationId: null, peer: null });
+  // Call state is lifted to App-level context so switching pages doesn't drop the LiveKit connection.
+  const { openCall: openGlobalCall } = useCall();
 
   const assistantConversation = {
     id: "ironclaw-assistant",
@@ -1723,7 +1725,7 @@ function DMsModal({ wallet, onClose, initialPeer }) {
     if (announce) {
       try { await sendCallInvite(conversation); } catch {}
     }
-    setCallState({ open: true, conversationId: conversation.id, peer: conversation.peer });
+    openGlobalCall({ kind: "dm", conversationId: conversation.id, peer: conversation.peer });
   };
 
   const send = async () => {
@@ -2032,14 +2034,8 @@ function DMsModal({ wallet, onClose, initialPeer }) {
           )}
         </div>
       </div>
-      <DMCallPanel
-        open={callState.open}
-        t={t}
-        wallet={wallet}
-        conversationId={callState.conversationId}
-        peer={callState.peer}
-        onClose={() => setCallState({ open: false, conversationId: null, peer: null })}
-      />
+      {/* DMCallPanel is now mounted globally in src/app/page.js so the call
+          persists when the user navigates to other pages. */}
     </Modal>
   );
 }

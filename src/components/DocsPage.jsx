@@ -2,7 +2,7 @@
 import { Badge, Section } from "./Primitives";
 import { useTheme } from "@/lib/contexts";
 import { Shield, Bot, Lock, Vote, Coins, BarChart3, AlertTriangle, Zap, Globe, Users } from "lucide-react";
-import { TechArchitecture } from "./IronClawSections";
+import { TechArchitecture, WhatIsIronClaw, TokenomicsDeep, LaunchScope } from "./IronClawSections";
 
 const MASCOT_IMG = "/mascot.png";
 
@@ -299,8 +299,17 @@ export default function DocsPage() {
       </div>
     </Section>
 
+    {/* ─── The agent model / specializations ─── */}
+    <WhatIsIronClaw />
+
     {/* ─── Tech architecture: governance, agent core, revenue layers ─── */}
     <TechArchitecture />
+
+    {/* ─── Tokenomics deep dive ─── */}
+    <TokenomicsDeep />
+
+    {/* ─── Launch scope ─── */}
+    <LaunchScope />
     </>
   );
 }

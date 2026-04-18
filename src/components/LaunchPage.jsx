@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Rocket, Clock, Shield, Coins, Users, Lock, CheckCircle, AlertTriangle, Flame, TrendingUp, Wallet } from "lucide-react";
 import { Section, Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
-import { LaunchScope } from "./IronClawSections";
+// LaunchScope moved to Docs
 
 const LAUNCH_DATE = new Date("2026-05-01T14:00:00Z");
 
@@ -338,8 +338,7 @@ export default function LaunchPage({ openWallet }) {
       </div>
     </Section>
 
-    {/* ─── Launch scope: what ships on day one ─── */}
-    <LaunchScope />
+    {/* Launch scope now lives in Docs */}
     </>
   );
 }
