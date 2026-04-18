@@ -826,6 +826,22 @@ impl NewsCoinCurve {
             .transfer(NearToken::from_yoctonear(sendable))
     }
 
+    /// Permanently destroy this coin sub-account and return its remaining
+    /// balance (storage stake + reserve) to `beneficiary`. Owner-only and
+    /// only callable on a killed coin with zero supply — otherwise holders
+    /// would lose their refund pool. Use this when a coin is abandoned and
+    /// the storage NEAR should come back to the factory.
+    pub fn admin_delete_account(&mut self, beneficiary: AccountId) -> Promise {
+        require!(env::predecessor_account_id() == self.owner_id, "Not authorized");
+        require!(self.killed, "Kill the coin first");
+        require!(self.total_supply == 0, "Supply > 0 — holders must claim refunds first");
+        env::log_str(&format!(
+            r#"EVENT_JSON:{{"standard":"newscoin","version":"1.0","event":"account_deleted","data":[{{"beneficiary":"{}"}}]}}"#,
+            beneficiary
+        ));
+        Promise::new(env::current_account_id()).delete_account(beneficiary)
+    }
+
     pub fn get_info(&self) -> serde_json::Value {
         serde_json::json!({
             "name": self.name,

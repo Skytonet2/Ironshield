@@ -35,3 +35,7 @@ services:
         fromEnvironment: LIVEKIT_API_SECRET
       - key: ANTHROPIC_API_KEY
         fromEnvironment: ANTHROPIC_API_KEY
+      - key: VAPID_PUBLIC_KEY
+        fromEnvironment: VAPID_PUBLIC_KEY
+      - key: VAPID_PRIVATE_KEY
+        fromEnvironment: VAPID_PRIVATE_KEY

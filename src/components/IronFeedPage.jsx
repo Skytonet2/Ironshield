@@ -1714,7 +1714,7 @@ function DMsModal({ wallet, onClose, initialPeer }) {
     await api("/api/dm/send", {
       method: "POST",
       wallet,
-      body: { conversationId: conversation.id, encryptedPayload: enc.encryptedPayload, nonce: enc.nonce },
+      body: { conversationId: conversation.id, encryptedPayload: enc.encryptedPayload, nonce: enc.nonce, type: "call_invite" },
     });
   };
 
