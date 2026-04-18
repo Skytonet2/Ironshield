@@ -16,6 +16,7 @@ import AdminPanel     from "@/components/AdminPanel";
 import MascotSystem   from "@/components/MascotSystem";
 import DMToast        from "@/components/DMToast";
 import DMCallPanel    from "@/components/DMCallPanel";
+import TelegramOnboardingModal from "@/components/TelegramOnboardingModal";
 
 const StakingPage    = lazy(() => import("@/components/StakingPage"));
 const AlphaFeedPage  = lazy(() => import("@/components/AlphaFeedPage"));
@@ -477,6 +478,9 @@ function AppInner() {
         setPage("Feed");
         try { window.dispatchEvent(new CustomEvent("ix-open-dm", { detail: { peer, convId } })); } catch (_) {}
       }} />
+
+      {/* First-visit nudge to link the Telegram bot. */}
+      <TelegramOnboardingModal />
 
       {/* Persistent call surface. Stays mounted across SPA page switches so
           the LiveKit connection isn't torn down when the user navigates. */}

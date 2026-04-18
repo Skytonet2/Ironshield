@@ -218,6 +218,19 @@ router.post("/send", requireWallet, async (req, res, next) => {
           tag: `dm-${conversationId}`,
         }).catch(() => {});
       }
+
+      // Telegram side-channel for DMs. For non-call DMs we map the TG
+      // message_id back to the conversation so the user can reply in
+      // Telegram and have their reply posted into the site thread.
+      try {
+        const tg = require("../services/tgNotify");
+        const text = isCall
+          ? `📞 *${name}* is calling you\nOpen IronShield to answer.`
+          : `💬 *${name}* sent you a DM\n_Reply here to respond on-site._\n[Open thread](https://ironshield.near.page/#/Feed?dm=${conversationId})`;
+        tg.notifyFeedUser(toId, "dms", text, {
+          replyMapConversationId: isCall ? null : conversationId,
+        }).catch(() => {});
+      } catch { /* optional */ }
     } catch (_) { /* push is best-effort */ }
 
     res.json({ message: r.rows[0] });

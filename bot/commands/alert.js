@@ -1,8 +1,21 @@
-// bot/commands/alert.js — price alerts
-const fetch   = require("node-fetch");
-const BACKEND = process.env.BACKEND_URL || "http://localhost:3001";
+// bot/commands/alert.js — price alerts (upgraded)
+//
+// Supports:
+//   /alert $TOKEN 10x           → fires when price multiplies 10×
+//   /alert SOL 5%               → fires on a 5% move (up or down)
+//   /alert NEAR above $10       → fires above a threshold
+//   /alert BTC below $50000
+//   /alert list                 → show active alerts
+//   /alert remove <id>          → cancel an alert
+//
+// Uses backend /api/tg/price-alerts so alerts persist with the user
+// and the price monitor can deliver notifications.
 
-// Common token aliases → CoinGecko IDs
+const fetch = require("node-fetch");
+const { tg } = require("../services/backend");
+
+// Common tickers → CoinGecko IDs for the "current price" lookup that
+// anchors `pct` and `mult` alerts.
 const TOKEN_MAP = {
   btc: "bitcoin", bitcoin: "bitcoin",
   eth: "ethereum", ethereum: "ethereum",
@@ -12,91 +25,86 @@ const TOKEN_MAP = {
   atom: "cosmos", link: "chainlink",
 };
 
-async function handle(bot, msg) {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-  const text   = (msg.text || "").trim();
-  const args   = text.replace(/^\/alert(@\w+)?\s*/i, "").trim();
-
-  // /alert list
-  if (args === "list" || !args) {
-    return listAlerts(bot, chatId, userId);
-  }
-
-  // /alert TOKEN above/below PRICE
-  const match = args.match(/^(\w+)\s+(above|below)\s+\$?([\d,.]+)$/i);
-  if (!match) {
-    return bot.sendMessage(chatId,
-      "Usage:\n/alert NEAR above $10\n/alert BTC below $50000\n/alert list — view your alerts"
-    );
-  }
-
-  const [, tokenRaw, direction, priceRaw] = match;
-  const tokenKey = tokenRaw.toLowerCase().replace(/^\$/, "");
-  const tokenId  = TOKEN_MAP[tokenKey] || tokenKey;
-  const threshold = parseFloat(priceRaw.replace(/,/g, ""));
-  const alertType = direction.toLowerCase() === "above" ? "price_above" : "price_below";
-
-  // Verify token exists on CoinGecko
+async function getPrice(tokenId) {
   try {
-    const priceRes = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${tokenId}&vs_currencies=usd`);
-    const priceData = await priceRes.json();
-    const currentPrice = priceData[tokenId]?.usd;
-
-    if (!currentPrice) {
-      return bot.sendMessage(chatId, `⚠️ Could not find token "${tokenRaw}". Try the CoinGecko ID (e.g., "near", "bitcoin").`);
-    }
-
-    // Save alert to file (will be migrated to DB)
-    const fs   = require("fs");
-    const path = require("path");
-    const ALERTS_FILE = path.join(__dirname, "../../jobs/data/alerts.json");
-    let alerts = [];
-    try { alerts = JSON.parse(fs.readFileSync(ALERTS_FILE, "utf8")); } catch {}
-
-    alerts.push({
-      id: Date.now().toString(),
-      userId,
-      chatId: chatId.toString(),
-      tokenId,
-      token: tokenRaw.toUpperCase(),
-      type: alertType,
-      threshold,
-      triggered: false,
-      createdAt: new Date().toISOString(),
-    });
-
-    fs.writeFileSync(ALERTS_FILE, JSON.stringify(alerts, null, 2));
-
-    const dir = alertType === "price_above" ? "rises above" : "drops below";
-    await bot.sendMessage(chatId,
-      `🔔 *Alert Set*\n\nYou'll be notified when *${tokenRaw.toUpperCase()}* ${dir} *$${threshold.toLocaleString()}*\n\nCurrent price: *$${currentPrice.toLocaleString()}*\n\nUse /alert list to see your alerts.`,
-      { parse_mode: "Markdown" }
-    );
-  } catch (err) {
-    await bot.sendMessage(chatId, "⚠️ Failed to set alert. Please try again.");
-  }
+    const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${tokenId}&vs_currencies=usd`);
+    const j = await r.json();
+    return j[tokenId]?.usd || null;
+  } catch { return null; }
 }
 
-async function listAlerts(bot, chatId, userId) {
-  const fs   = require("fs");
-  const path = require("path");
-  const ALERTS_FILE = path.join(__dirname, "../../jobs/data/alerts.json");
-  let alerts = [];
-  try { alerts = JSON.parse(fs.readFileSync(ALERTS_FILE, "utf8")); } catch {}
+function parseArgs(text) {
+  const args = text.replace(/^\/alert(@\w+)?\s*/i, "").trim();
+  if (!args || args === "list") return { action: "list" };
+  if (/^remove\s+\d+/i.test(args)) {
+    return { action: "remove", id: parseInt(args.match(/\d+/)[0]) };
+  }
+  // 10x / 10× / 2x multiplier
+  let m = args.match(/^\$?(\w+)\s+(\d+(?:\.\d+)?)\s*[x×]$/i);
+  if (m) return { action: "add", token: m[1], op: "mult", value: Number(m[2]) };
+  // 5% move
+  m = args.match(/^\$?(\w+)\s+([+-]?\d+(?:\.\d+)?)\s*%$/i);
+  if (m) return { action: "add", token: m[1], op: "pct", value: Number(m[2]) };
+  // above/below price
+  m = args.match(/^\$?(\w+)\s+(above|below)\s+\$?([\d,.]+)$/i);
+  if (m) return { action: "add", token: m[1], op: m[2].toLowerCase(), value: Number(m[3].replace(/,/g, "")) };
+  return { action: "help" };
+}
 
-  const userAlerts = alerts.filter(a => a.userId === userId && !a.triggered);
-  if (!userAlerts.length) {
-    return bot.sendMessage(chatId, "You have no active alerts.\n\nSet one: /alert NEAR above $10");
+async function handle(bot, msg) {
+  const chatId = msg.chat.id;
+  const tgId = msg.from.id;
+  const parsed = parseArgs(msg.text || "");
+
+  if (parsed.action === "help") {
+    return bot.sendMessage(chatId,
+      "*Usage*\n`/alert $TOKEN 10x` — price multiplier\n`/alert SOL 5%` — percent move\n`/alert NEAR above $10`\n`/alert BTC below $50000`\n`/alert list` — show alerts\n`/alert remove <id>` — cancel",
+      { parse_mode: "Markdown" }
+    );
   }
 
-  const lines = ["🔔 *Your Active Alerts*\n"];
-  userAlerts.forEach((a, i) => {
-    const dir = a.type === "price_above" ? "above" : "below";
-    lines.push(`${i + 1}. ${a.token} ${dir} $${a.threshold.toLocaleString()}`);
-  });
+  if (parsed.action === "list") {
+    const r = await tg.listAlerts(tgId);
+    if (!r.ok) return bot.sendMessage(chatId, "Link a wallet first — just paste your address.");
+    const active = (r.alerts || []).filter(a => a.active);
+    if (!active.length) return bot.sendMessage(chatId, "No active alerts. Set one with `/alert $TOKEN 10x`", { parse_mode: "Markdown" });
+    const lines = ["🔔 *Active alerts*\n"];
+    for (const a of active) {
+      const desc = a.op === "mult" ? `${a.value}×`
+                 : a.op === "pct"  ? `${a.value}% move`
+                 : `${a.op} $${Number(a.value).toLocaleString()}`;
+      lines.push(`${a.id}. ${a.token} — ${desc}`);
+    }
+    lines.push("\nRemove with `/alert remove <id>`");
+    return bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
+  }
 
-  await bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
+  if (parsed.action === "remove") {
+    await tg.removeAlert(parsed.id);
+    return bot.sendMessage(chatId, `🗑 Alert ${parsed.id} removed.`);
+  }
+
+  // add
+  const tokenKey = String(parsed.token).toLowerCase();
+  const tokenId = TOKEN_MAP[tokenKey] || tokenKey;
+  const basePrice = (parsed.op === "mult" || parsed.op === "pct") ? await getPrice(tokenId) : null;
+
+  const r = await tg.addAlert({
+    tgId,
+    token: parsed.token.toUpperCase(),
+    op: parsed.op,
+    value: parsed.value,
+    basePrice,
+  });
+  if (!r.ok) return bot.sendMessage(chatId, `⚠️ ${r.error || "failed"}`);
+
+  const desc = parsed.op === "mult" ? `multiplies ${parsed.value}× (from $${basePrice?.toLocaleString() || "?"})`
+             : parsed.op === "pct"  ? `moves ${parsed.value}% (from $${basePrice?.toLocaleString() || "?"})`
+             : `${parsed.op} $${parsed.value.toLocaleString()}`;
+  await bot.sendMessage(chatId,
+    `🔔 *Alert ${r.id} set*\n\nNotify when *${parsed.token.toUpperCase()}* ${desc}.`,
+    { parse_mode: "Markdown" }
+  );
 }
 
 module.exports = { handle };

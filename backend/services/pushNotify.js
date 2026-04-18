@@ -121,6 +121,24 @@ async function createAndPush({ userId, actorId = null, postId = null, type, body
       url: pushUrl,
       tag: type,
     });
+
+    // 4. Telegram side-channel. Settings-key mapping: feed `type` →
+    // per-user TG toggle. Unknown types fall through to the default
+    // enabled state.
+    try {
+      const tg = require("./tgNotify");
+      const keyMap = {
+        like: "likes", comment: "comments", follow: "follows",
+        repost: "reposts", tip: "tips", mention: "comments",
+        room_invite: "dms", alpha: "alpha",
+      };
+      const settingKey = keyMap[type] || null;
+      tg.notifyFeedUser(
+        userId,
+        settingKey,
+        `🔔 *${pushBody}*\n[Open on IronShield](https://ironshield.near.page${pushUrl})`,
+      ).catch(() => {});
+    } catch { /* bot token not set */ }
   } catch (e) {
     console.warn("[push] createAndPush error:", e.message);
   }

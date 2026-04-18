@@ -1,31 +1,44 @@
-// bot/index.js
+// bot/index.js — IronShield Telegram bot entrypoint
 require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const { handleCommand }  = require("./handlers/commandHandler");
 const { handleMessage }  = require("./handlers/messageHandler");
 const { handleDM }       = require("./handlers/dmHandler");
+const { handleCallback } = require("./handlers/callbackHandler");
 const { recordMessage }  = require("./commands/summary");
+
+const priceMonitor    = require("./jobs/priceMonitor");
+const pumpMonitor     = require("./jobs/pumpMonitor");
+const dailyDigest     = require("./jobs/dailyDigest");
+const downtimeMonitor = require("./jobs/downtimeMonitor");
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!TOKEN) { console.error("TELEGRAM_BOT_TOKEN not set"); process.exit(1); }
 
-const bot = new TelegramBot(TOKEN, { polling: true }); // switch to webhook in production
+const bot = new TelegramBot(TOKEN, { polling: true });
 console.log("IronClaw bot started (polling mode)");
 
-// Register command menu so Telegram shows suggestions when users type /
 bot.setMyCommands([
-  { command: "research",  description: "Research any token or contract" },
-  { command: "verify",    description: "Fact-check a claim" },
-  { command: "scan",      description: "Scan a URL or wallet for threats" },
-  { command: "summary",   description: "Summarize recent chat messages" },
-  { command: "trending",  description: "Live trending tokens and market signals" },
-  { command: "alert",     description: "Set a price alert for a token" },
-  { command: "portfolio", description: "View your tracked wallets" },
-  { command: "report",    description: "Report a scam URL or wallet" },
-  { command: "status",    description: "Check bot status and uptime" },
-  { command: "help",      description: "Show all available commands" },
+  { command: "start",        description: "Link your wallet & get started" },
+  { command: "portfolio",    description: "Instant portfolio overview" },
+  { command: "wallets",      description: "Switch or list linked wallets" },
+  { command: "addwallet",    description: "Add another wallet" },
+  { command: "settings",     description: "Toggle notification types" },
+  { command: "watch",        description: "Watch a token or user" },
+  { command: "watchlist",    description: "Your watchlist" },
+  { command: "alert",        description: "Price alerts: 10x, 5%, above/below" },
+  { command: "tip",          description: "Send a tip from Telegram" },
+  { command: "digest",       description: "24h activity digest (auto 8 AM)" },
+  { command: "research",     description: "Research any token or contract" },
+  { command: "summary",      description: "Summarize recent chat" },
+  { command: "trending",     description: "Live market signals" },
+  { command: "scan",         description: "Scan a URL or wallet" },
+  { command: "verify",       description: "Fact-check a claim" },
+  { command: "report",       description: "Report a scam" },
+  { command: "help",         description: "Show all commands" },
+  { command: "status",       description: "Bot health" },
 ]).then(() => console.log("Bot commands menu registered"))
-  .catch(err => console.error("Failed to set commands:", err));
+  .catch((e) => console.error("Failed to set commands:", e.message));
 
 bot.on("message", async (msg) => {
   try {
@@ -33,21 +46,34 @@ bot.on("message", async (msg) => {
     const isGroup   = msg.chat.type !== "private";
     const isCommand = msg.text?.startsWith("/");
 
-    // Record all non-command messages for /summary context
     if (!isCommand && msg.text) recordMessage(msg);
 
     if (isCommand) {
       await handleCommand(bot, msg);
     } else if (isGroup) {
-      await handleMessage(bot, msg); // passive security scan
+      await handleMessage(bot, msg);
     } else {
-      await handleDM(bot, msg);      // full assistant mode in DMs
+      await handleDM(bot, msg);
     }
   } catch (err) {
     console.error("Bot message handler error:", err);
   }
 });
 
-bot.on("polling_error", (err) => console.error("Polling error:", err));
+bot.on("callback_query", async (cq) => {
+  try {
+    await handleCallback(bot, cq);
+  } catch (err) {
+    console.error("Bot callback error:", err);
+  }
+});
+
+bot.on("polling_error", (err) => console.error("Polling error:", err.message));
+
+// ─── Background jobs ───────────────────────────────────────────────
+try { priceMonitor.start(bot); }    catch (e) { console.warn("priceMonitor start failed:", e.message); }
+try { pumpMonitor.start(bot); }     catch (e) { console.warn("pumpMonitor start failed:", e.message); }
+try { dailyDigest.start(bot); }     catch (e) { console.warn("dailyDigest start failed:", e.message); }
+try { downtimeMonitor.start(bot); } catch (e) { console.warn("downtimeMonitor start failed:", e.message); }
 
 module.exports = bot;

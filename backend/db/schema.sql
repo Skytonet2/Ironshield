@@ -497,3 +497,59 @@ CREATE TABLE IF NOT EXISTS feed_newscoin_sparklines (
   recorded_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_newscoin_sparklines ON feed_newscoin_sparklines(coin_id, recorded_at DESC);
+
+-- ─── Telegram bot integration ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS feed_tg_links (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES feed_users(id) ON DELETE SET NULL,
+  tg_id BIGINT UNIQUE NOT NULL,
+  tg_chat_id BIGINT NOT NULL,
+  tg_username TEXT,
+  wallets TEXT[] DEFAULT '{}',
+  active_wallet TEXT,
+  settings JSONB DEFAULT '{"likes":true,"reposts":true,"comments":true,"follows":true,"tips":true,"dms":true,"coin_created":true,"pump":true,"alpha":true,"downtime":true}'::jsonb,
+  link_code TEXT,
+  linked_at TIMESTAMPTZ DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tg_links_user ON feed_tg_links(user_id);
+CREATE INDEX IF NOT EXISTS idx_tg_links_active_wallet ON feed_tg_links(LOWER(active_wallet));
+
+CREATE TABLE IF NOT EXISTS feed_tg_link_codes (
+  code TEXT PRIMARY KEY,
+  wallet TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  consumed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS feed_tg_watchlist (
+  id SERIAL PRIMARY KEY,
+  tg_id BIGINT NOT NULL,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(tg_id, kind, value)
+);
+CREATE INDEX IF NOT EXISTS idx_tg_watchlist_tg ON feed_tg_watchlist(tg_id);
+
+CREATE TABLE IF NOT EXISTS feed_tg_price_alerts (
+  id SERIAL PRIMARY KEY,
+  tg_id BIGINT NOT NULL,
+  token TEXT NOT NULL,
+  op TEXT NOT NULL,
+  value NUMERIC NOT NULL,
+  base_price NUMERIC,
+  active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  triggered_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_tg_alerts_active ON feed_tg_price_alerts(active, token);
+
+CREATE TABLE IF NOT EXISTS feed_tg_reply_map (
+  tg_msg_id BIGINT PRIMARY KEY,
+  tg_chat_id BIGINT NOT NULL,
+  conversation_id INTEGER NOT NULL,
+  user_id INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tg_reply_conv ON feed_tg_reply_map(conversation_id);
