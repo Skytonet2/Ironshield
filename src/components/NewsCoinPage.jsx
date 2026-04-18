@@ -198,6 +198,37 @@ export function CoinModal({ coin: initialCoin, post, wallet, selector, onClose }
       .finally(() => setTradesLoading(false));
   }, [coin?.id]);
 
+  // Pull live on-chain price + mcap so the estimate works even when the
+  // backend indexer is behind (or down). Runs whenever the active coin changes.
+  useEffect(() => {
+    const addr = coin?.coinAddress || coin?.curve_contract || coin?.id;
+    if (!addr || !String(addr).includes(".")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getCoinInfo } = await import("@/lib/newscoin");
+        const info = await getCoinInfo(addr);
+        if (cancelled || !info) return;
+        // info.price is yoctoNEAR per 1e18-base-units token
+        // → NEAR per whole token = price / 1e24 * 1e18 = price / 1e6 ... wait
+        // price is yocto per token-base-unit. For 1 whole token (=1e18 units):
+        //   near_per_whole = price * 1e18 / 1e24 = price / 1e6
+        const priceYocto = String(info.price || "0");
+        const priceNear = Number(priceYocto) / 1e6 / 1e18;
+        const mcapUsd = Number(info.mcap_usd || 0);
+        setCoin(prev => ({
+          ...prev,
+          price_near: priceNear > 0 ? priceNear : (prev?.price_near || 0),
+          mcap_usd: mcapUsd || (prev?.mcap_usd || 0),
+          total_supply: info.total_supply,
+          graduated: !!info.graduated,
+          killed: !!info.killed,
+        }));
+      } catch (_) { /* backend or chain unreachable; leave as-is */ }
+    })();
+    return () => { cancelled = true; };
+  }, [coin?.coinAddress, coin?.curve_contract, coin?.id]);
+
   const mcap = Number(coin?.mcap_usd || 0);
   const bondingTarget = 70000;
   const bondingPct = Math.min(100, (mcap / bondingTarget) * 100);
@@ -205,9 +236,11 @@ export function CoinModal({ coin: initialCoin, post, wallet, selector, onClose }
 
   const estimatedOutput = (() => {
     const amt = Number(amount);
-    if (!amt || !coin?.price_near) return 0;
-    if (tab === "buy") return amt / Number(coin.price_near);
-    return amt * Number(coin.price_near);
+    if (!amt) return 0;
+    const pn = Number(coin?.price_near || 0);
+    if (!pn) return 0;
+    if (tab === "buy") return amt / pn;
+    return amt * pn;
   })();
 
   const handleTrade = async () => {

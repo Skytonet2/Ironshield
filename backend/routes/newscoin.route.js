@@ -88,7 +88,7 @@ router.get("/list", async (req, res, next) => {
 
     switch (filter) {
       case "new":
-        sql = `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet AS post_author
+        sql = `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet_address AS post_author
                FROM feed_newscoins c
                LEFT JOIN feed_posts p ON p.id::text = c.story_id
                LEFT JOIN feed_users u ON u.id = p.author_id
@@ -99,7 +99,7 @@ router.get("/list", async (req, res, next) => {
         break;
 
       case "top":
-        sql = `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet AS post_author
+        sql = `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet_address AS post_author
                FROM feed_newscoins c
                LEFT JOIN feed_posts p ON p.id::text = c.story_id
                LEFT JOIN feed_users u ON u.id = p.author_id
@@ -110,7 +110,7 @@ router.get("/list", async (req, res, next) => {
         break;
 
       case "expiring":
-        sql = `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet AS post_author
+        sql = `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet_address AS post_author
                FROM feed_newscoins c
                LEFT JOIN feed_posts p ON p.id::text = c.story_id
                LEFT JOIN feed_users u ON u.id = p.author_id
@@ -125,7 +125,7 @@ router.get("/list", async (req, res, next) => {
       case "holdings":
         if (!wallet) return res.status(401).json({ error: "wallet required for holdings filter" });
         sql = `SELECT c.*, h.balance,
-                      p.id AS post_id, p.content AS post_content, u.wallet AS post_author
+                      p.id AS post_id, p.content AS post_content, u.wallet_address AS post_author
                FROM feed_newscoin_holdings h
                JOIN feed_newscoins c ON c.id = h.coin_id
                LEFT JOIN feed_posts p ON p.id::text = c.story_id
@@ -139,7 +139,7 @@ router.get("/list", async (req, res, next) => {
 
       default: // trending
         sql = `SELECT c.*,
-                      p.id AS post_id, p.content AS post_content, u.wallet AS post_author
+                      p.id AS post_id, p.content AS post_content, u.wallet_address AS post_author
                FROM feed_newscoins c
                LEFT JOIN feed_posts p ON p.id::text = c.story_id
                LEFT JOIN feed_users u ON u.id = p.author_id
@@ -208,7 +208,7 @@ router.get("/:coinId", async (req, res, next) => {
     if (!ensureDb(res)) return;
 
     const { rows } = await db.query(
-      `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet AS post_author
+      `SELECT c.*, p.id AS post_id, p.content AS post_content, u.wallet_address AS post_author
        FROM feed_newscoins c
        LEFT JOIN feed_posts p ON p.id::text = c.story_id
        LEFT JOIN feed_users u ON u.id = p.author_id
