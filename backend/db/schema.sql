@@ -417,6 +417,7 @@ CREATE TABLE IF NOT EXISTS feed_rooms (
   refund_tx_hash       TEXT,
   duration_mins        INTEGER NOT NULL DEFAULT 60,
   voice_enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+  recording_enabled    BOOLEAN NOT NULL DEFAULT FALSE,
   -- Gating (token_gated / invite_only)
   access_min_balance   NUMERIC(40,18),
   access_min_tier      TEXT,
@@ -432,6 +433,7 @@ CREATE TABLE IF NOT EXISTS feed_rooms (
 );
 CREATE INDEX IF NOT EXISTS idx_feed_rooms_status ON feed_rooms(status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feed_rooms_host   ON feed_rooms(host_id);
+ALTER TABLE feed_rooms ADD COLUMN IF NOT EXISTS recording_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS feed_room_participants (
   id               BIGSERIAL PRIMARY KEY,

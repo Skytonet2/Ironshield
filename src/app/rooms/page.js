@@ -286,6 +286,7 @@ function OpenRoomModal({ t, wallet, selector, openWallet, onClose, onCreated }) 
   const [stakeAmount, setStakeAmount]   = useState(""); // human $IRONCLAW
   const [durationMins, setDurationMins] = useState(60);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [recordingEnabled, setRecordingEnabled] = useState(false);
   const [submitting, setSubmitting]     = useState(false);
   const [err, setErr]                   = useState("");
 
@@ -324,6 +325,7 @@ function OpenRoomModal({ t, wallet, selector, openWallet, onClose, onCreated }) 
           stakeTokenDecimals: 18,
           durationMins: Number(durationMins),
           voiceEnabled,
+          recordingEnabled,
           stakeTxHash: tx?.txHash || null,
         }),
       });
@@ -423,6 +425,12 @@ function OpenRoomModal({ t, wallet, selector, openWallet, onClose, onCreated }) 
           color: t.text, fontSize: 13, cursor: "pointer" }}>
           <input type="checkbox" checked={voiceEnabled} onChange={e => setVoiceEnabled(e.target.checked)} />
           Enable voice (LiveKit). Disable for text-only rooms.
+        </label>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 14,
+          color: t.text, fontSize: 13, cursor: "pointer" }}>
+          <input type="checkbox" checked={recordingEnabled} onChange={e => setRecordingEnabled(e.target.checked)} />
+          Record this space and publish a replay summary post to my profile when room closes.
         </label>
 
         {err && (
