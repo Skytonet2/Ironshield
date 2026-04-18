@@ -59,6 +59,7 @@ function RoomViewInner() {
   const [handRaised, setHandRaised]     = useState(false);
   const [draftMsg, setDraftMsg]         = useState("");
   const [sending, setSending]           = useState(false);
+  const [inviting, setInviting]         = useState(false);
   const [closing, setClosing]           = useState(false);
   const [closedSummary, setClosedSummary] = useState(null);
   const lastMsgTs = useRef(null);
@@ -254,6 +255,26 @@ function RoomViewInner() {
     finally { setClosing(false); }
   };
 
+  const inviteToCall = async () => {
+    if (!wallet) { openWallet(); return; }
+    if (!joined) return;
+    const target = window.prompt("Invite wallet/handle (optional)");
+    const url = `${window.location.origin}/rooms/view/?id=${encodeURIComponent(roomId)}`;
+    const msg = target && target.trim()
+      ? `Join my live call in room "${room?.title || "Live Room"}": ${url} (for ${target.trim()})`
+      : `Join my live call in room "${room?.title || "Live Room"}": ${url}`;
+    setInviting(true);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Join my call", text: msg, url });
+      } else {
+        await navigator.clipboard.writeText(msg);
+        alert("Invite copied to clipboard.");
+      }
+    } catch {}
+    finally { setInviting(false); }
+  };
+
   if (loading) return <Loading />;
   if (error || !room) {
     return (
@@ -318,9 +339,14 @@ function RoomViewInner() {
         ) : !joined ? (
           <button onClick={() => join("listener")} style={btnPrimary(t)}>Join</button>
         ) : (
-          <button onClick={leave} style={btnGhost(t)}>
-            <DoorOpen size={14} /> Leave
-          </button>
+          <>
+            <button onClick={inviteToCall} disabled={inviting} style={btnGhost(t)}>
+              {inviting ? <Loader2 size={14} className="ix-spin" /> : <UserPlus size={14} />} Invite
+            </button>
+            <button onClick={leave} style={btnGhost(t)}>
+              <DoorOpen size={14} /> Leave
+            </button>
+          </>
         )}
         {isHost && (
           <button onClick={closeRoom} disabled={closing} style={btnDanger(t)}>

@@ -13,6 +13,14 @@ try { ({ AccessToken } = require("livekit-server-sdk")); } catch { AccessToken =
 function pair(a, b) { return a < b ? [a, b] : [b, a]; }
 function dmCallRoomName(conversationId) { return `ironclaw-dm-${conversationId}`; }
 
+async function assertGroupMember(groupId, userId) {
+  const r = await db.query(
+    "SELECT 1 FROM feed_group_chat_members WHERE group_id=$1 AND user_id=$2 LIMIT 1",
+    [groupId, userId]
+  );
+  return !!r.rows.length;
+}
+
 // GET /api/dm/conversations
 router.get("/conversations", requireWallet, async (req, res, next) => {
   try {
@@ -79,6 +87,104 @@ router.post("/assistant", requireWallet, async (req, res, next) => {
         wallet: "ironclaw.ai",
         username: "ironclaw_ai",
         displayName: "IronClaw AI",
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// GET /api/dm/groups
+router.get("/groups", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const r = await db.query(
+      `SELECT g.id, g.name, g.last_message_at,
+              COUNT(m.user_id)::int AS member_count
+         FROM feed_group_chats g
+         JOIN feed_group_chat_members mm ON mm.group_id = g.id AND mm.user_id = $1
+         JOIN feed_group_chat_members m ON m.group_id = g.id
+        GROUP BY g.id
+        ORDER BY g.last_message_at DESC
+        LIMIT 100`,
+      [me.id]
+    );
+    res.json({ groups: r.rows.map(x => ({ id: x.id, name: x.name, memberCount: x.member_count, kind: "group" })) });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/groups  body: { name, members: [walletOrUsername] }
+router.post("/groups", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const name = String(req.body?.name || "").trim().slice(0, 80);
+    if (!name) return res.status(400).json({ error: "name required" });
+    const memberInputs = Array.isArray(req.body?.members) ? req.body.members : [];
+    const resolvedIds = new Set([me.id]);
+    for (const entry of memberInputs.slice(0, 24)) {
+      const q = String(entry || "").toLowerCase().trim();
+      if (!q) continue;
+      const u = await db.query(
+        "SELECT id FROM feed_users WHERE LOWER(wallet_address)=$1 OR LOWER(username)=$1 LIMIT 1",
+        [q]
+      );
+      if (u.rows[0]?.id) resolvedIds.add(u.rows[0].id);
+    }
+    const group = await db.query(
+      "INSERT INTO feed_group_chats (name, created_by) VALUES ($1, $2) RETURNING *",
+      [name, me.id]
+    );
+    const gid = group.rows[0].id;
+    for (const uid of resolvedIds) {
+      await db.query(
+        "INSERT INTO feed_group_chat_members (group_id, user_id) VALUES ($1,$2) ON CONFLICT (group_id, user_id) DO NOTHING",
+        [gid, uid]
+      );
+    }
+    res.json({ group: { id: gid, name, memberCount: resolvedIds.size, kind: "group" } });
+  } catch (e) { next(e); }
+});
+
+// GET /api/dm/groups/:groupId/messages
+router.get("/groups/:groupId/messages", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const gid = parseInt(req.params.groupId, 10);
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+    if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
+    const r = await db.query(
+      `SELECT gm.id, gm.content, gm.created_at,
+              u.wallet_address AS from_wallet, COALESCE(u.display_name, u.username, u.wallet_address) AS from_display
+         FROM feed_group_messages gm
+         JOIN feed_users u ON u.id = gm.from_id
+        WHERE gm.group_id = $1
+        ORDER BY gm.created_at ASC
+        LIMIT 300`,
+      [gid]
+    );
+    res.json({ messages: r.rows });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/groups/:groupId/send  body: { content }
+router.post("/groups/:groupId/send", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const gid = parseInt(req.params.groupId, 10);
+    const content = String(req.body?.content || "").trim();
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+    if (!content) return res.status(400).json({ error: "content required" });
+    if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
+    const r = await db.query(
+      `INSERT INTO feed_group_messages (group_id, from_id, content)
+       VALUES ($1,$2,$3)
+       RETURNING id, content, created_at`,
+      [gid, me.id, content.slice(0, 4000)]
+    );
+    await db.query("UPDATE feed_group_chats SET last_message_at=NOW() WHERE id=$1", [gid]);
+    res.json({
+      message: {
+        ...r.rows[0],
+        from_wallet: me.wallet_address,
+        from_display: me.display_name || me.username || me.wallet_address,
       },
     });
   } catch (e) { next(e); }

@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser, requireWallet, postHash } = require("../services/feedHelpers");
 
 const MIN_STAKE_USD = 50; // spec: min 50 $IRONCLAW ≈ $50-equiv for MVP
 const ALLOWED_ACCESS = ["open", "token_gated", "invite_only"];
@@ -43,6 +43,7 @@ function hydrateRoom(room, counts, host) {
     topic: room.topic,
     accessType: room.access_type,
     voiceEnabled: room.voice_enabled,
+    recordingEnabled: !!room.recording_enabled,
     stake: {
       tokenContract: room.stake_token_contract,
       tokenSymbol:   room.stake_token_symbol,
@@ -136,7 +137,7 @@ router.post("/", requireWallet, async (req, res, next) => {
       accessType = "open",
       stakeAmountHuman = 0, stakeAmountUsd = 0,
       stakeTokenContract = "near", stakeTokenSymbol = "NEAR", stakeTokenDecimals = 24,
-      durationMins = 60, voiceEnabled = true,
+      durationMins = 60, voiceEnabled = true, recordingEnabled = false,
       gate = null,
       stakeTxHash = null,
     } = req.body || {};
@@ -173,16 +174,16 @@ router.post("/", requireWallet, async (req, res, next) => {
          (host_id, title, topic, access_type,
           stake_token_contract, stake_token_symbol, stake_token_decimals,
           stake_amount_base, stake_amount_human, stake_usd_frozen, stake_tx_hash,
-          duration_mins, voice_enabled,
+          duration_mins, voice_enabled, recording_enabled,
           access_min_balance, access_min_tier, access_allowlist,
           livekit_room_name, ends_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
         host.id, title, topic, accessType,
         stakeTokenContract, stakeTokenSymbol, Number(stakeTokenDecimals),
         stakeBase, String(stakeAmountHuman), String(stakeAmountUsd), stakeTxHash,
-        Number(durationMins), !!voiceEnabled,
+        Number(durationMins), !!voiceEnabled, !!recordingEnabled,
         minBalance, minTier, allowlist,
         livekitName, endsAt,
       ]
@@ -319,6 +320,23 @@ router.post("/:id/close", requireWallet, async (req, res, next) => {
          (SELECT COUNT(*) FROM feed_room_messages    WHERE room_id=$1 AND is_alpha_call) ::int             AS alpha_calls`,
       [room.rows[0].id]
     );
+    if (room.rows[0].recording_enabled) {
+      const c = summary.rows[0];
+      const postText = [
+        `🎙️ Recorded Space: ${room.rows[0].title}`,
+        room.rows[0].topic ? `Topic: ${room.rows[0].topic}` : null,
+        `Speakers: ${c.total_speakers} · Participants: ${c.total_participants}`,
+        `Alpha calls: ${c.alpha_calls}`,
+        `Replay: /rooms/view/?id=${room.rows[0].id}`,
+      ].filter(Boolean).join("\n");
+      const ts = new Date().toISOString();
+      await db.query(
+        `INSERT INTO feed_posts (author_id, content, media_urls, media_type, post_hash, kind, title)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [user.id, postText, null, "NONE", postHash(postText, user.id, ts), "post", `Room Replay · ${room.rows[0].title}`]
+      );
+    }
+
     res.json({
       ok: true, refundTx,
       summary: {

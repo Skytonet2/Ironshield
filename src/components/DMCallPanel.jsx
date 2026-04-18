@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Mic, MicOff, PhoneOff, Radio } from "lucide-react";
+import { Loader2, Mic, MicOff, Minimize2, PhoneOff, Radio } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -148,7 +148,17 @@ function CallInner({ useParticipants, useLocalParticipant, t, wallet, peer, mute
   );
 }
 
-export default function DMCallPanel({ open, t, wallet, conversationId, peer, onClose, onMinimize }) {
+export default function DMCallPanel({
+  open,
+  minimized = false,
+  t,
+  wallet,
+  conversationId,
+  peer,
+  onMinimize,
+  onResume,
+  onEnd,
+}) {
   const [tokenInfo, setTokenInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -196,6 +206,58 @@ export default function DMCallPanel({ open, t, wallet, conversationId, peer, onC
 
   const isReal = tokenInfo && !tokenInfo.mocked && lk;
 
+  if (minimized) {
+    return (
+      <>
+        {/* Keep LiveKit mounted while minimized so call audio session stays alive. */}
+        <div style={{ display: "none" }}>
+          {!loading && !error && isReal && (
+            <CallStage lk={lk} tokenInfo={tokenInfo} t={t} wallet={wallet} peer={peer} muted={muted} setMuted={setMuted} />
+          )}
+        </div>
+        <div
+          style={{
+            position: "fixed",
+            top: 12,
+            right: 12,
+            zIndex: 220,
+            background: t.bgCard,
+            border: `1px solid ${t.border}`,
+            borderRadius: 12,
+            padding: "8px 10px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: "0 10px 28px rgba(0,0,0,.45)",
+            maxWidth: "min(92vw, 340px)",
+          }}
+        >
+          <Radio size={14} color={t.accent} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: t.white, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              Ongoing call · {peer?.displayName || peer?.username || shortWallet(peer?.wallet || "")}
+            </div>
+            <div style={{ color: t.textDim, fontSize: 10 }}>
+              {loading ? "Connecting…" : error ? "Connection issue" : "Tap to reopen"}
+            </div>
+          </div>
+          <button onClick={onResume} style={{
+            border: `1px solid ${t.border}`, background: t.bgSurface, color: t.text,
+            borderRadius: 999, padding: "5px 8px", cursor: "pointer", fontSize: 11, fontWeight: 700,
+          }}>
+            Open
+          </button>
+          <button onClick={onEnd} style={{
+            border: "none", background: "#ef4444", color: "#fff",
+            borderRadius: 999, padding: "5px 8px", cursor: "pointer", fontSize: 11, fontWeight: 700,
+          }}>
+            End
+          </button>
+        </div>
+      </>
+    );
+  }
+
   return (
     <div
       style={{
@@ -208,7 +270,7 @@ export default function DMCallPanel({ open, t, wallet, conversationId, peer, onC
         placeItems: "center",
         padding: 20,
       }}
-      onClick={onMinimize || onClose}
+      onClick={onMinimize}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -244,6 +306,12 @@ export default function DMCallPanel({ open, t, wallet, conversationId, peer, onC
               {loading ? "Starting secure voice room…" : isReal ? "Live voice connected" : "Call room ready"}
             </div>
           </div>
+          <button onClick={onMinimize} title="Minimize call" style={{
+            width: 36, height: 36, borderRadius: "50%", border: `1px solid ${t.border}`,
+            background: t.bgSurface, color: t.text, cursor: "pointer", display: "grid", placeItems: "center",
+          }}>
+            <Minimize2 size={15} />
+          </button>
         </div>
 
         {loading && (
@@ -334,7 +402,7 @@ export default function DMCallPanel({ open, t, wallet, conversationId, peer, onC
             </button>
           )}
           <button
-            onClick={onClose}
+            onClick={onEnd}
             style={{
               minWidth: 140,
               height: 46,

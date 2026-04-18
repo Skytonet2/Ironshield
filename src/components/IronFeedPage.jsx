@@ -1605,11 +1605,13 @@ function parseSpecialDmMessage(text = "") {
   };
 }
 
-function DMsModal({ wallet, onClose, initialPeer }) {
+function DMsModal({ wallet, onClose, initialPeer, onJoinCall }) {
   const t = useTheme();
   const [convs, setConvs] = useState([]);
   const [active, setActive] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [groupConvs, setGroupConvs] = useState([]);
+  const [groupMessages, setGroupMessages] = useState([]);
   const [assistantMessages, setAssistantMessages] = useState([
     {
       id: "ironclaw-welcome",
@@ -1649,14 +1651,27 @@ function DMsModal({ wallet, onClose, initialPeer }) {
   }, [wallet]);
 
   const refresh = useCallback(() => {
-    api("/api/dm/conversations", { wallet }).then(r => setConvs(r.conversations)).catch(() => {});
+    api("/api/dm/conversations", { wallet }).then(r => setConvs((r.conversations || []).map(c => ({ ...c, kind: "direct" })))).catch(() => {});
+    api("/api/dm/groups", { wallet }).then(r => setGroupConvs(r.groups || [])).catch(() => {});
   }, [wallet]);
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
-    if (active && active.kind !== "assistant") {
+    if (active && active.kind === "direct") {
       const poll = setInterval(async () => {
         try { const r = await api(`/api/dm/${active.id}/messages`, { wallet }); setMessages(r.messages.slice().reverse()); } catch {}
       }, 1200);
+      return () => clearInterval(poll);
+    }
+  }, [active, wallet]);
+
+  useEffect(() => {
+    if (active && active.kind === "group") {
+      const poll = setInterval(async () => {
+        try {
+          const r = await api(`/api/dm/groups/${active.id}/messages`, { wallet });
+          setGroupMessages(r.messages || []);
+        } catch {}
+      }, 1500);
       return () => clearInterval(poll);
     }
   }, [active, wallet]);
@@ -1666,6 +1681,11 @@ function DMsModal({ wallet, onClose, initialPeer }) {
   const open = async (c) => {
     setActive(c);
     if (c.kind === "assistant") return;
+    if (c.kind === "group") {
+      const r = await api(`/api/dm/groups/${c.id}/messages`, { wallet });
+      setGroupMessages(r.messages || []);
+      return;
+    }
     const r = await api(`/api/dm/${c.id}/messages`, { wallet });
     setMessages(r.messages.slice().reverse());
     api(`/api/dm/${c.id}/read`, { method: "POST", wallet }).catch(() => {});
@@ -1679,7 +1699,7 @@ function DMsModal({ wallet, onClose, initialPeer }) {
 
   const startWith = async (peerWallet) => {
     const r = await api("/api/dm/conversation", { method: "POST", wallet, body: { peerWallet } });
-    const c = { id: r.conversationId, peer: r.peer, unread: 0 };
+    const c = { id: r.conversationId, kind: "direct", peer: r.peer, unread: 0 };
     setConvs(cs => [c, ...cs.filter(x => x.id !== c.id)]);
     open(c);
     setSearch(""); setSearchResult(null);
@@ -1711,7 +1731,7 @@ function DMsModal({ wallet, onClose, initialPeer }) {
   };
 
   const sendCallInvite = async (conversation) => {
-    if (!conversation || conversation.kind === "assistant") return;
+    if (!conversation || conversation.kind !== "direct") return;
     const enc = encodeForPeer(buildDmCallInvite(conversation.id), conversation.peer?.dmPubkey);
     await api("/api/dm/send", {
       method: "POST",
@@ -1721,11 +1741,31 @@ function DMsModal({ wallet, onClose, initialPeer }) {
   };
 
   const joinCall = async (conversation, { announce = false } = {}) => {
-    if (!conversation || conversation.kind === "assistant") return;
+    if (!conversation || conversation.kind !== "direct") return;
     if (announce) {
       try { await sendCallInvite(conversation); } catch {}
     }
     openGlobalCall({ kind: "dm", conversationId: conversation.id, peer: conversation.peer });
+    onJoinCall?.({ conversationId: conversation.id, peer: conversation.peer });
+  };
+
+  const createGroup = async () => {
+    const name = window.prompt("Group name");
+    if (!name || !name.trim()) return;
+    const walletsRaw = window.prompt("Add member wallets/usernames (comma separated)");
+    const members = String(walletsRaw || "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean);
+    try {
+      const r = await api("/api/dm/groups", { method: "POST", wallet, body: { name: name.trim(), members } });
+      refresh();
+      setActive({ ...r.group, kind: "group" });
+      const msg = await api(`/api/dm/groups/${r.group.id}/messages`, { wallet });
+      setGroupMessages(msg.messages || []);
+    } catch (e) {
+      alert(e.message);
+    }
   };
 
   const send = async () => {
@@ -1742,6 +1782,25 @@ function DMsModal({ wallet, onClose, initialPeer }) {
         setAssistantMessages(m => [...m, { id: `assistant-error-${Date.now()}`, role: "assistant", content: `I hit an error: ${e.message}`, created_at: new Date().toISOString() }]);
       } finally {
         setAssistantBusy(false);
+      }
+      return;
+    }
+    if (active.kind === "group") {
+      const optimistic = {
+        id: "tmp-g-" + Date.now(),
+        content: bodyText,
+        from_wallet: wallet,
+        from_display: "You",
+        created_at: new Date().toISOString(),
+      };
+      setGroupMessages(m => [...m, optimistic]);
+      setText("");
+      try {
+        const r = await api(`/api/dm/groups/${active.id}/send`, { method: "POST", wallet, body: { content: bodyText } });
+        setGroupMessages(m => m.map(x => x.id === optimistic.id ? r.message : x));
+      } catch (e) {
+        setGroupMessages(m => m.filter(x => x.id !== optimistic.id));
+        alert(e.message);
       }
       return;
     }
@@ -1819,10 +1878,12 @@ function DMsModal({ wallet, onClose, initialPeer }) {
     );
   };
 
-  const currentMessages = active?.kind === "assistant" ? assistantMessages : messages;
+  const currentMessages = active?.kind === "assistant" ? assistantMessages : active?.kind === "group" ? groupMessages : messages;
   const activeSubtitle = active?.kind === "assistant"
     ? "Powered by the IRONCLAW backend"
-    : shortWallet(active?.peer?.wallet || "");
+    : active?.kind === "group"
+      ? `${active?.memberCount || 0} members`
+      : shortWallet(active?.peer?.wallet || "");
 
   return (
     <Modal onClose={onClose} title="Messages" maxWidth={820}>
@@ -1877,6 +1938,9 @@ function DMsModal({ wallet, onClose, initialPeer }) {
               onKeyDown={e => e.key === "Enter" && lookup()} style={inputStyle(t)} />
             <Btn onClick={lookup} disabled={!search}><Search size={14} /></Btn>
           </div>
+          <Btn style={{ width: "100%", marginBottom: 10 }} onClick={createGroup}>
+            <UserPlus size={13} /> New group
+          </Btn>
 
           {searchResult && (
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, marginBottom: 10 }}>
@@ -1920,6 +1984,24 @@ function DMsModal({ wallet, onClose, initialPeer }) {
               </div>
             </div>
           ))}
+          {groupConvs.map(g => (
+            <div key={`g-${g.id}`} onClick={() => open({ ...g, kind: "group" })} style={{
+              display: "flex", gap: 8, padding: 8, borderRadius: 8, cursor: "pointer",
+              background: active?.kind === "group" && active?.id === g.id ? `${t.accent}18` : "transparent",
+            }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${t.accent}22`, color: t.accent, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                <UserPlus size={14} />
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ color: t.white, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {g.name || "Group chat"}
+                </div>
+                <div style={{ color: t.textDim, fontSize: 11 }}>
+                  {g.memberCount || 0} members
+                </div>
+              </div>
+            </div>
+          ))}
           {convs.length === 0 && !searchResult && (
             <p style={{ color: t.textDim, fontSize: 13 }}>No conversations yet. Search for a wallet above.</p>
           )}
@@ -1953,14 +2035,23 @@ function DMsModal({ wallet, onClose, initialPeer }) {
                       flexShrink: 0,
                     }}><Bot size={18} /></div>
                   )
-                  : <Avatar user={{ pfp_url: active.peer?.pfpUrl, username: active.peer?.username }} size={38} />}
+                  : active.kind === "group"
+                    ? <div style={{
+                      width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center",
+                      background: `${t.accent}22`, color: t.accent, flexShrink: 0,
+                    }}><UserPlus size={16} /></div>
+                    : <Avatar user={{ pfp_url: active.peer?.pfpUrl, username: active.peer?.username }} size={38} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: t.white, fontSize: 14, fontWeight: 800 }}>
-                    {active.kind === "assistant" ? "IronClaw AI" : (active.peer?.displayName || active.peer?.username || "Conversation")}
+                    {active.kind === "assistant"
+                      ? "IronClaw AI"
+                      : active.kind === "group"
+                        ? (active.name || "Group chat")
+                        : (active.peer?.displayName || active.peer?.username || "Conversation")}
                   </div>
                   <div style={{ color: t.textDim, fontSize: 11 }}>{activeSubtitle}</div>
                 </div>
-                {active.kind !== "assistant" && (
+                {active.kind === "direct" && (
                   <button onClick={() => joinCall(active, { announce: true })} style={{
                     padding: "8px 12px",
                     borderRadius: 999,
@@ -1979,15 +2070,19 @@ function DMsModal({ wallet, onClose, initialPeer }) {
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
                 {currentMessages.map(m => {
-                  const mine = active.kind === "assistant" ? m.role === "user" : m.from_id !== active.peer.id;
-                  const decodedText = active.kind === "assistant" ? m.content : decode(m);
+                  const mine = active.kind === "assistant"
+                    ? m.role === "user"
+                    : active.kind === "group"
+                      ? String(m.from_wallet || "").toLowerCase() === String(wallet || "").toLowerCase()
+                      : m.from_id !== active.peer.id;
+                  const decodedText = active.kind === "assistant" ? m.content : active.kind === "group" ? m.content : decode(m);
                   const ts = m.created_at ? new Date(m.created_at) : null;
                   const timeStr = ts ? ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
                   return (
                     <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", marginBottom: 8 }}>
                       {renderBubble(m, decodedText, mine)}
                       <div style={{ fontSize: 10, color: t.textDim, marginTop: 2, padding: "0 4px" }}>
-                        {timeStr}{mine ? " · sent" : ""}
+                        {active.kind === "group" && !mine ? `${m.from_display || shortWallet(m.from_wallet || "")} · ` : ""}{timeStr}{mine ? " · sent" : ""}
                       </div>
                     </div>
                   );
@@ -2199,6 +2294,7 @@ export default function IronFeedPage({ openWallet }) {
   const [openAgent, setOpenAgent] = useState(false);
   const [openDMs, setOpenDMs] = useState(false);
   const [dmPeer, setDmPeer] = useState(null);
+  const [dmCall, setDmCall] = useState({ open: false, minimized: false, conversationId: null, peer: null });
   const [openNotifs, setOpenNotifs] = useState(false);
   const [boostPost, setBoostPost] = useState(null);
   const [tipPost, setTipPost] = useState(null);
@@ -2388,7 +2484,14 @@ export default function IronFeedPage({ openWallet }) {
         onOpenDM={(w) => { setOpenProfile(null); setDmPeer(w); setOpenDMs(true); }} onClose={() => setOpenProfile(null)} />}
       {openOrg && <OrgBadgeModal wallet={wallet} selector={selector} onClose={() => setOpenOrg(false)} />}
       {openAgent && <AgentDeployModal wallet={wallet} selector={selector} onClose={() => setOpenAgent(false)} />}
-      {openDMs && <DMsModal wallet={wallet} initialPeer={dmPeer} onClose={() => { setOpenDMs(false); setDmPeer(null); }} />}
+      {openDMs && (
+        <DMsModal
+          wallet={wallet}
+          initialPeer={dmPeer}
+          onClose={() => { setOpenDMs(false); setDmPeer(null); }}
+          onJoinCall={({ conversationId, peer }) => setDmCall({ open: true, minimized: false, conversationId, peer })}
+        />
+      )}
       {openNotifs && <NotificationsModal wallet={wallet} onClose={() => setOpenNotifs(false)} />}
       {boostPost && <AdBoostModal post={boostPost} wallet={wallet} selector={selector} onClose={() => setBoostPost(null)} />}
       {tipPost && <TipModal post={tipPost} wallet={wallet} selector={selector} openWallet={openWallet}
@@ -2415,6 +2518,17 @@ export default function IronFeedPage({ openWallet }) {
           onMinted={() => { setMintPost(null); load(true); }}
         />
       )}
+      <DMCallPanel
+        open={dmCall.open}
+        minimized={dmCall.minimized}
+        t={t}
+        wallet={wallet}
+        conversationId={dmCall.conversationId}
+        peer={dmCall.peer}
+        onMinimize={() => setDmCall(s => ({ ...s, minimized: true }))}
+        onResume={() => setDmCall(s => ({ ...s, minimized: false }))}
+        onEnd={() => setDmCall({ open: false, minimized: false, conversationId: null, peer: null })}
+      />
     </div>
   );
 }

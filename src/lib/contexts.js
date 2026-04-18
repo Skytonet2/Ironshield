@@ -56,6 +56,7 @@ export function ThemeProvider({ children }) {
 export const WalletCtx = createContext({
   connected: false,
   address: null,
+  walletType: null, // near | evm | sol | google
   balance: "0",
   selector: null,
   modal: null,
@@ -70,8 +71,12 @@ export function WalletProvider({ children }) {
   const [selector, setSelector] = useState(null);
   const [modal, setModal] = useState(null);
   const [address, setAddress] = useState(null);
+  const [walletType, setWalletType] = useState(null);
+  const [displayName, setDisplayName] = useState(null);
   const [balance, setBalance] = useState("0");
   const [initStarted, setInitStarted] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const googleTokenClient = useRef(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -111,6 +116,7 @@ export function WalletProvider({ children }) {
 
       const state = _selector.store.getState();
       if (state.accounts.length > 0) {
+        setWalletType("near");
         setAddress(state.accounts[0].accountId);
         fetchBalance(state.accounts[0].accountId);
       }
@@ -120,9 +126,11 @@ export function WalletProvider({ children }) {
 
       _selector.store.observable.subscribe((state) => {
         if (state.accounts.length > 0) {
+          setWalletType("near");
           setAddress(state.accounts[0].accountId);
           fetchBalance(state.accounts[0].accountId);
         } else {
+          setWalletType(null);
           setAddress(null);
           setBalance("0");
         }
@@ -170,40 +178,163 @@ export function WalletProvider({ children }) {
   };
 
   const signOut = async () => {
-    if (!selector) return;
-    const wallet = await selector.wallet();
-    await wallet.signOut();
+    if (walletType === "near" && selector) {
+      const wallet = await selector.wallet();
+      await wallet.signOut();
+    }
+    if (walletType === "sol" && typeof window !== "undefined" && window.solana?.isConnected) {
+      try { await window.solana.disconnect(); } catch {}
+    }
+    if (walletType === "google" && typeof window !== "undefined" && window.google?.accounts?.oauth2) {
+      try {
+        const token = localStorage.getItem("google_access_token");
+        if (token) window.google.accounts.oauth2.revoke(token, () => {});
+      } catch {}
+    }
+    try { localStorage.removeItem("google_access_token"); } catch {}
+    setDisplayName(null);
+    setWalletType(null);
     setAddress(null);
     setBalance("0");
   };
 
-  const showModal = async () => {
+  const connectNear = async () => {
     if (!selector) await initWallet();
-    // Small delay to let modal initialize after lazy load
     await new Promise(r => setTimeout(r, 100));
+    setChooserOpen(false);
     if (modal) modal.show();
-    else {
-      // Retry: modal may have been set during initWallet
-      const checkModal = () => {
-        const m = document.querySelector(".near-wallet-selector-modal");
-        if (!m) setTimeout(checkModal, 100);
-      };
-      checkModal();
-    }
+  };
+
+  const connectEvm = async () => {
+    if (typeof window === "undefined" || !window.ethereum) throw new Error("No EVM wallet found");
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    const evm = accounts?.[0];
+    if (!evm) throw new Error("No EVM account selected");
+    setWalletType("evm");
+    setDisplayName(null);
+    setAddress(evm);
+    setChooserOpen(false);
+    setBalance("0");
+  };
+
+  const connectSol = async () => {
+    if (typeof window === "undefined" || !window.solana) throw new Error("No Solana wallet found");
+    const resp = await window.solana.connect();
+    const sol = resp?.publicKey?.toString?.();
+    if (!sol) throw new Error("No Solana account selected");
+    setWalletType("sol");
+    setDisplayName(null);
+    setAddress(sol);
+    setChooserOpen(false);
+    setBalance("0");
+  };
+
+  const ensureGoogleSdk = async () => {
+    if (typeof window === "undefined") throw new Error("Google Sign-In only runs in browser");
+    if (window.google?.accounts?.oauth2) return;
+    await new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-google-identity="1"]');
+      if (existing) { existing.addEventListener("load", resolve, { once: true }); return; }
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client";
+      s.async = true;
+      s.defer = true;
+      s.dataset.googleIdentity = "1";
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  };
+
+  const connectGoogle = async () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set");
+    await ensureGoogleSdk();
+    await new Promise((resolve, reject) => {
+      if (!googleTokenClient.current) {
+        googleTokenClient.current = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: "openid email profile",
+          callback: async (tokenResp) => {
+            try {
+              if (!tokenResp?.access_token) throw new Error("No Google token");
+              localStorage.setItem("google_access_token", tokenResp.access_token);
+              const me = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: `Bearer ${tokenResp.access_token}` },
+              }).then(r => r.json());
+              setWalletType("google");
+              setAddress(me.email || me.sub || "google-user");
+              setDisplayName(me.name || me.given_name || me.email || null);
+              setChooserOpen(false);
+              resolve();
+            } catch (e) { reject(e); }
+          },
+          error_callback: () => reject(new Error("Google sign-in failed")),
+        });
+      }
+      googleTokenClient.current.requestAccessToken({ prompt: "consent" });
+    });
+  };
+
+  const showModal = async () => {
+    setChooserOpen(true);
   };
 
   return (
     <WalletCtx.Provider value={{
       connected: !!address,
       address,
+      walletType,
+      displayName,
       balance,
       selector,
       modal,
       signOut,
-      showModal
+      showModal,
+      connectNear,
+      connectEvm,
+      connectSol,
+      connectGoogle,
     }}>
+      {chooserOpen && (
+        <WalletChooser
+          onClose={() => setChooserOpen(false)}
+          onNear={() => connectNear().catch((e) => alert(e.message))}
+          onEvm={() => connectEvm().catch((e) => alert(e.message))}
+          onSol={() => connectSol().catch((e) => alert(e.message))}
+          onGoogle={() => connectGoogle().catch((e) => alert(e.message))}
+        />
+      )}
       {children}
     </WalletCtx.Provider>
+  );
+}
+
+function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
+  const opts = [
+    { label: "NEAR Wallet", hint: "Meteor / HERE / HOT / Intear", onClick: onNear },
+    { label: "Google Sign-In", hint: "Use your Google account", onClick: onGoogle },
+    { label: "EVM Wallet", hint: "MetaMask / injected wallet", onClick: onEvm },
+    { label: "Solana Wallet", hint: "Phantom / injected wallet", onClick: onSol },
+  ];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.58)", backdropFilter: "blur(4px)", zIndex: 9999, display: "grid", placeItems: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(92vw, 420px)", borderRadius: 16, border: "1px solid #1e293b", background: "#0d1117", padding: 16 }}>
+        <div style={{ color: "#fff", fontWeight: 800, fontSize: 18, marginBottom: 4 }}>Connect account</div>
+        <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 12 }}>Choose how you want to sign in.</div>
+        <div style={{ display: "grid", gap: 8 }}>
+          {opts.map((o) => (
+            <button key={o.label} onClick={o.onClick} style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: "1px solid #1e293b", background: "#161b22", color: "#e2e8f0", cursor: "pointer" }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{o.label}</div>
+              <div style={{ color: "#94a3b8", fontSize: 11 }}>{o.hint}</div>
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} style={{ marginTop: 12, width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid #1e293b", background: "transparent", color: "#94a3b8", cursor: "pointer" }}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 
