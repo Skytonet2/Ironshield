@@ -45,13 +45,21 @@ async function notifyUser(userId, payload) {
       url: payload.url || "/",
       tag: payload.tag || "general",
       actions: payload.actions || [],
+      kind: payload.kind || "general",
+      conversationId: payload.conversationId,
     });
+
+    // Calls need high urgency so push is delivered immediately even when the
+    // device is dozing. Regular DMs use normal urgency.
+    const options = payload.kind === "call"
+      ? { urgency: "high", TTL: 60 }
+      : { urgency: "normal", TTL: 3600 };
 
     const staleIds = [];
     await Promise.allSettled(
       r.rows.map(async (row) => {
         try {
-          await webpush.sendNotification(JSON.parse(row.subscription), data);
+          await webpush.sendNotification(JSON.parse(row.subscription), data, options);
         } catch (err) {
           const status = err?.statusCode || err?.status;
           if (status === 410 || status === 404 || /expired|unsubscribed/i.test(String(err))) {

@@ -27,3 +27,15 @@ services:
         value: ironshield.near
       - key: DATABASE_URL
         fromEnvironment: DATABASE_URL
+      - key: LIVEKIT_URL
+        fromEnvironment: LIVEKIT_URL
+      - key: LIVEKIT_API_KEY
+        fromEnvironment: LIVEKIT_API_KEY
+      - key: LIVEKIT_API_SECRET
+        fromEnvironment: LIVEKIT_API_SECRET
+      - key: ANTHROPIC_API_KEY
+        fromEnvironment: ANTHROPIC_API_KEY
+      - key: VAPID_PUBLIC_KEY
+        fromEnvironment: VAPID_PUBLIC_KEY
+      - key: VAPID_PRIVATE_KEY
+        fromEnvironment: VAPID_PRIVATE_KEY

@@ -780,6 +780,68 @@ impl NewsCoinCurve {
 
     // ─── Views ─────────────────────────────────────────────────────────
 
+    // ─── Admin setters (owner = factory) ─────────────────────────────
+    // These let the owner repoint misconfigured addresses on already-deployed
+    // curve contracts without having to kill + refund + remint the coin.
+
+    pub fn admin_set_revenue_wallet(&mut self, new_revenue_wallet: AccountId) {
+        require!(env::predecessor_account_id() == self.owner_id, "Not authorized");
+        let old = self.revenue_wallet.clone();
+        self.revenue_wallet = new_revenue_wallet.clone();
+        env::log_str(&format!("revenue_wallet: {} -> {}", old, new_revenue_wallet));
+    }
+
+    pub fn admin_set_agent(&mut self, new_agent_id: AccountId) {
+        require!(env::predecessor_account_id() == self.owner_id, "Not authorized");
+        let old = self.agent_id.clone();
+        self.agent_id = new_agent_id.clone();
+        env::log_str(&format!("agent_id: {} -> {}", old, new_agent_id));
+    }
+
+    pub fn admin_set_rhea_router(&mut self, new_rhea_router: AccountId) {
+        require!(env::predecessor_account_id() == self.owner_id, "Not authorized");
+        let old = self.rhea_router.clone();
+        self.rhea_router = new_rhea_router.clone();
+        env::log_str(&format!("rhea_router: {} -> {}", old, new_rhea_router));
+    }
+
+    pub fn admin_set_registry(&mut self, new_registry_id: AccountId) {
+        require!(env::predecessor_account_id() == self.owner_id, "Not authorized");
+        let old = self.registry_id.clone();
+        self.registry_id = new_registry_id.clone();
+        env::log_str(&format!("registry_id: {} -> {}", old, new_registry_id));
+    }
+
+    /// Sweep any NEAR sitting on this contract (bounced fees etc.) back to
+    /// the currently-configured revenue_wallet. Owner-only.
+    pub fn admin_sweep_to_revenue(&mut self) -> Promise {
+        require!(env::predecessor_account_id() == self.owner_id, "Not authorized");
+        // Leave the storage stake in place; only sweep what's above ~3 NEAR.
+        let balance = env::account_balance().as_yoctonear();
+        let floor = NearToken::from_near(3).as_yoctonear();
+        let sendable = balance.saturating_sub(floor);
+        require!(sendable > 0, "Nothing to sweep");
+        env::log_str(&format!("sweeping {} yocto to {}", sendable, self.revenue_wallet));
+        Promise::new(self.revenue_wallet.clone())
+            .transfer(NearToken::from_yoctonear(sendable))
+    }
+
+    /// Permanently destroy this coin sub-account and return its remaining
+    /// balance (storage stake + reserve) to `beneficiary`. Owner-only and
+    /// only callable on a killed coin with zero supply — otherwise holders
+    /// would lose their refund pool. Use this when a coin is abandoned and
+    /// the storage NEAR should come back to the factory.
+    pub fn admin_delete_account(&mut self, beneficiary: AccountId) -> Promise {
+        require!(env::predecessor_account_id() == self.owner_id, "Not authorized");
+        require!(self.killed, "Kill the coin first");
+        require!(self.total_supply == 0, "Supply > 0 — holders must claim refunds first");
+        env::log_str(&format!(
+            r#"EVENT_JSON:{{"standard":"newscoin","version":"1.0","event":"account_deleted","data":[{{"beneficiary":"{}"}}]}}"#,
+            beneficiary
+        ));
+        Promise::new(env::current_account_id()).delete_account(beneficiary)
+    }
+
     pub fn get_info(&self) -> serde_json::Value {
         serde_json::json!({
             "name": self.name,

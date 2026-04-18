@@ -148,7 +148,7 @@ function CallInner({ useParticipants, useLocalParticipant, t, wallet, peer, mute
   );
 }
 
-export default function DMCallPanel({ open, t, wallet, conversationId, peer, onClose }) {
+export default function DMCallPanel({ open, t, wallet, conversationId, peer, onClose, onMinimize }) {
   const [tokenInfo, setTokenInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -208,7 +208,7 @@ export default function DMCallPanel({ open, t, wallet, conversationId, peer, onC
         placeItems: "center",
         padding: 20,
       }}
-      onClick={onClose}
+      onClick={onMinimize || onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -315,6 +315,24 @@ export default function DMCallPanel({ open, t, wallet, conversationId, peer, onC
           >
             {muted ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
+          {onMinimize && (
+            <button
+              onClick={onMinimize}
+              title="Minimize — keep call running while browsing"
+              style={{
+                minWidth: 110,
+                height: 46,
+                borderRadius: 999,
+                border: `1px solid ${t.border}`,
+                background: t.bgSurface,
+                color: t.text,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Minimize
+            </button>
+          )}
           <button
             onClick={onClose}
             style={{

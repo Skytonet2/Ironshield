@@ -52,12 +52,19 @@ self.addEventListener("fetch", (e) => {
 
 // ─── Push notifications ────────────────────────────────────────────
 self.addEventListener("push", (e) => {
-  let data = { title: "IronShield", body: "You have a new notification", tag: "general" };
+  let data = { title: "IronShield", body: "You have a new notification", tag: "general", kind: "general" };
   try {
     if (e.data) data = { ...data, ...e.data.json() };
   } catch {
     if (e.data) data.body = e.data.text();
   }
+
+  const isCall = data.kind === "call";
+
+  // Calls: long vibrate pattern (browsers cap this, but it's the closest we
+  // get to a ring without a native wrapper), require interaction so the
+  // banner stays up until Answer/Decline is tapped, and attach action buttons.
+  const callVibrate = [400, 200, 400, 200, 400, 200, 400, 200, 400];
 
   const options = {
     body: data.body,
@@ -65,9 +72,13 @@ self.addEventListener("push", (e) => {
     badge: "/icon.svg",
     tag: data.tag || "general",
     renotify: true,
-    vibrate: [100, 50, 100],
+    vibrate: isCall ? callVibrate : [100, 50, 100],
+    requireInteraction: isCall,
+    silent: false,
     data: {
       url: data.url || "/",
+      kind: data.kind || "general",
+      conversationId: data.conversationId,
     },
     actions: data.actions || [],
   };
@@ -75,22 +86,38 @@ self.addEventListener("push", (e) => {
   e.waitUntil(self.registration.showNotification(data.title, options));
 });
 
-// ─── Notification click: open / focus the app ──────────────────────
+// ─── Notification click: route based on action + kind ──────────────
 self.addEventListener("notificationclick", (e) => {
+  const action = e.action || "";
+  const nData = e.notification.data || {};
   e.notification.close();
-  const url = e.notification.data?.url || "/";
 
-  e.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      // Focus existing tab if one is open
-      for (const client of clients) {
-        if (new URL(client.url).origin === self.location.origin) {
-          client.navigate(url);
-          return client.focus();
-        }
-      }
-      // Otherwise open a new window
-      return self.clients.openWindow(url);
-    })
-  );
+  // Call actions
+  if (nData.kind === "call") {
+    if (action === "decline") {
+      // Soft-decline: just dismiss. (A server-side hangup would need an
+      // authenticated call, which we can't do from a push click without
+      // relay infra — acceptable since the LiveKit room just times out.)
+      return;
+    }
+    // answer or tap-through: open the call overlay deep link
+    const url = nData.url || "/";
+    e.waitUntil(openOrFocus(url));
+    return;
+  }
+
+  const url = nData.url || "/";
+  e.waitUntil(openOrFocus(url));
 });
+
+function openOrFocus(url) {
+  return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+    for (const client of clients) {
+      if (new URL(client.url).origin === self.location.origin) {
+        client.navigate(url);
+        return client.focus();
+      }
+    }
+    return self.clients.openWindow(url);
+  });
+}

@@ -348,6 +348,57 @@ impl NewsCoinFactory {
         self.owner_id.clone()
     }
 
+    /// View the full wiring so no one has to guess which partner accounts
+    /// this factory is talking to.
+    pub fn get_config(&self) -> near_sdk::serde_json::Value {
+        near_sdk::serde_json::json!({
+            "owner_id": self.owner_id,
+            "revenue_wallet": self.revenue_wallet,
+            "agent_id": self.agent_id,
+            "registry_id": self.registry_id,
+            "rhea_router": self.rhea_router,
+            "creation_fee": U128(self.creation_fee),
+            "coin_counter": self.coin_counter,
+            "curve_wasm_bytes": self.curve_wasm.len() as u64,
+        })
+    }
+
+    // ─── Admin setters (owner-only) ─────────────────────────────────
+
+    pub fn admin_set_revenue_wallet(&mut self, new_revenue_wallet: AccountId) {
+        self.assert_owner();
+        let old = self.revenue_wallet.clone();
+        self.revenue_wallet = new_revenue_wallet.clone();
+        env::log_str(&format!("revenue_wallet: {} -> {}", old, new_revenue_wallet));
+    }
+
+    pub fn admin_set_agent(&mut self, new_agent_id: AccountId) {
+        self.assert_owner();
+        let old = self.agent_id.clone();
+        self.agent_id = new_agent_id.clone();
+        env::log_str(&format!("agent_id: {} -> {}", old, new_agent_id));
+    }
+
+    pub fn admin_set_registry(&mut self, new_registry_id: AccountId) {
+        self.assert_owner();
+        let old = self.registry_id.clone();
+        self.registry_id = new_registry_id.clone();
+        env::log_str(&format!("registry_id: {} -> {}", old, new_registry_id));
+    }
+
+    pub fn admin_set_rhea_router(&mut self, new_rhea_router: AccountId) {
+        self.assert_owner();
+        let old = self.rhea_router.clone();
+        self.rhea_router = new_rhea_router.clone();
+        env::log_str(&format!("rhea_router: {} -> {}", old, new_rhea_router));
+    }
+
+    pub fn admin_set_creation_fee(&mut self, new_fee: U128) {
+        self.assert_owner();
+        self.creation_fee = new_fee.0;
+        env::log_str(&format!("creation_fee set to {}", new_fee.0));
+    }
+
     // ─── Internal ───────────────────────────────────────────────────
 
     fn assert_owner(&self) {

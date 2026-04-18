@@ -184,6 +184,42 @@ router.post("/send", requireWallet, async (req, res, next) => {
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [conversationId, me.id, toId, encryptedPayload, nonce]);
     await db.query("UPDATE feed_conversations SET last_message_at=NOW() WHERE id=$1", [conversationId]);
+
+    // Fire-and-forget push to the recipient. DMs are E2E encrypted, so the
+    // server cannot read the text — we send a generic "New message" with a
+    // deep link to the thread. Call invites get a dedicated high-urgency push.
+    try {
+      const { notifyUser } = require("../services/pushNotify");
+      const actor = await db.query("SELECT display_name, username FROM feed_users WHERE id=$1", [me.id]);
+      const name = actor.rows[0]?.display_name || actor.rows[0]?.username || "Someone";
+      // Heuristic: the encrypted payload starts with a known prefix for call
+      // invites (buildDmCallInvite wraps as IX_CALL_INVITE:<json>). Since it's
+      // encrypted we can't detect that server-side — frontend signals via a
+      // separate `type` field when it's a call.
+      const isCall = req.body?.type === "call_invite";
+      if (isCall) {
+        notifyUser(toId, {
+          title: `${name} is calling`,
+          body: "Tap to answer",
+          url: `/#/Feed?dm=${conversationId}&call=incoming`,
+          tag: `call-${conversationId}`,
+          actions: [
+            { action: "answer", title: "Answer" },
+            { action: "decline", title: "Decline" },
+          ],
+          kind: "call",
+          conversationId,
+        }).catch(() => {});
+      } else {
+        notifyUser(toId, {
+          title: `${name}`,
+          body: "New message",
+          url: `/#/Feed?dm=${conversationId}`,
+          tag: `dm-${conversationId}`,
+        }).catch(() => {});
+      }
+    } catch (_) { /* push is best-effort */ }
+
     res.json({ message: r.rows[0] });
   } catch (e) { next(e); }
 });
