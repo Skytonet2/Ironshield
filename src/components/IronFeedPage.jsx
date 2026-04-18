@@ -2165,16 +2165,34 @@ function NotificationsModal({ wallet, onClose }) {
 }
 
 /* ───────────────────── Right rail cards ───────────────────── */
-function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet }) {
+function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet, onOpenProfile }) {
   const t = useTheme();
   const [news, setNews] = useState([]);
   const [ads, setAds]   = useState([]);
   const [q, setQ] = useState("");
+  const [results, setResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
 
   useEffect(() => {
     api("/api/feed-news").then(r => setNews(r.news || [])).catch(() => {});
     api("/api/ads/active").then(r => setAds((r.campaigns || []).slice(0, 3))).catch(() => {});
   }, []);
+
+  // Debounced user search via the same endpoint that powers @-mentions.
+  useEffect(() => {
+    const query = q.trim();
+    if (!query) { setResults([]); return; }
+    let cancelled = false;
+    const id = setTimeout(() => {
+      fetch(`${API}/api/social/search?q=${encodeURIComponent(query)}&limit=8`, {
+        headers: wallet ? { "x-wallet": wallet } : {},
+      })
+        .then(r => r.ok ? r.json() : { users: [] })
+        .then(d => { if (!cancelled) setResults(Array.isArray(d?.users) ? d.users : []); })
+        .catch(() => {});
+    }, 180);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [q, wallet]);
 
   const card = (title, children) => (
     <div style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16, marginBottom: 14, overflow: "hidden" }}>
@@ -2187,13 +2205,54 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet }) {
 
   return (
     <aside style={{ padding: "8px 0" }}>
-      {/* Search */}
+      {/* Search users */}
       <div style={{ position: "sticky", top: 0, background: t.bg, padding: "6px 0 12px", zIndex: 3 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.bgSurface,
-          border: `1px solid ${t.border}`, borderRadius: 999, padding: "8px 14px" }}>
-          <Search size={16} color={t.textMuted} />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search"
-            style={{ flex: 1, border: "none", background: "transparent", color: t.text, outline: "none", fontSize: 14 }} />
+        <div style={{ position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.bgSurface,
+            border: `1px solid ${t.border}`, borderRadius: 999, padding: "8px 14px" }}>
+            <Search size={16} color={t.textMuted} />
+            <input value={q}
+              onChange={e => setQ(e.target.value)}
+              onFocus={() => setShowResults(true)}
+              onBlur={() => setTimeout(() => setShowResults(false), 150)}
+              placeholder="Search users"
+              style={{ flex: 1, border: "none", background: "transparent", color: t.text, outline: "none", fontSize: 14 }} />
+          </div>
+          {showResults && q.trim() && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0,
+              background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
+              maxHeight: 340, overflowY: "auto", zIndex: 20,
+              boxShadow: "0 12px 36px rgba(0,0,0,.45)",
+            }}>
+              {results.length === 0 ? (
+                <div style={{ padding: "14px 16px", color: t.textDim, fontSize: 13 }}>No users found</div>
+              ) : results.map((u, i) => (
+                <button key={u.id || u.wallet || i}
+                  onMouseDown={(e) => { e.preventDefault(); onOpenProfile?.(u); setShowResults(false); setQ(""); }}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 14px", border: "none",
+                    borderTop: i ? `1px solid ${t.border}` : "none",
+                    background: "transparent", color: t.text, cursor: "pointer", textAlign: "left",
+                  }}>
+                  {u.pfp_url
+                    ? <img src={u.pfp_url} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} />
+                    : <div style={{ width: 34, height: 34, borderRadius: "50%", background: `${t.accent}22`, display: "grid", placeItems: "center", color: t.accent, fontWeight: 800 }}>
+                        {(u.display_name || u.username || u.wallet || "?")[0]?.toUpperCase()}
+                      </div>}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ color: t.white, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {u.display_name || u.username || u.wallet}
+                    </div>
+                    <div style={{ color: t.textDim, fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {u.username ? `@${u.username}` : u.wallet}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2461,6 +2520,7 @@ export default function IronFeedPage({ openWallet }) {
           openWallet={openWallet}
           onDeployAgent={() => setOpenAgent(true)}
           onOpenOrg={() => setOpenOrg(true)}
+          onOpenProfile={(u) => setOpenProfile(u.wallet || u.username)}
         />
         <div style={{ display: "flex", gap: 10, flexDirection: "column" }}>
           <button onClick={() => wallet ? setOpenNotifs(true) : openWallet?.()}
