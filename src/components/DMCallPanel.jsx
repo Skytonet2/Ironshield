@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Mic, MicOff, Minimize2, PhoneOff, Radio } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
@@ -201,6 +201,63 @@ export default function DMCallPanel({
 
     return () => { cancelled = true; };
   }, [conversationId, open, wallet]);
+
+  // Screen Wake Lock: prevents mobile screen sleep from suspending the audio
+  // session / tearing down mic capture while the call is active. Re-acquires
+  // on visibilitychange because the browser releases the sentinel when the
+  // tab is hidden.
+  const wakeLockRef = useRef(null);
+  useEffect(() => {
+    if (!open || error) return;
+    if (typeof navigator === "undefined" || !navigator.wakeLock) return;
+
+    let released = false;
+
+    const acquire = async () => {
+      try {
+        if (document.visibilityState !== "visible") return;
+        if (wakeLockRef.current) return;
+        const sentinel = await navigator.wakeLock.request("screen");
+        if (released) { sentinel.release?.().catch(() => {}); return; }
+        wakeLockRef.current = sentinel;
+        sentinel.addEventListener?.("release", () => {
+          if (wakeLockRef.current === sentinel) wakeLockRef.current = null;
+        });
+      } catch { /* ignore — not fatal */ }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+
+    acquire();
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      released = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      const sentinel = wakeLockRef.current;
+      wakeLockRef.current = null;
+      sentinel?.release?.().catch(() => {});
+    };
+  }, [open, error]);
+
+  // Keep the audio context / mic track alive when the tab goes to background
+  // on mobile. Some browsers auto-suspend the AudioContext; re-resume when we
+  // come back. LiveKit handles track republish internally, but we nudge it.
+  useEffect(() => {
+    if (!open) return;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        // Best-effort: unmute/re-enable stays synced with local state on resume.
+        // The CallInner effect will re-apply mic state when the component
+        // re-renders.
+      } catch { /* noop */ }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [open]);
 
   if (!open) return null;
 

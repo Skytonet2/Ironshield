@@ -184,6 +184,7 @@ function AppInner() {
             position: fixed; top: 0; right: 0; bottom: 0; width: min(86vw, 320px);
             background: ${t.bg}; border-left: 1px solid ${t.border};
             display: flex; flex-direction: column; z-index: 301;
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
             animation: ixSlideIn .2s ease-out;
           }
           @keyframes ixSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
@@ -437,18 +438,17 @@ function AppInner() {
               ))}
             </nav>
             <div style={{ marginTop: "auto", padding: 12, borderTop: `1px solid ${t.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
-              {connected && (
-                <button onClick={async () => {
-                  if (pwa.pushEnabled) { await pwa.disablePush(); }
-                  else {
-                    const res = await pwa.enablePush();
-                    if (res && res.ok === false && res.message) alert(res.message);
-                  }
-                }}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 14px", border: `1px solid ${pwa.pushEnabled ? t.green : t.border}`, background: pwa.pushEnabled ? `${t.green}14` : "transparent", color: pwa.pushEnabled ? t.green : t.text, borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-                  <BellRing size={16} /> {pwa.pushEnabled ? "Notifications on" : "Enable notifications"}
-                </button>
-              )}
+              <button onClick={async () => {
+                if (!connected) { openWallet(); setMobileNavOpen(false); return; }
+                if (pwa.pushEnabled) { await pwa.disablePush(); }
+                else {
+                  const res = await pwa.enablePush();
+                  if (res && res.ok === false && res.message) alert(res.message);
+                }
+              }}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 14px", border: `1px solid ${pwa.pushEnabled ? t.green : t.border}`, background: pwa.pushEnabled ? `${t.green}14` : "transparent", color: pwa.pushEnabled ? t.green : t.text, borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+                <BellRing size={16} /> {pwa.pushEnabled ? "Notifications on" : "Enable notifications"}
+              </button>
               {pwa.canInstall && (
                 <button onClick={async () => { await pwa.promptInstall(); setMobileNavOpen(false); }}
                   style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 14px", border: `1px solid ${t.accent}`, background: `${t.accent}18`, color: t.accent, borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
@@ -482,39 +482,21 @@ function AppInner() {
       {/* First-visit nudge to link the Telegram bot. */}
       <TelegramOnboardingModal />
 
-      {/* Persistent call surface. Stays mounted across SPA page switches so
-          the LiveKit connection isn't torn down when the user navigates. */}
-      {call.open && call.kind === "dm" && !call.minimized && (
+      {/* Persistent call surface. Stays mounted across SPA page switches and
+          across the minimize→restore toggle so the LiveKit room + mic tracks
+          are never torn down while the user is in a call. */}
+      {call.open && call.kind === "dm" && (
         <DMCallPanel
           open
+          minimized={call.minimized}
           t={t}
           wallet={address}
           conversationId={call.conversationId}
           peer={call.peer}
-          onClose={endCall}
           onMinimize={minimize}
+          onResume={restore}
+          onEnd={endCall}
         />
-      )}
-      {call.open && call.minimized && (
-        <button
-          onClick={restore}
-          aria-label="Return to call"
-          style={{
-            position: "fixed", bottom: 20, right: 20, zIndex: 140,
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 16px", borderRadius: 999,
-            background: t.green || "#12B886", color: "#fff",
-            border: "none", cursor: "pointer",
-            boxShadow: "0 8px 24px rgba(0,0,0,.3)",
-            fontWeight: 600, fontSize: 13,
-          }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: "50%",
-            background: "#fff", animation: "ix-pulse 1.4s infinite ease-in-out",
-          }} />
-          In call · {call.peer?.username || call.peer?.wallet?.slice(0, 8) || "peer"} · tap to open
-          <style>{`@keyframes ix-pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
-        </button>
       )}
     </div>
   );
