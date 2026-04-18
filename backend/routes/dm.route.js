@@ -304,9 +304,10 @@ router.post("/send", requireWallet, async (req, res, next) => {
       // separate `type` field when it's a call.
       const isCall = req.body?.type === "call_invite";
       if (isCall) {
+        const actorRow = actor.rows[0] || {};
         notifyUser(toId, {
-          title: `${name} is calling`,
-          body: "Tap to answer",
+          title: `📞 ${name} is calling`,
+          body: "Tap to answer — IronShield call",
           url: `/#/Feed?dm=${conversationId}&call=incoming`,
           tag: `call-${conversationId}`,
           actions: [
@@ -315,6 +316,13 @@ router.post("/send", requireWallet, async (req, res, next) => {
           ],
           kind: "call",
           conversationId,
+          // Foreground overlay reads these via postMessage — the OS
+          // notification itself doesn't render them.
+          peer: {
+            wallet: req.wallet,
+            username: actorRow.username || null,
+            displayName: actorRow.display_name || null,
+          },
         }).catch(() => {});
       } else {
         notifyUser(toId, {

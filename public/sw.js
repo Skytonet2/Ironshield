@@ -66,8 +66,13 @@ self.addEventListener("push", (e) => {
   // banner stays up until Answer/Decline is tapped, and attach action buttons.
   const callVibrate = [400, 200, 400, 200, 400, 200, 400, 200, 400];
 
+  // Force a phone-call look on both Android and iOS. iOS PWA ignores action
+  // buttons, so the title/body have to carry the meaning on their own.
+  const title = isCall ? (data.title?.startsWith("📞") ? data.title : `📞 ${data.title || "Incoming call"}`) : data.title;
+  const body  = isCall ? (data.body  || "Tap to answer") : data.body;
+
   const options = {
-    body: data.body,
+    body,
     icon: "/mascot.png",
     badge: "/icon.svg",
     tag: data.tag || "general",
@@ -83,7 +88,27 @@ self.addEventListener("push", (e) => {
     actions: data.actions || [],
   };
 
-  e.waitUntil(self.registration.showNotification(data.title, options));
+  // If any app window is focused/visible, let it handle the ring in-app
+  // (full-screen overlay + looping ringtone) instead of relying on the
+  // OS notification, which on many mobile browsers reads as a plain DM.
+  const relayToForeground = async () => {
+    try {
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const hasVisible = clients.some((c) => c.visibilityState === "visible" || c.focused);
+      for (const c of clients) {
+        c.postMessage({ type: "ix-push", kind: data.kind, data });
+      }
+      // Still show the notification when no window is visible; when one is
+      // visible we skip the OS banner so the in-app ringing UI is the single
+      // source of truth.
+      if (isCall && hasVisible) return;
+      await self.registration.showNotification(title, options);
+    } catch {
+      await self.registration.showNotification(title, options);
+    }
+  };
+
+  e.waitUntil(relayToForeground());
 });
 
 // ─── Notification click: route based on action + kind ──────────────

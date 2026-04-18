@@ -1605,7 +1605,7 @@ function parseSpecialDmMessage(text = "") {
   };
 }
 
-function DMsModal({ wallet, onClose, initialPeer, onJoinCall }) {
+function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
   const t = useTheme();
   const [convs, setConvs] = useState([]);
   const [active, setActive] = useState(null);
@@ -1677,6 +1677,14 @@ function DMsModal({ wallet, onClose, initialPeer, onJoinCall }) {
   }, [active, wallet]);
 
   useEffect(() => { if (initialPeer) { startWith(initialPeer); } /* eslint-disable-next-line */ }, [initialPeer]);
+  // When we're deep-linked to a specific conversation (e.g. from a call
+  // notification tap), find it in the loaded list and open it.
+  useEffect(() => {
+    if (!initialConvId || !convs.length) return;
+    const hit = convs.find(c => String(c.id) === String(initialConvId));
+    if (hit && (!active || String(active.id) !== String(hit.id))) open(hit);
+    /* eslint-disable-next-line */
+  }, [initialConvId, convs]);
 
   const open = async (c) => {
     setActive(c);
@@ -2353,6 +2361,7 @@ export default function IronFeedPage({ openWallet }) {
   const [openAgent, setOpenAgent] = useState(false);
   const [openDMs, setOpenDMs] = useState(false);
   const [dmPeer, setDmPeer] = useState(null);
+  const [dmConvId, setDmConvId] = useState(null);
   const [dmCall, setDmCall] = useState({ open: false, minimized: false, conversationId: null, peer: null });
   const [openNotifs, setOpenNotifs] = useState(false);
   const [boostPost, setBoostPost] = useState(null);
@@ -2371,11 +2380,13 @@ export default function IronFeedPage({ openWallet }) {
       const profile = params.get("profile");
       const invite = params.get("invite");
       const dms = params.get("dms");
+      const dmId = params.get("dm");
       const notifs = params.get("notifs");
       const postId = params.get("post");
       if (profile) setOpenProfile(profile);
       if (invite && wallet) { setDmPeer(invite); setOpenDMs(true); }
       if (dms && wallet) setOpenDMs(true);
+      if (dmId && wallet) { setDmConvId(dmId); setOpenDMs(true); }
       if (notifs && wallet) setOpenNotifs(true);
       if (postId) {
         api(`/api/posts/${postId}`, { wallet }).then(r => r.post && setOpenComments(r.post)).catch(() => {});
@@ -2548,7 +2559,8 @@ export default function IronFeedPage({ openWallet }) {
         <DMsModal
           wallet={wallet}
           initialPeer={dmPeer}
-          onClose={() => { setOpenDMs(false); setDmPeer(null); }}
+          initialConvId={dmConvId}
+          onClose={() => { setOpenDMs(false); setDmPeer(null); setDmConvId(null); }}
           onJoinCall={({ conversationId, peer }) => setDmCall({ open: true, minimized: false, conversationId, peer })}
         />
       )}
