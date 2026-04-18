@@ -582,3 +582,12 @@ CREATE TABLE IF NOT EXISTS feed_tg_reply_map (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_tg_reply_conv ON feed_tg_reply_map(conversation_id);
+
+-- ============================================================
+-- Group chat extensions: public handle, invite link, pfp
+-- ============================================================
+ALTER TABLE feed_group_chats ADD COLUMN IF NOT EXISTS handle       TEXT;
+ALTER TABLE feed_group_chats ADD COLUMN IF NOT EXISTS invite_token TEXT;
+ALTER TABLE feed_group_chats ADD COLUMN IF NOT EXISTS pfp_url      TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_group_chats_handle ON feed_group_chats(LOWER(handle)) WHERE handle IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_group_chats_invite ON feed_group_chats(invite_token) WHERE invite_token IS NOT NULL;

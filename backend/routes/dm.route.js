@@ -2,10 +2,23 @@
 // DMs are end-to-end encrypted client-side via tweetnacl. The server only
 // stores ciphertext + nonce; it cannot read message bodies.
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
 const agent = require("../services/agentConnector");
+
+// Group @handle rules: 3–24 chars, lowercase letters/digits/underscore.
+const HANDLE_RE = /^[a-z0-9_]{3,24}$/;
+function normalizeHandle(raw) {
+  const h = String(raw || "").trim().toLowerCase().replace(/^@/, "");
+  return h;
+}
+function newInviteToken() {
+  // 128-bit url-safe token. Base64url w/o padding.
+  return crypto.randomBytes(16).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 let AccessToken;
 try { ({ AccessToken } = require("livekit-server-sdk")); } catch { AccessToken = null; }
@@ -97,7 +110,8 @@ router.get("/groups", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
     const r = await db.query(
-      `SELECT g.id, g.name, g.last_message_at,
+      `SELECT g.id, g.name, g.handle, g.pfp_url, g.invite_token, g.created_by,
+              g.last_message_at,
               COUNT(m.user_id)::int AS member_count
          FROM feed_group_chats g
          JOIN feed_group_chat_members mm ON mm.group_id = g.id AND mm.user_id = $1
@@ -107,16 +121,84 @@ router.get("/groups", requireWallet, async (req, res, next) => {
         LIMIT 100`,
       [me.id]
     );
-    res.json({ groups: r.rows.map(x => ({ id: x.id, name: x.name, memberCount: x.member_count, kind: "group" })) });
+    res.json({
+      groups: r.rows.map(x => ({
+        id: x.id,
+        name: x.name,
+        handle: x.handle,
+        pfpUrl: x.pfp_url,
+        inviteToken: x.created_by === me.id ? x.invite_token : null,
+        isOwner: x.created_by === me.id,
+        memberCount: x.member_count,
+        kind: "group",
+      })),
+    });
   } catch (e) { next(e); }
 });
 
-// POST /api/dm/groups  body: { name, members: [walletOrUsername] }
+// GET /api/dm/groups/:groupId — detail (members, owner-only invite token)
+router.get("/groups/:groupId", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const gid = parseInt(req.params.groupId, 10);
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+    if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
+    const g = await db.query(
+      `SELECT g.id, g.name, g.handle, g.pfp_url, g.invite_token, g.created_by, g.last_message_at
+         FROM feed_group_chats g WHERE g.id = $1`,
+      [gid]
+    );
+    if (!g.rows.length) return res.status(404).json({ error: "group not found" });
+    const row = g.rows[0];
+    const members = await db.query(
+      `SELECT u.id, u.wallet_address, u.username, u.display_name, u.pfp_url
+         FROM feed_group_chat_members m
+         JOIN feed_users u ON u.id = m.user_id
+        WHERE m.group_id = $1`,
+      [gid]
+    );
+    const isOwner = row.created_by === me.id;
+    res.json({
+      group: {
+        id: row.id,
+        name: row.name,
+        handle: row.handle,
+        pfpUrl: row.pfp_url,
+        inviteToken: isOwner ? row.invite_token : null,
+        isOwner,
+        createdBy: row.created_by,
+        memberCount: members.rows.length,
+        members: members.rows.map(u => ({
+          id: u.id, wallet: u.wallet_address, username: u.username,
+          displayName: u.display_name, pfpUrl: u.pfp_url,
+        })),
+        kind: "group",
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/groups  body: { name, handle?, pfpUrl?, members: [walletOrUsername] }
 router.post("/groups", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
     const name = String(req.body?.name || "").trim().slice(0, 80);
     if (!name) return res.status(400).json({ error: "name required" });
+
+    let handle = null;
+    const handleRaw = req.body?.handle;
+    if (handleRaw != null && String(handleRaw).trim() !== "") {
+      handle = normalizeHandle(handleRaw);
+      if (!HANDLE_RE.test(handle)) {
+        return res.status(400).json({ error: "handle must be 3-24 chars, a-z 0-9 _" });
+      }
+      const clash = await db.query("SELECT 1 FROM feed_group_chats WHERE LOWER(handle)=$1 LIMIT 1", [handle]);
+      if (clash.rows.length) return res.status(409).json({ error: "handle taken" });
+    }
+
+    const pfpUrl = req.body?.pfpUrl ? String(req.body.pfpUrl).slice(0, 500) : null;
+    const inviteToken = newInviteToken();
+
     const memberInputs = Array.isArray(req.body?.members) ? req.body.members : [];
     const resolvedIds = new Set([me.id]);
     for (const entry of memberInputs.slice(0, 24)) {
@@ -129,8 +211,9 @@ router.post("/groups", requireWallet, async (req, res, next) => {
       if (u.rows[0]?.id) resolvedIds.add(u.rows[0].id);
     }
     const group = await db.query(
-      "INSERT INTO feed_group_chats (name, created_by) VALUES ($1, $2) RETURNING *",
-      [name, me.id]
+      `INSERT INTO feed_group_chats (name, created_by, handle, pfp_url, invite_token)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [name, me.id, handle, pfpUrl, inviteToken]
     );
     const gid = group.rows[0].id;
     for (const uid of resolvedIds) {
@@ -139,7 +222,114 @@ router.post("/groups", requireWallet, async (req, res, next) => {
         [gid, uid]
       );
     }
-    res.json({ group: { id: gid, name, memberCount: resolvedIds.size, kind: "group" } });
+    res.json({
+      group: {
+        id: gid, name, handle, pfpUrl,
+        inviteToken, isOwner: true,
+        memberCount: resolvedIds.size, kind: "group",
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// PATCH /api/dm/groups/:groupId  body: { name?, handle?, pfpUrl? } — owner only
+router.patch("/groups/:groupId", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const gid = parseInt(req.params.groupId, 10);
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+    const g = await db.query("SELECT created_by FROM feed_group_chats WHERE id=$1", [gid]);
+    if (!g.rows.length) return res.status(404).json({ error: "group not found" });
+    if (g.rows[0].created_by !== me.id) return res.status(403).json({ error: "only the owner can edit" });
+
+    const patch = {};
+    if (req.body?.name != null) {
+      const n = String(req.body.name).trim().slice(0, 80);
+      if (!n) return res.status(400).json({ error: "name required" });
+      patch.name = n;
+    }
+    if (req.body?.pfpUrl !== undefined) {
+      patch.pfp_url = req.body.pfpUrl ? String(req.body.pfpUrl).slice(0, 500) : null;
+    }
+    if (req.body?.handle !== undefined) {
+      if (req.body.handle === null || String(req.body.handle).trim() === "") {
+        patch.handle = null;
+      } else {
+        const h = normalizeHandle(req.body.handle);
+        if (!HANDLE_RE.test(h)) return res.status(400).json({ error: "handle must be 3-24 chars, a-z 0-9 _" });
+        const clash = await db.query(
+          "SELECT 1 FROM feed_group_chats WHERE LOWER(handle)=$1 AND id<>$2 LIMIT 1",
+          [h, gid]
+        );
+        if (clash.rows.length) return res.status(409).json({ error: "handle taken" });
+        patch.handle = h;
+      }
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: "no changes" });
+
+    const fields = Object.keys(patch);
+    const sets = fields.map((f, i) => `${f} = $${i + 2}`).join(", ");
+    const values = [gid, ...fields.map(f => patch[f])];
+    const r = await db.query(
+      `UPDATE feed_group_chats SET ${sets} WHERE id=$1
+       RETURNING id, name, handle, pfp_url, invite_token, created_by`,
+      values
+    );
+    const row = r.rows[0];
+    res.json({
+      group: {
+        id: row.id, name: row.name, handle: row.handle, pfpUrl: row.pfp_url,
+        inviteToken: row.invite_token, isOwner: true, kind: "group",
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/groups/:groupId/invite — rotate + fetch invite token (owner only)
+router.post("/groups/:groupId/invite", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const gid = parseInt(req.params.groupId, 10);
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+    const g = await db.query("SELECT created_by, invite_token FROM feed_group_chats WHERE id=$1", [gid]);
+    if (!g.rows.length) return res.status(404).json({ error: "group not found" });
+    if (g.rows[0].created_by !== me.id) return res.status(403).json({ error: "only the owner can rotate the link" });
+
+    const rotate = !!req.body?.rotate || !g.rows[0].invite_token;
+    let token = g.rows[0].invite_token;
+    if (rotate) {
+      token = newInviteToken();
+      await db.query("UPDATE feed_group_chats SET invite_token=$1 WHERE id=$2", [token, gid]);
+    }
+    res.json({ inviteToken: token });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/groups/join/:token — join a group via invite link
+router.post("/groups/join/:token", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const token = String(req.params.token || "").trim();
+    if (!token) return res.status(400).json({ error: "invalid invite token" });
+    const g = await db.query(
+      `SELECT id, name, handle, pfp_url, created_by FROM feed_group_chats WHERE invite_token=$1 LIMIT 1`,
+      [token]
+    );
+    if (!g.rows.length) return res.status(404).json({ error: "invite link not found or expired" });
+    const row = g.rows[0];
+    await db.query(
+      "INSERT INTO feed_group_chat_members (group_id, user_id) VALUES ($1,$2) ON CONFLICT (group_id, user_id) DO NOTHING",
+      [row.id, me.id]
+    );
+    const count = await db.query(
+      "SELECT COUNT(*)::int AS c FROM feed_group_chat_members WHERE group_id=$1", [row.id]
+    );
+    res.json({
+      group: {
+        id: row.id, name: row.name, handle: row.handle, pfpUrl: row.pfp_url,
+        memberCount: count.rows[0].c, isOwner: row.created_by === me.id, kind: "group",
+      },
+    });
   } catch (e) { next(e); }
 });
 
