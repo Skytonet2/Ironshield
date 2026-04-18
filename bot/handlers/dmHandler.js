@@ -8,6 +8,8 @@ const scan      = require("../commands/scan");
 const alert     = require("../commands/alert");
 const report    = require("../commands/report");
 const trending  = require("../commands/trending");
+const link      = require("../commands/link");
+const { tg }    = require("../services/backend");
 
 const BACKEND = process.env.BACKEND_URL || "http://localhost:3001";
 
@@ -24,6 +26,21 @@ const INTENTS = [
 ];
 
 async function handleDM(bot, msg) {
+  // 1) If this message is a Telegram reply to a bot-posted DM notification,
+  //    relay it back to the site as a real DM.
+  if (msg.reply_to_message?.message_id) {
+    try {
+      const r = await tg.reply(msg.reply_to_message.message_id, msg.text || "");
+      if (r.ok) {
+        await bot.sendMessage(msg.chat.id, "✅ Reply sent to IronShield.");
+        return;
+      }
+    } catch { /* fall through */ }
+  }
+
+  // 2) Wallet-first onboarding: a plain address links the wallet.
+  if (await link.tryLinkFromMessage(bot, msg)) return;
+
   const text  = (msg.text || "").toLowerCase();
   const match = INTENTS.find(i => i.patterns.some(p => text.includes(p)));
 

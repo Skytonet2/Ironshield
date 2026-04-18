@@ -1,4 +1,5 @@
 // bot/handlers/commandHandler.js
+
 const summary   = require("../commands/summary");
 const research  = require("../commands/research");
 const verify    = require("../commands/verify");
@@ -7,105 +8,92 @@ const scan      = require("../commands/scan");
 const alert     = require("../commands/alert");
 const report    = require("../commands/report");
 const trending  = require("../commands/trending");
+const link      = require("../commands/link");
+const wallets   = require("../commands/wallets");
+const settings  = require("../commands/settings");
+const watch     = require("../commands/watch");
+const tip       = require("../commands/tip");
+const digest    = require("../commands/digest");
 
-// Escape ALL MarkdownV2 special characters
 function escapeMarkdownV2(text) {
-  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
 }
 
 const COMMANDS = {
-  "/summary":   summary.handle,
-  "/summarize": summary.handle,
-  "/research":  research.handle,
-  "/verify":    verify.handle,
-  "/portfolio": portfolio.handle,
-  "/scan":      scan.handle,
-  "/alert":     alert.handle,
-  "/report":    report.handle,
-  "/trending":  trending.handle,
-  "/trends":    trending.handle,
-  "/start":     startHandler,
+  "/start":     link.handleStart,
+  "/link":      link.handleStart,
   "/help":      helpHandler,
   "/status":    statusHandler,
+
+  "/summary":   summary.handle,
+  "/summarize": summary.handle,
+  "/digest":    digest.handle,
+
+  "/research":  research.handle,
+  "/verify":    verify.handle,
+  "/scan":      scan.handle,
+  "/trending":  trending.handle,
+  "/trends":    trending.handle,
+  "/report":    report.handle,
+
+  "/portfolio": portfolio.handle,
+  "/addwallet": wallets.handleAddWallet,
+  "/wallets":   wallets.handleWallets,
+  "/removewallet": wallets.handleRemoveWallet,
+
+  "/settings":  settings.handleSettings,
+
+  "/watch":     watch.handleWatch,
+  "/unwatch":   watch.handleUnwatch,
+  "/watchlist": watch.handleWatchlist,
+
+  "/alert":     alert.handle,
+  "/tip":       tip.handle,
 };
 
-async function startHandler(bot, msg) {
-  const message = `🛡️ IronShield — AI Security Agent
-
-I protect communities and help you research the Web3 space.
-
-Commands:
-/research [token] — Research any token
-/summary [group] — Summarize a Telegram group
-/verify [claim] — Fact-check any claim
-/scan [url/wallet] — Scan for threats
-/alert [token] above/below [price] — Price alerts
-/report [url/wallet] — Report a scam
-/portfolio — View your tracked wallets
-
-In DMs, you can just type naturally — no commands needed.`;
-
-  await bot.sendMessage(
-    msg.chat.id,
-    escapeMarkdownV2(message),
-    { parse_mode: "MarkdownV2" }
-  );
-}
-
 async function helpHandler(bot, msg) {
-  const message = `*IronClaw Commands*
+  const message = `*IronShield Bot — Commands*
 
-🔍 Research & Intel
-/research $TOKEN — Token research report
-/research 0x... — Contract analysis
-/summary @group — Group summary
-/summary last 24h — This chat summary
-/verify [claim] — Fact-check
+🔗 *Onboarding*
+• Paste any wallet address to link it
+• /wallets — switch between linked wallets
+• /addwallet <address>
+• /settings — toggle alert types
 
-🛡️ Security
-/scan [url] — Check a URL for threats
-/scan [wallet] — Check a wallet address
-/report [url/wallet] — Report a scam
+💼 *Top features*
+• /portfolio — instant overview
+• /watch $TOKEN or @user — targeted alerts
+• /alert $TOKEN 10x — price alert (also 5%, above $X, below $X)
+• /tip @user 1 NEAR — send a tip
+• /digest — 24h summary (auto-sent 8 AM)
 
-💼 Portfolio & Alerts
-/portfolio — Your wallets
-/portfolio add 0x... — Add wallet
-/alert NEAR above $10 — Set price alert
-/alert list — View your alerts
+🔍 *Research & Intel*
+• /research $TOKEN — token report
+• /summary — this chat
+• /verify <claim>
+• /trending — live market
 
-ℹ️ /status — Bot status`;
+🛡 *Security*
+• /scan <url|wallet>
+• /report <url|wallet>
 
-  await bot.sendMessage(
-    msg.chat.id,
-    escapeMarkdownV2(message),
-    { parse_mode: "MarkdownV2" }
-  );
+ℹ️ /status — bot health`;
+
+  await bot.sendMessage(msg.chat.id, escapeMarkdownV2(message), { parse_mode: "MarkdownV2" });
 }
 
 async function statusHandler(bot, msg) {
   const uptime = process.uptime();
-  const hours  = Math.floor(uptime / 3600);
-  const mins   = Math.floor((uptime % 3600) / 60);
-
-  const message = `🛡️ *IronShield Status*
-
-✅ Bot: Online
-⏱ Uptime: ${hours}h ${mins}m
-🤖 Engine: NEAR AI
-🔒 Security: Active
-📡 Mode: Polling
-
-Website: ironshield.near.page
-Contract: ironshield.near`;
-
-  await bot.sendMessage(msg.chat.id, message, { parse_mode: "Markdown" });
+  const h = Math.floor(uptime / 3600);
+  const m = Math.floor((uptime % 3600) / 60);
+  const text = `🛡 *IronShield Status*\n\n✅ Bot: Online\n⏱ Uptime: ${h}h ${m}m\n🤖 Engine: NEAR AI\n📡 Mode: Polling\n\nSite: ironshield.near.page`;
+  await bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" });
 }
 
 async function handleCommand(bot, msg) {
-  const text    = msg.text || "";
+  const text = msg.text || "";
   const command = text.split(" ")[0].toLowerCase().split("@")[0];
   const handler = COMMANDS[command];
-
   if (handler) {
     await handler(bot, msg);
   } else {
