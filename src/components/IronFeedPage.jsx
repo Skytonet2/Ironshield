@@ -6,6 +6,7 @@ import {
   Trash2, MoreHorizontal, Loader2, UserPlus, UserMinus, UserCheck, Link as LinkIcon,
   Smile, MapPin, Calendar, BarChart3, Home as HomeIcon, ArrowLeft,
   Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins, Phone, Eye,
+  Settings, Copy as CopyIcon, Users as UsersIcon, RefreshCw,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -1625,6 +1626,8 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
   const [searchResult, setSearchResult] = useState(null);
   const [kp, setKp] = useState(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [groupSettingsFor, setGroupSettingsFor] = useState(null);
   // Call state is lifted to App-level context so switching pages doesn't drop the LiveKit connection.
   const { openCall: openGlobalCall } = useCall();
 
@@ -1685,6 +1688,23 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
     if (hit && (!active || String(active.id) !== String(hit.id))) open(hit);
     /* eslint-disable-next-line */
   }, [initialConvId, convs]);
+
+  // Open a specific group after a successful invite-link join.
+  useEffect(() => {
+    const onOpenGroup = async (e) => {
+      const g = e?.detail?.group;
+      if (!g) return;
+      refresh();
+      const active = { ...g, kind: "group" };
+      setActive(active);
+      try {
+        const r = await api(`/api/dm/groups/${g.id}/messages`, { wallet });
+        setGroupMessages(r.messages || []);
+      } catch {}
+    };
+    window.addEventListener("ix-open-group", onOpenGroup);
+    return () => window.removeEventListener("ix-open-group", onOpenGroup);
+  }, [refresh, wallet]);
 
   const open = async (c) => {
     setActive(c);
@@ -1757,23 +1777,21 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
     onJoinCall?.({ conversationId: conversation.id, peer: conversation.peer });
   };
 
-  const createGroup = async () => {
-    const name = window.prompt("Group name");
-    if (!name || !name.trim()) return;
-    const walletsRaw = window.prompt("Add member wallets/usernames (comma separated)");
-    const members = String(walletsRaw || "")
-      .split(",")
-      .map(s => s.trim())
-      .filter(Boolean);
+  const createGroup = () => setShowNewGroup(true);
+
+  const handleGroupCreated = async (group) => {
+    setShowNewGroup(false);
+    refresh();
+    setActive({ ...group, kind: "group" });
     try {
-      const r = await api("/api/dm/groups", { method: "POST", wallet, body: { name: name.trim(), members } });
-      refresh();
-      setActive({ ...r.group, kind: "group" });
-      const msg = await api(`/api/dm/groups/${r.group.id}/messages`, { wallet });
+      const msg = await api(`/api/dm/groups/${group.id}/messages`, { wallet });
       setGroupMessages(msg.messages || []);
-    } catch (e) {
-      alert(e.message);
-    }
+    } catch {}
+  };
+
+  const handleGroupUpdated = (updated) => {
+    setGroupConvs(gs => gs.map(g => g.id === updated.id ? { ...g, ...updated } : g));
+    setActive(a => a && a.kind === "group" && a.id === updated.id ? { ...a, ...updated } : a);
   };
 
   const send = async () => {
@@ -1890,7 +1908,7 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
   const activeSubtitle = active?.kind === "assistant"
     ? "Powered by the IRONCLAW backend"
     : active?.kind === "group"
-      ? `${active?.memberCount || 0} members`
+      ? `${active?.handle ? `@${active.handle} · ` : ""}${active?.memberCount || 0} members`
       : shortWallet(active?.peer?.wallet || "");
 
   return (
@@ -1997,15 +2015,13 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
               display: "flex", gap: 8, padding: 8, borderRadius: 8, cursor: "pointer",
               background: active?.kind === "group" && active?.id === g.id ? `${t.accent}18` : "transparent",
             }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${t.accent}22`, color: t.accent, display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <UserPlus size={14} />
-              </div>
+              <GroupAvatar group={g} size={32} />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ color: t.white, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {g.name || "Group chat"}
                 </div>
                 <div style={{ color: t.textDim, fontSize: 11 }}>
-                  {g.memberCount || 0} members
+                  {g.handle ? `@${g.handle} · ` : ""}{g.memberCount || 0} members
                 </div>
               </div>
             </div>
@@ -2044,10 +2060,7 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
                     }}><Bot size={18} /></div>
                   )
                   : active.kind === "group"
-                    ? <div style={{
-                      width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center",
-                      background: `${t.accent}22`, color: t.accent, flexShrink: 0,
-                    }}><UserPlus size={16} /></div>
+                    ? <GroupAvatar group={active} size={38} />
                     : <Avatar user={{ pfp_url: active.peer?.pfpUrl, username: active.peer?.username }} size={38} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: t.white, fontSize: 14, fontWeight: 800 }}>
@@ -2073,6 +2086,15 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
                     gap: 6,
                   }}>
                     <Phone size={14} /> Call
+                  </button>
+                )}
+                {active.kind === "group" && (
+                  <button onClick={() => setGroupSettingsFor(active)} title="Group settings" style={{
+                    padding: 8, borderRadius: 999, border: `1px solid ${t.border}`,
+                    background: t.bgSurface, color: t.text, cursor: "pointer",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <Settings size={14} />
                   </button>
                 )}
               </div>
@@ -2139,6 +2161,308 @@ function DMsModal({ wallet, onClose, initialPeer, initialConvId, onJoinCall }) {
       </div>
       {/* DMCallPanel is now mounted globally in src/app/page.js so the call
           persists when the user navigates to other pages. */}
+      {showNewGroup && (
+        <NewGroupModal
+          wallet={wallet}
+          onClose={() => setShowNewGroup(false)}
+          onCreated={handleGroupCreated}
+        />
+      )}
+      {groupSettingsFor && (
+        <GroupSettingsModal
+          wallet={wallet}
+          group={groupSettingsFor}
+          onClose={() => setGroupSettingsFor(null)}
+          onUpdated={handleGroupUpdated}
+        />
+      )}
+    </Modal>
+  );
+}
+
+/* ───────────────────── Group avatar / new group / settings ───────────────────── */
+function GroupAvatar({ group, size = 38 }) {
+  const t = useTheme();
+  if (group?.pfpUrl || group?.pfp_url) {
+    return <img src={group.pfpUrl || group.pfp_url} alt="" style={{
+      width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0,
+    }} />;
+  }
+  const initial = (group?.name || group?.handle || "G")[0]?.toUpperCase() || "G";
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", display: "grid", placeItems: "center",
+      background: `linear-gradient(135deg, ${t.accent}, #0ea5e9)`, color: "#fff",
+      fontWeight: 800, fontSize: size * 0.4, flexShrink: 0,
+    }}>{initial}</div>
+  );
+}
+
+function uploadGroupImage(file, wallet) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return fetch(`${API}/api/media/upload`, {
+    method: "POST", body: fd, headers: { "x-wallet": wallet || "" },
+  }).then(async r => {
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d?.error || "upload failed");
+    return d.url;
+  });
+}
+
+function NewGroupModal({ wallet, onClose, onCreated }) {
+  const t = useTheme();
+  const [name, setName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [membersText, setMembersText] = useState("");
+  const [pfpUrl, setPfpUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const fileRef = useRef(null);
+
+  const onPickImage = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true); setErr("");
+    try {
+      const url = await uploadGroupImage(f, wallet);
+      setPfpUrl(url);
+    } catch (ex) { setErr(ex.message); }
+    finally { setUploading(false); e.target.value = ""; }
+  };
+
+  const submit = async () => {
+    setErr("");
+    if (!name.trim()) { setErr("Group name is required"); return; }
+    const h = handle.trim().replace(/^@/, "").toLowerCase();
+    if (h && !/^[a-z0-9_]{3,24}$/.test(h)) {
+      setErr("Handle must be 3-24 chars: a-z, 0-9, or _");
+      return;
+    }
+    const members = membersText.split(",").map(s => s.trim()).filter(Boolean);
+    setBusy(true);
+    try {
+      const r = await api("/api/dm/groups", {
+        method: "POST", wallet,
+        body: { name: name.trim(), handle: h || null, pfpUrl: pfpUrl || null, members },
+      });
+      onCreated?.(r.group);
+    } catch (ex) { setErr(ex.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal onClose={onClose} title="New group" maxWidth={480}>
+      <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <GroupAvatar group={{ pfpUrl, name: name || "G" }} size={56} />
+          <input ref={fileRef} type="file" accept="image/*" onChange={onPickImage} style={{ display: "none" }} />
+          <Btn onClick={() => fileRef.current?.click()} disabled={uploading}>
+            {uploading ? "Uploading…" : pfpUrl ? "Change photo" : "Add photo"}
+          </Btn>
+          {pfpUrl && <Btn onClick={() => setPfpUrl("")}>Clear</Btn>}
+        </div>
+        <label style={{ fontSize: 12, color: t.textMuted }}>Group name
+          <input value={name} onChange={e => setName(e.target.value)} maxLength={80}
+            placeholder="IronClaw insiders" style={{ ...inputStyle(t), width: "100%", marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 12, color: t.textMuted }}>Public handle (optional)
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+            <span style={{ color: t.textDim, fontSize: 14 }}>@</span>
+            <input value={handle} onChange={e => setHandle(e.target.value)} maxLength={24}
+              placeholder="ironclaw_insiders" style={inputStyle(t)} />
+          </div>
+          <div style={{ color: t.textDim, fontSize: 11, marginTop: 4 }}>
+            3-24 chars · a-z, 0-9, _ · must be unique
+          </div>
+        </label>
+        <label style={{ fontSize: 12, color: t.textMuted }}>Add members (comma-separated wallets or @usernames)
+          <textarea value={membersText} onChange={e => setMembersText(e.target.value)}
+            placeholder="alice.near, bob.near, charlie"
+            style={{ ...inputStyle(t), width: "100%", marginTop: 4, minHeight: 60 }} />
+        </label>
+        {err && <div style={{ color: t.red, fontSize: 12 }}>{err}</div>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn primary onClick={submit} disabled={busy || !name.trim()}>
+            {busy ? "Creating…" : "Create group"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function GroupSettingsModal({ wallet, group, onClose, onUpdated }) {
+  const t = useTheme();
+  const [detail, setDetail] = useState(null);
+  const [name, setName] = useState(group.name || "");
+  const [handle, setHandle] = useState(group.handle || "");
+  const [pfpUrl, setPfpUrl] = useState(group.pfpUrl || group.pfp_url || "");
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    api(`/api/dm/groups/${group.id}`, { wallet })
+      .then(r => {
+        setDetail(r.group);
+        setName(r.group.name || "");
+        setHandle(r.group.handle || "");
+        setPfpUrl(r.group.pfpUrl || "");
+      })
+      .catch(e => setErr(e.message));
+  }, [group.id, wallet]);
+
+  const isOwner = !!detail?.isOwner;
+  const inviteUrl = detail?.inviteToken
+    ? `${typeof window !== "undefined" ? window.location.origin : "https://ironshield.near.page"}/#/Feed?joinGroup=${detail.inviteToken}`
+    : null;
+
+  const onPickImage = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true); setErr("");
+    try {
+      const url = await uploadGroupImage(f, wallet);
+      setPfpUrl(url);
+    } catch (ex) { setErr(ex.message); }
+    finally { setUploading(false); e.target.value = ""; }
+  };
+
+  const save = async () => {
+    setErr(""); setMsg("");
+    if (!name.trim()) { setErr("Name is required"); return; }
+    const h = handle.trim().replace(/^@/, "").toLowerCase();
+    if (h && !/^[a-z0-9_]{3,24}$/.test(h)) {
+      setErr("Handle must be 3-24 chars: a-z, 0-9, or _"); return;
+    }
+    setBusy(true);
+    try {
+      const r = await api(`/api/dm/groups/${group.id}`, {
+        method: "PATCH", wallet,
+        body: { name: name.trim(), handle: h || null, pfpUrl: pfpUrl || null },
+      });
+      onUpdated?.(r.group);
+      setMsg("Saved");
+    } catch (ex) { setErr(ex.message); }
+    finally { setBusy(false); }
+  };
+
+  const rotateInvite = async () => {
+    setErr(""); setMsg("");
+    try {
+      const r = await api(`/api/dm/groups/${group.id}/invite`, {
+        method: "POST", wallet, body: { rotate: true },
+      });
+      setDetail(d => ({ ...d, inviteToken: r.inviteToken }));
+      setMsg("New invite link generated");
+    } catch (ex) { setErr(ex.message); }
+  };
+
+  const copyInvite = async () => {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setMsg("Invite link copied");
+    } catch { window.prompt("Copy this link:", inviteUrl); }
+  };
+
+  return (
+    <Modal onClose={onClose} title="Group settings" maxWidth={520}>
+      {!detail ? (
+        <p style={{ color: t.textDim }}>Loading…</p>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <GroupAvatar group={{ pfpUrl, name }} size={64} />
+            {isOwner && (
+              <>
+                <input ref={fileRef} type="file" accept="image/*" onChange={onPickImage} style={{ display: "none" }} />
+                <Btn onClick={() => fileRef.current?.click()} disabled={uploading}>
+                  {uploading ? "Uploading…" : pfpUrl ? "Change photo" : "Add photo"}
+                </Btn>
+                {pfpUrl && <Btn onClick={() => setPfpUrl("")}>Clear</Btn>}
+              </>
+            )}
+          </div>
+
+          <label style={{ fontSize: 12, color: t.textMuted }}>Name
+            <input value={name} onChange={e => setName(e.target.value)} disabled={!isOwner} maxLength={80}
+              style={{ ...inputStyle(t), width: "100%", marginTop: 4 }} />
+          </label>
+
+          <label style={{ fontSize: 12, color: t.textMuted }}>Public handle
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+              <span style={{ color: t.textDim, fontSize: 14 }}>@</span>
+              <input value={handle} onChange={e => setHandle(e.target.value)} disabled={!isOwner} maxLength={24}
+                placeholder="unique_handle" style={inputStyle(t)} />
+            </div>
+          </label>
+
+          <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+            <div style={{ color: t.white, fontSize: 14, fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+              <LinkIcon size={14} /> Invite link
+            </div>
+            {isOwner ? (
+              inviteUrl ? (
+                <>
+                  <div style={{
+                    background: t.bgSurface, border: `1px solid ${t.border}`,
+                    borderRadius: 10, padding: "8px 10px", fontSize: 12, color: t.text,
+                    wordBreak: "break-all",
+                  }}>{inviteUrl}</div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <Btn onClick={copyInvite}><CopyIcon size={13} /> Copy</Btn>
+                    <Btn onClick={rotateInvite}><RefreshCw size={13} /> Rotate</Btn>
+                  </div>
+                </>
+              ) : (
+                <Btn onClick={rotateInvite}><LinkIcon size={13} /> Generate invite link</Btn>
+              )
+            ) : (
+              <div style={{ color: t.textDim, fontSize: 12 }}>Only the group owner can share invite links.</div>
+            )}
+          </div>
+
+          <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+            <div style={{ color: t.white, fontSize: 14, fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+              <UsersIcon size={14} /> Members ({detail.memberCount})
+            </div>
+            <div style={{ display: "grid", gap: 6, maxHeight: 180, overflowY: "auto" }}>
+              {detail.members.map(m => (
+                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Avatar user={{ pfp_url: m.pfpUrl, username: m.username }} size={28} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ color: t.white, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {m.displayName || m.username || shortWallet(m.wallet)}
+                    </div>
+                    <div style={{ color: t.textDim, fontSize: 11 }}>{shortWallet(m.wallet)}</div>
+                  </div>
+                  {m.id === detail.createdBy && (
+                    <span style={chipStyle(t.accent)}>Owner</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {err && <div style={{ color: t.red, fontSize: 12 }}>{err}</div>}
+          {msg && <div style={{ color: t.green, fontSize: 12 }}>{msg}</div>}
+
+          {isOwner && (
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn onClick={onClose}>Close</Btn>
+              <Btn primary onClick={save} disabled={busy || !name.trim()}>
+                {busy ? "Saving…" : "Save changes"}
+              </Btn>
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -2372,6 +2696,7 @@ export default function IronFeedPage({ openWallet }) {
   const [railOpen, setRailOpen] = useState(true);
 
   // Deep-link support: #/Feed?profile=alice.near  or  #/Feed?invite=bob.near
+  //                    #/Feed?joinGroup=<token>   (opens DMs + joins that group)
   useEffect(() => {
     const parse = () => {
       const hash = window.location.hash || "";
@@ -2383,6 +2708,7 @@ export default function IronFeedPage({ openWallet }) {
       const dmId = params.get("dm");
       const notifs = params.get("notifs");
       const postId = params.get("post");
+      const joinGroup = params.get("joinGroup");
       if (profile) setOpenProfile(profile);
       if (invite && wallet) { setDmPeer(invite); setOpenDMs(true); }
       if (dms && wallet) setOpenDMs(true);
@@ -2390,6 +2716,24 @@ export default function IronFeedPage({ openWallet }) {
       if (notifs && wallet) setOpenNotifs(true);
       if (postId) {
         api(`/api/posts/${postId}`, { wallet }).then(r => r.post && setOpenComments(r.post)).catch(() => {});
+      }
+      if (joinGroup) {
+        if (!wallet) { openWallet?.(); return; }
+        api(`/api/dm/groups/join/${encodeURIComponent(joinGroup)}`, { method: "POST", wallet })
+          .then(r => {
+            setOpenDMs(true);
+            try {
+              window.dispatchEvent(new CustomEvent("ix-open-group", { detail: { group: r.group } }));
+            } catch {}
+            // Strip the query param so a page refresh doesn't re-trigger the join.
+            try {
+              params.delete("joinGroup");
+              const nextQ = params.toString();
+              const base = hash.split("?")[0] || "#/Feed";
+              window.history.replaceState(null, "", nextQ ? `${base}?${nextQ}` : base);
+            } catch {}
+          })
+          .catch(e => alert(e.message));
       }
     };
     parse();
