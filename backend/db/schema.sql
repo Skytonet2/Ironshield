@@ -258,6 +258,33 @@ CREATE TABLE IF NOT EXISTS feed_dms (
 );
 CREATE INDEX IF NOT EXISTS idx_feed_dms_conv ON feed_dms(conversation_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS feed_group_chats (
+  id              SERIAL PRIMARY KEY,
+  name            TEXT NOT NULL,
+  created_by      INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  last_message_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS feed_group_chat_members (
+  id         SERIAL PRIMARY KEY,
+  group_id   INTEGER REFERENCES feed_group_chats(id) ON DELETE CASCADE,
+  user_id    INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  joined_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS feed_group_messages (
+  id         SERIAL PRIMARY KEY,
+  group_id   INTEGER REFERENCES feed_group_chats(id) ON DELETE CASCADE,
+  from_id    INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  content    TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON feed_group_chat_members(user_id, group_id);
+CREATE INDEX IF NOT EXISTS idx_group_messages_group ON feed_group_messages(group_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS feed_ad_campaigns (
   id          SERIAL PRIMARY KEY,
   user_id     INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
