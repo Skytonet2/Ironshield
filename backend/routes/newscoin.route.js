@@ -363,10 +363,24 @@ router.get("/creator/:wallet", async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/newscoin/suggest
 // ---------------------------------------------------------------------------
+// Deterministic virality score 0.0–10.0 seeded by headline content.
+// IronClaw-scored front-end tokenization potential; stable across calls so
+// users see the same badge on repeat opens. AI-backed scoring can replace
+// this later by returning a `score` field from the model.
+function ironClawScore(headline) {
+  const s = String(headline || "");
+  if (!s.trim()) return 5.0;
+  const seed = s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  // Range 0.5 – 9.9 (avoid perfect 0 / 10 so UI tiers behave).
+  const raw = ((seed * 37) % 941) / 100;
+  return Math.max(0.5, Math.min(9.9, Number(raw.toFixed(1))));
+}
+
 router.post("/suggest", async (req, res, next) => {
   try {
     const { headline } = req.body || {};
     if (!headline) return res.status(400).json({ error: "headline required" });
+    const score = ironClawScore(headline);
 
     if (!AI_KEY) {
       // Fallback when AI is not configured
@@ -380,6 +394,7 @@ router.post("/suggest", async (req, res, next) => {
       return res.json({
         name: headline.slice(0, 32),
         ticker: (fallbackTicker || "NEWS").slice(0, 6),
+        score,
       });
     }
 
@@ -428,6 +443,7 @@ router.post("/suggest", async (req, res, next) => {
         .toUpperCase()
         .replace(/[^A-Z]/g, "")
         .slice(0, 6),
+      score,
     });
   } catch (e) {
     next(e);

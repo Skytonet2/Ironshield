@@ -536,6 +536,10 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
   const [suggesting, setSuggesting] = useState(true);
   const [minting, setMinting] = useState(false);
   const [err, setErr] = useState("");
+  // IronClaw Virality Score (0–10). null while loading.
+  const [score, setScore] = useState(null);
+  // Low-signal (score < 4) requires explicit user confirmation before launch.
+  const [lowSignalAck, setLowSignalAck] = useState(false);
 
   // Fetch IronClaw suggestion on open
   useEffect(() => {
@@ -545,10 +549,20 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
       .then(d => {
         if (d?.name) setName(d.name);
         if (d?.ticker) setTicker(d.ticker.toUpperCase());
+        if (typeof d?.score === "number") setScore(d.score);
       })
       .catch(() => {})
       .finally(() => setSuggesting(false));
   }, [post?.content]);
+
+  // Score tier: drives badge colour + label ("High tokenization potential", etc).
+  const scoreTier = (() => {
+    if (score == null) return null;
+    if (score >= 7) return { color: t.green,  label: "High tokenization potential" };
+    if (score >= 4) return { color: t.amber,  label: "Moderate signal" };
+    return                 { color: t.red,    label: "Low signal — IronClaw flagged this story" };
+  })();
+  const isLowSignal = score != null && score < 4;
 
   const handleMint = async () => {
     if (!wallet || !selector) { setErr("Connect your wallet first"); return; }
@@ -667,6 +681,28 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
           </div>
         ) : (
           <>
+            {/* IronClaw Virality Score */}
+            {scoreTier && (
+              <div style={{
+                padding: "10px 14px", borderRadius: 10, marginBottom: 12,
+                background: `${scoreTier.color}12`, border: `1px solid ${scoreTier.color}44`,
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <div style={{
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 800,
+                  color: scoreTier.color, minWidth: 52, textAlign: "center",
+                }}>{score.toFixed(1)}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: t.textDim, marginBottom: 2 }}>
+                    IronClaw rates this story
+                  </div>
+                  <div style={{ fontSize: 12.5, color: scoreTier.color, fontWeight: 700 }}>
+                    {scoreTier.label}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Name input */}
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: t.textDim, display: "block", marginBottom: 4 }}>Coin Name</label>
@@ -674,7 +710,7 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
                 value={name} onChange={e => setName(e.target.value)}
                 placeholder="e.g. NEAR Bull Run"
                 style={inputStyle(t)}
-                maxLength={50}
+                maxLength={32}
               />
             </div>
 
@@ -718,7 +754,7 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
                   <input
                     value={maxSupply}
                     onChange={e => setMaxSupply(e.target.value.replace(/[^\d]/g, ""))}
-                    placeholder="Leave blank = uncapped"
+                    placeholder="Default: 1,000,000,000"
                     style={inputStyle(t)}
                     inputMode="numeric"
                   />
@@ -746,6 +782,17 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
           </>
         )}
 
+        {/* Fee + curve transparency */}
+        <div style={{
+          padding: "10px 12px", borderRadius: 10,
+          background: t.bgSurface, border: `1px solid ${t.border}`,
+          marginBottom: 12, fontSize: 11.5, color: t.textMuted, lineHeight: 1.6,
+        }}>
+          <div><strong style={{ color: t.white }}>Creator First-Mover fee:</strong> 2% of all trades on this coin — forever.</div>
+          <div><strong style={{ color: t.white }}>Platform fee:</strong> 1% of every trade (funds IronClaw Treasury).</div>
+          <div><strong style={{ color: t.white }}>Bonding curve:</strong> piecewise, managed by IronClaw. Graduates to DEX at hardcap.</div>
+        </div>
+
         {/* Warning */}
         <div style={{
           padding: "10px 14px", borderRadius: 10, background: `${t.amber}10`,
@@ -760,13 +807,32 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
           </div>
         </div>
 
+        {/* Low-signal acknowledgement gate */}
+        {isLowSignal && (
+          <label style={{
+            display: "flex", alignItems: "flex-start", gap: 8,
+            padding: "10px 12px", borderRadius: 10,
+            background: `${t.red}10`, border: `1px solid ${t.red}44`,
+            marginBottom: 12, fontSize: 12, color: t.red, lineHeight: 1.5,
+            cursor: "pointer",
+          }}>
+            <input
+              type="checkbox"
+              checked={lowSignalAck}
+              onChange={e => setLowSignalAck(e.target.checked)}
+              style={{ marginTop: 2, accentColor: t.red }}
+            />
+            <span>Launch anyway — I understand IronClaw flagged this story as low signal.</span>
+          </label>
+        )}
+
         {/* Fee */}
         <div style={{ fontSize: 12, color: t.textDim, marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
           <Coins size={12} /> Creation fee: <strong style={{ color: ORANGE }}>2 NEAR</strong>
         </div>
 
         {/* Mint button */}
-        <Btn primary onClick={handleMint} disabled={minting || suggesting || !wallet} style={{ width: "100%", justifyContent: "center" }}>
+        <Btn primary onClick={handleMint} disabled={minting || suggesting || !wallet || (isLowSignal && !lowSignalAck)} style={{ width: "100%", justifyContent: "center" }}>
           {minting ? <><Loader2 size={14} className="spin" /> Creating coin...</>
             : !wallet ? <><Lock size={14} /> Connect Wallet</>
             : <><Sparkles size={14} /> Coin This Story</>
