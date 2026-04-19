@@ -28,6 +28,7 @@ const LaunchPage     = lazy(() => import("@/components/LaunchPage"));
 const DocsPage       = lazy(() => import("@/components/DocsPage"));
 const AgentPage      = lazy(() => import("@/components/AgentPage"));
 const NewsCoinPage   = lazy(() => import("@/components/NewsCoinPage"));
+const TreasuryPage   = lazy(() => import("@/components/TreasuryPage"));
 
 const MASCOT_IMG = "/mascot.png";
 
@@ -37,6 +38,7 @@ const PRIMARY = [
   { key: "Home",        label: "Home",       Icon: HomeIcon,  mobileTop: true },
   { key: "Feed",        label: "IronFeed",   Icon: Feather,   mobileTop: true },
   { key: "NewsCoin",    label: "NewsCoin",   Icon: Coins,     mobileTop: true },
+  { key: "Treasury",    label: "Treasury",   Icon: Wallet },
   { key: "Alpha",       label: "Alpha",      Icon: Sparkles,  mobileTop: true },
   { key: "Rooms",       label: "Rooms",      Icon: Mic,       mobileTop: true, external: "/rooms/" },
   { key: "Staking",     label: "Staking",    Icon: Coins },
@@ -133,6 +135,7 @@ function AppInner() {
       case "Home":       return <HomePage setPage={setPage} openWallet={openWallet} />;
       case "Feed":       return <Suspense fallback={fallback}><IronFeedPage openWallet={openWallet} setPage={setPage} /></Suspense>;
       case "NewsCoin":   return <Suspense fallback={fallback}><NewsCoinPage openWallet={openWallet} /></Suspense>;
+      case "Treasury":   return <Suspense fallback={fallback}><TreasuryPage /></Suspense>;
       case "Alpha":      return <Suspense fallback={fallback}><AlphaFeedPage openWallet={openWallet} /></Suspense>;
       case "Staking":    return <Suspense fallback={fallback}><StakingPage openWallet={openWallet} /></Suspense>;
       case "Earn":       return <Suspense fallback={fallback}><EarnPage openWallet={openWallet} /></Suspense>;

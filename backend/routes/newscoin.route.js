@@ -597,4 +597,111 @@ router.post("/:coinId/verify-trade", async (req, res, next) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /api/newscoin/treasury
+// IronClaw Treasury aggregate stats. Powers the /treasury dashboard.
+//
+// Fee model (matches contract + MintModal disclosures):
+//   • 2% creator First-Mover fee (goes to coin creator — NOT treasury)
+//   • 1% platform fee            (goes to ironshield.near treasury)
+// So treasury revenue per trade = near_amount * 0.01.
+// ---------------------------------------------------------------------------
+router.get("/treasury", async (_req, res, next) => {
+  try {
+    if (!ensureDb(res)) return;
+    const PLATFORM_FEE = 0.01;
+    const CREATOR_FEE  = 0.02;
+
+    // Aggregate stats — split lifetime / 24h / 7d so the dashboard can
+    // show revenue velocity.
+    const agg = await db.query(`
+      SELECT
+        COALESCE(SUM(near_amount), 0)::float                          AS vol_lifetime,
+        COALESCE(SUM(CASE WHEN created_at > NOW() - INTERVAL '24 hours'
+                          THEN near_amount ELSE 0 END), 0)::float     AS vol_24h,
+        COALESCE(SUM(CASE WHEN created_at > NOW() - INTERVAL '7 days'
+                          THEN near_amount ELSE 0 END), 0)::float     AS vol_7d,
+        COUNT(*)::int                                                  AS trades_lifetime,
+        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours')::int AS trades_24h
+      FROM feed_newscoin_trades
+    `);
+    const coinCounts = await db.query(`
+      SELECT
+        COUNT(*)::int                           AS coins_total,
+        COUNT(*) FILTER (WHERE graduated)::int  AS coins_graduated
+      FROM feed_newscoins
+    `);
+    const v = agg.rows[0] || {};
+    const c = coinCounts.rows[0] || {};
+
+    // Recent fee events (last 20 platform-fee slices) — used as the
+    // revenue feed in the dashboard.
+    const recent = await db.query(`
+      SELECT t.id, t.trader, t.trade_type, t.near_amount, t.created_at,
+             n.ticker, n.name, n.id AS coin_id
+      FROM feed_newscoin_trades t
+      JOIN feed_newscoins n ON n.id = t.coin_id
+      ORDER BY t.created_at DESC
+      LIMIT 20
+    `);
+
+    const feed = recent.rows.map(r => ({
+      id: r.id,
+      coinId: r.coin_id,
+      ticker: r.ticker,
+      name: r.name,
+      trader: r.trader,
+      side: r.trade_type,
+      volume_near: Number(r.near_amount) || 0,
+      platform_fee_near: (Number(r.near_amount) || 0) * PLATFORM_FEE,
+      creator_fee_near: (Number(r.near_amount) || 0) * CREATOR_FEE,
+      timestamp: r.created_at,
+    }));
+
+    // Next payout: token holders are distributed weekly (every Sunday 00:00 UTC).
+    const now = new Date();
+    const next = new Date(now);
+    const daysUntilSunday = (7 - now.getUTCDay()) % 7 || 7;
+    next.setUTCDate(now.getUTCDate() + daysUntilSunday);
+    next.setUTCHours(0, 0, 0, 0);
+
+    res.json({
+      fees: {
+        platform_rate: PLATFORM_FEE,
+        creator_rate: CREATOR_FEE,
+      },
+      revenue_near: {
+        lifetime: (Number(v.vol_lifetime) || 0) * PLATFORM_FEE,
+        d24h:     (Number(v.vol_24h)      || 0) * PLATFORM_FEE,
+        d7d:      (Number(v.vol_7d)       || 0) * PLATFORM_FEE,
+      },
+      volume_near: {
+        lifetime: Number(v.vol_lifetime) || 0,
+        d24h:     Number(v.vol_24h)      || 0,
+        d7d:      Number(v.vol_7d)       || 0,
+      },
+      trades: {
+        lifetime: Number(v.trades_lifetime) || 0,
+        d24h:     Number(v.trades_24h)      || 0,
+      },
+      coins: {
+        total:     Number(c.coins_total)     || 0,
+        graduated: Number(c.coins_graduated) || 0,
+      },
+      payouts: {
+        cadence: "weekly",
+        next_payout_iso: next.toISOString(),
+        distribution: {
+          stakers: 0.60,   // 60% → $IRONCLAW stakers
+          buybacks: 0.25,  // 25% → token buybacks + burns
+          ops: 0.15,       // 15% → protocol operations
+        },
+      },
+      feed,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;
