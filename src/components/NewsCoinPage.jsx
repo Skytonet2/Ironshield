@@ -8,6 +8,7 @@ import {
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn, Badge } from "@/components/Primitives";
 import { functionCallAction, sendTx, extractTxHash } from "@/lib/walletActions";
+import NewsCoinTerminal from "@/components/NewsCoinTerminal";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 const FACTORY = "newscoin-factory.ironshield.near";
@@ -1147,6 +1148,19 @@ export default function NewsCoinPage() {
   const [page, setPage] = useState(0);
   const [selectedCoin, setSelectedCoin] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
+  const [terminalCoinId, setTerminalCoinId] = useState(null);
+  // Track viewport so we can route desktop clicks → full terminal while
+  // keeping the existing CoinModal slide-up sheet for mobile.
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 900px)").matches : true
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(min-width: 900px)");
+    const handler = (e) => setIsDesktop(e.matches);
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, []);
   const sentinelRef = useRef(null);
   const loadingRef = useRef(false);
   const PAGE_SIZE = 20;
@@ -1245,9 +1259,44 @@ export default function NewsCoinPage() {
   }, [loadMore]);
 
   const openCoin = (coin) => {
+    // Desktop: route into the full 3-column NewsCoinTerminal.
+    // Mobile: keep the existing slide-up CoinModal sheet.
+    if (isDesktop) {
+      setTerminalCoinId(coin.id || coin.coinAddress);
+      return;
+    }
     setSelectedCoin(coin);
     setSelectedPost(coin.post || { content: coin.headline, coins: [coin] });
   };
+
+  // Deep-link support: if a ?id= is present in the hash route, open the
+  // terminal directly on that coin (e.g. from push notifications or feed
+  // sidebar clicks).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const read = () => {
+      const h = window.location.hash || "";
+      const qIdx = h.indexOf("?");
+      if (qIdx === -1) return;
+      const params = new URLSearchParams(h.slice(qIdx + 1));
+      const id = params.get("id");
+      if (id && isDesktop) setTerminalCoinId(id);
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, [isDesktop]);
+
+  // If the terminal is open, render it full-bleed in place of the list.
+  if (terminalCoinId) {
+    return (
+      <NewsCoinTerminal
+        coins={coins}
+        initialCoinId={terminalCoinId}
+        onBack={() => setTerminalCoinId(null)}
+      />
+    );
+  }
 
   return (
     <div style={{ maxWidth: 680, margin: "0 auto", padding: "16px 12px" }}>
