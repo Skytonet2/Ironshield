@@ -2501,6 +2501,7 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet, onOpenProfile
   const t = useTheme();
   const [news, setNews] = useState([]);
   const [ads, setAds]   = useState([]);
+  const [coins, setCoins] = useState([]);
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
@@ -2508,7 +2509,40 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet, onOpenProfile
   useEffect(() => {
     api("/api/feed-news").then(r => setNews(r.news || [])).catch(() => {});
     api("/api/ads/active").then(r => setAds((r.campaigns || []).slice(0, 3))).catch(() => {});
+    // Live NewsCoin list. Refreshes every 30s so the sidebar reflects
+    // mcap/volume changes without reloading the feed.
+    const loadCoins = () => api("/api/newscoin/list?filter=trending&limit=6")
+      .then(r => setCoins(Array.isArray(r?.coins) ? r.coins : Array.isArray(r) ? r : []))
+      .catch(() => {});
+    loadCoins();
+    const id = setInterval(loadCoins, 30000);
+    return () => clearInterval(id);
   }, []);
+
+  const fmtUsdShort = (v) => {
+    const n = Number(v || 0);
+    if (!Number.isFinite(n) || n === 0) return "—";
+    if (n < 1000) return `$${n.toFixed(0)}`;
+    if (n < 1_000_000) return `$${(n / 1000).toFixed(1)}k`;
+    return `$${(n / 1_000_000).toFixed(2)}M`;
+  };
+  const fmtAge = (d) => {
+    if (!d) return "";
+    const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h`;
+    return `${Math.floor(s / 86400)}d`;
+  };
+  const openTerminal = (coin) => {
+    // Deep-link into the NewsCoin nav terminal. The nav router watches
+    // the hash route, and NewsCoinPage reads the `id` query on mount.
+    const id = coin.id || coin.coinAddress;
+    if (!id) return;
+    try {
+      window.location.hash = `#/NewsCoin?id=${encodeURIComponent(id)}`;
+    } catch {}
+  };
 
   // Debounced user search via the same endpoint that powers @-mentions.
   useEffect(() => {
@@ -2587,6 +2621,65 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet, onOpenProfile
           )}
         </div>
       </div>
+
+      {/* NewsCoin — live token list, click to open full terminal */}
+      {coins.length > 0 && card(
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Coins size={14} color="#f97316" /> NewsCoin
+          <span style={{ background: "#f9731622", color: "#f97316", padding: "1px 7px", borderRadius: 6, fontSize: 10, marginLeft: 2, fontWeight: 700 }}>LIVE</span>
+        </span>,
+        <>
+          {coins.map((c, i) => {
+            const change = Number(c.change_24h || 0);
+            const isUp = change >= 0;
+            return (
+              <button
+                key={c.id || c.coinAddress || i}
+                onClick={() => openTerminal(c)}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 14px", border: "none",
+                  borderTop: i ? `1px solid ${t.border}` : "none",
+                  background: "transparent", color: t.text, cursor: "pointer", textAlign: "left",
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "#f97316" }}>${c.ticker}</span>
+                    <span style={{ fontSize: 10, color: t.textDim }}>{fmtAge(c.created_at || c.timestamp)}</span>
+                  </div>
+                  <div style={{
+                    color: t.textMuted, fontSize: 11, whiteSpace: "nowrap",
+                    overflow: "hidden", textOverflow: "ellipsis", marginTop: 1,
+                  }}>
+                    {c.name || c.headline || "—"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", minWidth: 56 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.white }}>{fmtUsdShort(c.mcap_usd)}</div>
+                  <div style={{ fontSize: 10, color: t.textDim }}>mcap</div>
+                </div>
+                <div style={{ textAlign: "right", minWidth: 46 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: isUp ? t.green : t.red }}>
+                    {Number.isFinite(change) ? `${change >= 0 ? "+" : ""}${change.toFixed(1)}%` : "—"}
+                  </div>
+                  <div style={{ fontSize: 10, color: t.textDim }}>{fmtUsdShort(c.volume_24h)}</div>
+                </div>
+              </button>
+            );
+          })}
+          <a
+            href="#/NewsCoin"
+            style={{
+              display: "block", padding: "10px 14px", borderTop: `1px solid ${t.border}`,
+              textAlign: "center", textDecoration: "none", color: "#f97316",
+              fontSize: 12, fontWeight: 700,
+            }}
+          >
+            View all coins →
+          </a>
+        </>
+      )}
 
       {/* Deploy your Agent (replaces X Premium) */}
       {card(
