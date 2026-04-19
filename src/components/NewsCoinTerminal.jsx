@@ -363,6 +363,159 @@ function OrderPanel({ t, coin, wallet, selector, onTraded }) {
   );
 }
 
+// ── First Mover card ─────────────────────────────────────────────────
+// Shows the coin creator + live 2% First-Mover fee earnings.
+function FirstMoverCard({ t, coin }) {
+  const [fm, setFm] = useState(null);
+  const coinId = coin?.id;
+  useEffect(() => {
+    if (!coinId) return;
+    let cancelled = false;
+    fetch(`${API}/api/newscoin/${coinId}/firstmover`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled) setFm(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [coinId]);
+
+  const wallet = fm?.first_mover?.wallet || coin?.creator_wallet || coin?.creator;
+  const display = fm?.first_mover?.display_name || fm?.first_mover?.username || wallet;
+  const lifetime = fm?.earnings_near?.lifetime || 0;
+  const d24h = fm?.earnings_near?.d24h || 0;
+
+  if (!wallet) return null;
+  return (
+    <div style={{
+      padding: 12, borderRadius: 12, background: `${ORANGE}10`,
+      border: `1px solid ${ORANGE}33`,
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6, marginBottom: 8,
+        fontSize: 11, color: ORANGE, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5,
+      }}>
+        <Flame size={12} /> First Mover <span style={{ color: t.textDim, fontWeight: 600, textTransform: "none", letterSpacing: 0 }}>· 2% on every trade</span>
+      </div>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+        fontSize: 12, color: t.white, minWidth: 0,
+      }}>
+        {fm?.first_mover?.pfp_url
+          ? <img src={fm.first_mover.pfp_url} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} />
+          : <div style={{
+              width: 28, height: 28, borderRadius: "50%", background: `${ORANGE}22`,
+              display: "grid", placeItems: "center", color: ORANGE, fontWeight: 800, fontSize: 12,
+            }}>{(display || "?")[0]?.toUpperCase()}</div>}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 700, color: t.white, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {display}
+          </div>
+          <div style={{ fontSize: 10, color: t.textDim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'JetBrains Mono', monospace" }}>
+            {wallet}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        <div style={{ padding: "6px 8px", borderRadius: 8, background: t.bgSurface }}>
+          <div style={{ fontSize: 10, color: t.textDim }}>Lifetime</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.green, fontFamily: "'JetBrains Mono', monospace" }}>
+            {fmtNear(lifetime)} N
+          </div>
+        </div>
+        <div style={{ padding: "6px 8px", borderRadius: 8, background: t.bgSurface }}>
+          <div style={{ fontSize: 10, color: t.textDim }}>24h</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.white, fontFamily: "'JetBrains Mono', monospace" }}>
+            {fmtNear(d24h)} N
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Piecewise bonding curve ──────────────────────────────────────────
+// Visualises the 4-segment curve returned by /api/newscoin/:id/curve
+// with a highlighted active segment and transition progress bar.
+function PiecewiseCurve({ t, coin }) {
+  const [curve, setCurve] = useState(null);
+  const coinId = coin?.id;
+  useEffect(() => {
+    if (!coinId) return;
+    let cancelled = false;
+    fetch(`${API}/api/newscoin/${coinId}/curve`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled) setCurve(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [coinId]);
+
+  if (!curve?.segments?.length) return null;
+  const segs = curve.segments;
+  const target = curve.graduation_mcap_usd || 70000;
+  const activeIdx = curve.activeSegmentIndex ?? -1;
+  const transition = (curve.transition_pct_in_segment || 0);
+
+  return (
+    <div style={{
+      padding: 12, borderRadius: 12, background: t.bgCard,
+      border: `1px solid ${t.border}`,
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 10,
+      }}>
+        <div style={{ fontSize: 12, color: t.textDim, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+          <TrendingUp size={12} /> Bonding Curve
+        </div>
+        <div style={{ fontSize: 11, color: t.textMuted, fontFamily: "'JetBrains Mono', monospace" }}>
+          {Math.round(curve.bonding_pct || 0)}% → ${target.toLocaleString()}
+        </div>
+      </div>
+
+      {/* Segment strip */}
+      <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+        {segs.map((s, i) => (
+          <div key={i} style={{ flex: s.to_usd - s.from_usd, minWidth: 2 }}>
+            <div style={{
+              height: 6, borderRadius: 3, position: "relative",
+              background: i === activeIdx ? s.color : `${s.color}33`,
+              opacity: i < activeIdx ? 0.5 : 1,
+            }}>
+              {i === activeIdx && (
+                <div style={{
+                  position: "absolute", top: 0, left: 0, bottom: 0,
+                  width: `${transition}%`,
+                  background: "#fff", opacity: 0.35, borderRadius: 3,
+                }} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Segment legend */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {segs.map((s, i) => (
+          <div key={i} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            fontSize: 11, color: i === activeIdx ? t.white : t.textDim,
+            padding: "4px 8px", borderRadius: 6,
+            background: i === activeIdx ? `${s.color}14` : "transparent",
+            border: i === activeIdx ? `1px solid ${s.color}44` : "1px solid transparent",
+          }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color }} />
+              <span style={{ fontWeight: i === activeIdx ? 700 : 500 }}>{s.label}</span>
+            </span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: t.textMuted }}>
+              ${Math.round(s.from_usd / 1000)}k–${Math.round(s.to_usd / 1000)}k
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Token Info panel ─────────────────────────────────────────────────
 function TokenInfo({ t, coin, score }) {
   const Row = ({ label, value, color }) => (
@@ -704,6 +857,12 @@ export default function NewsCoinTerminal({ coins, initialCoinId, score, onBack }
             }}>PRESET {n}</button>
           ))}
         </div>
+
+        {/* First Mover card — the creator earns 2% of every trade forever */}
+        <FirstMoverCard t={t} coin={active} />
+
+        {/* Piecewise bonding curve */}
+        <PiecewiseCurve t={t} coin={active} />
 
         {/* Token Info */}
         <div>

@@ -9,6 +9,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn, Badge } from "@/components/Primitives";
 import { functionCallAction, sendTx, extractTxHash } from "@/lib/walletActions";
 import NewsCoinTerminal from "@/components/NewsCoinTerminal";
+import { lifecycleFor } from "@/lib/newscoinLifecycle";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 const FACTORY = "newscoin-factory.ironshield.near";
@@ -1076,6 +1077,7 @@ function CoinRow({ coin, onClick }) {
   const t = useTheme();
   const change = Number(coin.change_24h || 0);
   const isUp = change >= 0;
+  const lc = lifecycleFor(coin);
 
   return (
     <div
@@ -1095,9 +1097,14 @@ function CoinRow({ coin, onClick }) {
         }}>
           {coin.headline || coin.name}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: ORANGE }}>${coin.ticker}</span>
           <span style={{ fontSize: 10, color: t.textDim }}>{timeAgo(coin.created_at || coin.timestamp)}</span>
+          <span style={{
+            fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+            padding: "1px 6px", borderRadius: 6,
+            background: `${lc.color}18`, color: lc.color, border: `1px solid ${lc.color}44`,
+          }}>{lc.label}</span>
         </div>
       </div>
 

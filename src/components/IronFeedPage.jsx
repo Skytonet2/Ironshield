@@ -2644,9 +2644,17 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet, onOpenProfile
                 }}
               >
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: "#f97316" }}>${c.ticker}</span>
                     <span style={{ fontSize: 10, color: t.textDim }}>{fmtAge(c.created_at || c.timestamp)}</span>
+                    {c.lifecycle?.label && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+                        padding: "1px 5px", borderRadius: 5,
+                        background: `${c.lifecycle.color}18`, color: c.lifecycle.color,
+                        border: `1px solid ${c.lifecycle.color}44`,
+                      }}>{c.lifecycle.label}</span>
+                    )}
                   </div>
                   <div style={{
                     color: t.textMuted, fontSize: 11, whiteSpace: "nowrap",

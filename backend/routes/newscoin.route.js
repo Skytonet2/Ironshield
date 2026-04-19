@@ -62,6 +62,26 @@ const FEE_WAIVED = new Set(["skyto.near"]);
 // Helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Fee model — must match the on-chain contract + MintModal disclosures.
+// ---------------------------------------------------------------------------
+const CREATOR_FEE_RATE  = 0.02;   // 2% → First Mover
+const PLATFORM_FEE_RATE = 0.01;   // 1% → Treasury
+const GRADUATION_MCAP_USD_DEFAULT = 70_000;
+
+// Derive a stable lifecycle state from bonding % and boolean flags.
+// Kept in sync with src/lib/newscoinLifecycle.js on the frontend so
+// badges mean the same thing everywhere.
+function lifecycleFor({ mcap_usd = 0, graduated = false, killed = false, target_usd = GRADUATION_MCAP_USD_DEFAULT }) {
+  if (killed)     return { key: "killed",      label: "Killed",      color: "#ef4444" };
+  if (graduated)  return { key: "graduated",   label: "Graduated",   color: "#10b981" };
+  const pct = Math.min(100, (Number(mcap_usd) / target_usd) * 100);
+  if (pct >= 90)  return { key: "graduating",  label: "Graduating",  color: "#34d399" };
+  if (pct >= 60)  return { key: "peak",        label: "Peak",        color: "#f97316" };
+  if (pct >= 20)  return { key: "trending",    label: "Trending",    color: "#fb923c" };
+  return              { key: "early",          label: "Early",       color: "#eab308" };
+}
+
 function ensureDb(res) {
   if (!db || typeof db.query !== "function") {
     res.status(503).json({ error: "Backend database is not configured" });
@@ -171,6 +191,9 @@ router.get("/list", async (req, res, next) => {
     const coins = rows.map((r) => {
       const ageMs = Date.now() - new Date(r.created_at).getTime();
       const ageHours = ageMs / 3_600_000;
+      const mcapUsd = Number(r.mcap_usd) || 0;
+      const volume24h = Number(r.volume_24h) || 0;
+      const lc = lifecycleFor({ mcap_usd: mcapUsd, graduated: r.graduated });
       return {
         id: r.id,
         storyId: r.story_id,
@@ -178,15 +201,27 @@ router.get("/list", async (req, res, next) => {
         ticker: r.ticker,
         creator: r.creator,
         mcap: Number(r.mcap),
-        mcapUsd: Number(r.mcap_usd),
+        mcapUsd,
+        mcap_usd: mcapUsd,   // snake_case for frontend row components
         price: Number(r.price),
         priceNear: Number(r.price),
-        volume24h: Number(r.volume_24h),
+        price_near: Number(r.price),
+        volume24h,
+        volume_24h: volume24h,
         change24h: 0, // TODO: compute from sparkline
+        change_24h: 0,
         age: `${Math.round(ageHours)}h`,
+        created_at: r.created_at,
         tradeCount: r.trade_count,
         graduated: r.graduated,
+        lifecycle: lc,
+        // First Mover context — the creator earns 2% on every trade forever.
+        firstMover: {
+          wallet: r.creator,
+          fees_earned_near: volume24h * CREATOR_FEE_RATE, // last 24h slice shown in list
+        },
         sparkline: sparkMap[r.id] || [],
+        headline: r.post_content || r.name,
         post: r.post_id
           ? { id: r.post_id, content: r.post_content, author: r.post_author }
           : null,
@@ -301,22 +336,49 @@ router.get("/:coinId/curve", async (req, res, next) => {
     if (!rows.length) return res.status(404).json({ error: "coin not found" });
 
     const coin = rows[0];
+    const target = GRADUATION_MCAP_USD_DEFAULT;
+    const mcap = Number(coin.mcap_usd) || 0;
+    const basePrice = Number(coin.price) || 0;
 
-    // Bonding curve segments derived from current price / mcap
-    // In the future this can read from a dedicated curve-config table.
-    const currentSegments = [
-      { from: 0, to: 1000, pricePerToken: Number(coin.price) * 0.5 },
-      { from: 1000, to: 10000, pricePerToken: Number(coin.price) * 0.8 },
-      { from: 10000, to: 100000, pricePerToken: Number(coin.price) },
-    ];
+    // Piecewise bonding curve: price grows more steeply as bonding progresses.
+    // Slopes are multiplicative on the current spot price and sized so the
+    // last segment tops out at ~1.8× base at graduation — matches the
+    // on-chain curve shape used by the contract for MVP.
+    const segments = [
+      { label: "Discovery",  from_usd: 0,                  to_usd: target * 0.20, from_mult: 0.40, to_mult: 0.70, color: "#eab308" },
+      { label: "Traction",   from_usd: target * 0.20,      to_usd: target * 0.60, from_mult: 0.70, to_mult: 1.10, color: "#fb923c" },
+      { label: "Peak",       from_usd: target * 0.60,      to_usd: target * 0.90, from_mult: 1.10, to_mult: 1.50, color: "#f97316" },
+      { label: "Graduation", from_usd: target * 0.90,      to_usd: target,        from_mult: 1.50, to_mult: 1.80, color: "#10b981" },
+    ].map(s => ({
+      ...s,
+      from_price_near: basePrice * s.from_mult,
+      to_price_near:   basePrice * s.to_mult,
+      active: mcap >= s.from_usd && mcap < s.to_usd,
+    }));
 
-    // TODO: pending curve updates will come from governance proposals
+    const activeIdx = segments.findIndex(s => s.active);
+    const activeSeg = activeIdx === -1 ? null : segments[activeIdx];
+    const transition = activeSeg
+      ? Math.min(1, (mcap - activeSeg.from_usd) / Math.max(1, activeSeg.to_usd - activeSeg.from_usd))
+      : (coin.graduated ? 1 : 0);
+
     res.json({
-      currentSegments,
+      graduation_mcap_usd: target,
+      current_mcap_usd: mcap,
+      bonding_pct: Math.min(100, (mcap / target) * 100),
+      lifecycle: lifecycleFor({ mcap_usd: mcap, graduated: coin.graduated }),
+      segments,
+      activeSegmentIndex: activeIdx,
+      transition_pct_in_segment: Math.round(transition * 100),
+      last_update: coin.created_at,
+      cooldown_remaining_s: 0,
+      pending_update: null,
+      // Legacy aliases — CurveInfoPanel checked these
+      currentSegments: segments,
       pendingUpdate: null,
       lastUpdateAt: coin.created_at,
       cooldownEndsAt: null,
-      transitionProgress: null,
+      transitionProgress: Math.round(transition * 100),
     });
   } catch (e) {
     next(e);
@@ -698,6 +760,129 @@ router.get("/treasury", async (_req, res, next) => {
         },
       },
       feed,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/newscoin/:coinId/firstmover
+// Per-coin First Mover stats — the creator earns 2% of every trade forever.
+// ---------------------------------------------------------------------------
+router.get("/:coinId/firstmover", async (req, res, next) => {
+  try {
+    if (!ensureDb(res)) return;
+    const coinId = parseInt(req.params.coinId);
+    if (!Number.isFinite(coinId)) return res.status(400).json({ error: "bad coinId" });
+
+    const coinRes = await db.query(
+      `SELECT c.id, c.name, c.ticker, c.creator, c.mcap_usd, c.graduated, c.created_at,
+              u.username, u.display_name, u.pfp_url
+       FROM feed_newscoins c
+       LEFT JOIN feed_users u ON u.wallet_address = c.creator
+       WHERE c.id = $1`,
+      [coinId]
+    );
+    if (!coinRes.rows.length) return res.status(404).json({ error: "coin not found" });
+    const coin = coinRes.rows[0];
+
+    const feesRes = await db.query(`
+      SELECT
+        COALESCE(SUM(near_amount), 0)::float                                                    AS vol_lifetime,
+        COALESCE(SUM(CASE WHEN created_at > NOW() - INTERVAL '24 hours' THEN near_amount ELSE 0 END), 0)::float AS vol_24h,
+        COALESCE(SUM(CASE WHEN created_at > NOW() - INTERVAL '7 days'  THEN near_amount ELSE 0 END), 0)::float AS vol_7d,
+        COUNT(*)::int AS trades_lifetime
+      FROM feed_newscoin_trades WHERE coin_id = $1
+    `, [coinId]);
+    const v = feesRes.rows[0] || {};
+
+    const recent = await db.query(`
+      SELECT id, trader, trade_type, near_amount, created_at
+      FROM feed_newscoin_trades
+      WHERE coin_id = $1
+      ORDER BY created_at DESC
+      LIMIT 10
+    `, [coinId]);
+
+    res.json({
+      coin: {
+        id: coin.id,
+        name: coin.name,
+        ticker: coin.ticker,
+        mcap_usd: Number(coin.mcap_usd) || 0,
+        lifecycle: lifecycleFor({ mcap_usd: Number(coin.mcap_usd) || 0, graduated: coin.graduated }),
+      },
+      first_mover: {
+        wallet: coin.creator,
+        username: coin.username,
+        display_name: coin.display_name,
+        pfp_url: coin.pfp_url,
+        since: coin.created_at,
+      },
+      earnings_near: {
+        lifetime: (Number(v.vol_lifetime) || 0) * CREATOR_FEE_RATE,
+        d24h:     (Number(v.vol_24h)      || 0) * CREATOR_FEE_RATE,
+        d7d:      (Number(v.vol_7d)       || 0) * CREATOR_FEE_RATE,
+      },
+      volume_near: {
+        lifetime: Number(v.vol_lifetime) || 0,
+        d24h:     Number(v.vol_24h)      || 0,
+      },
+      trades_lifetime: Number(v.trades_lifetime) || 0,
+      fee_rate: CREATOR_FEE_RATE,
+      recent_trades: recent.rows.map(r => ({
+        id: r.id,
+        trader: r.trader,
+        side: r.trade_type,
+        volume_near: Number(r.near_amount) || 0,
+        fee_near: (Number(r.near_amount) || 0) * CREATOR_FEE_RATE,
+        timestamp: r.created_at,
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/newscoin/firstmover/leaderboard
+// Top creators by cumulative 2% creator-fee earnings (all coins they launched).
+// ---------------------------------------------------------------------------
+router.get("/firstmover/leaderboard", async (_req, res, next) => {
+  try {
+    if (!ensureDb(res)) return;
+
+    const { rows } = await db.query(`
+      SELECT
+        c.creator                                                                   AS wallet,
+        u.username, u.display_name, u.pfp_url,
+        COUNT(DISTINCT c.id)::int                                                   AS coins_launched,
+        COUNT(DISTINCT c.id) FILTER (WHERE c.graduated)::int                        AS coins_graduated,
+        COALESCE(SUM(t.near_amount), 0)::float                                      AS volume_near,
+        COALESCE(SUM(CASE WHEN t.created_at > NOW() - INTERVAL '24 hours'
+                          THEN t.near_amount ELSE 0 END), 0)::float                 AS volume_24h
+      FROM feed_newscoins c
+      LEFT JOIN feed_newscoin_trades t ON t.coin_id = c.id
+      LEFT JOIN feed_users u           ON u.wallet_address = c.creator
+      GROUP BY c.creator, u.username, u.display_name, u.pfp_url
+      ORDER BY volume_near DESC
+      LIMIT 25
+    `);
+
+    res.json({
+      fee_rate: CREATOR_FEE_RATE,
+      creators: rows.map(r => ({
+        wallet: r.wallet,
+        username: r.username,
+        display_name: r.display_name,
+        pfp_url: r.pfp_url,
+        coins_launched: Number(r.coins_launched) || 0,
+        coins_graduated: Number(r.coins_graduated) || 0,
+        earnings_lifetime_near: (Number(r.volume_near) || 0) * CREATOR_FEE_RATE,
+        earnings_24h_near:      (Number(r.volume_24h)  || 0) * CREATOR_FEE_RATE,
+        volume_lifetime_near:   Number(r.volume_near)  || 0,
+      })),
     });
   } catch (e) {
     next(e);
