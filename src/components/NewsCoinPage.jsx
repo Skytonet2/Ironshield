@@ -617,6 +617,24 @@ export function MintModal({ post, wallet, selector, onClose, onMinted }) {
       });
       const result = await sendTx(w, wallet, FACTORY, [action]);
       const txHash = extractTxHash(result);
+
+      // A NEAR tx can report top-level success while a downstream receipt
+      // (sub-account creation, WASM deploy, registry call) panics. Walk
+      // the receipts_outcome array and surface the first Failure so the
+      // user doesn't think the mint succeeded when it silently didn't.
+      const receipts = Array.isArray(result?.receipts_outcome) ? result.receipts_outcome : [];
+      for (const r of receipts) {
+        const status = r?.outcome?.status;
+        if (status && typeof status === "object" && "Failure" in status) {
+          const f = status.Failure;
+          const msg = f?.ActionError?.kind
+            ? (typeof f.ActionError.kind === "string"
+                ? f.ActionError.kind
+                : JSON.stringify(f.ActionError.kind))
+            : (f?.error_message || JSON.stringify(f).slice(0, 200));
+          throw new Error(`Mint failed on-chain: ${String(msg).slice(0, 180)}`);
+        }
+      }
       // Optimistically cache in DB so it appears in the feed/list immediately.
       // Contract address is derived as coin{N}.{factory}; the indexer will
       // reconcile exact indexing later.

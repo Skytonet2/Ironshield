@@ -225,8 +225,17 @@ impl NewsCoinFactory {
         let coin_index = self.coin_counter;
         self.coin_counter += 1;
 
-        // Sub-account: coin0.factory.near, coin1.factory.near, etc.
-        let sub_account_str = format!("coin{}.{}", coin_index, env::current_account_id());
+        // Sub-account name derives from the ticker so addresses are
+        // human-readable: e.g. `nbull-7.newscoin-factory.ironshield.near`
+        // rather than the opaque `coin7...`. We append the counter to
+        // guarantee uniqueness without needing a global used-names set.
+        let sanitized = Self::sanitize_label(&ticker);
+        let label = if sanitized.is_empty() {
+            format!("coin{}", coin_index)
+        } else {
+            format!("{}-{}", sanitized, coin_index)
+        };
+        let sub_account_str = format!("{}.{}", label, env::current_account_id());
         let coin_address: AccountId = sub_account_str
             .parse()
             .unwrap_or_else(|_| env::panic_str("Invalid sub-account"));
@@ -407,5 +416,31 @@ impl NewsCoinFactory {
             self.owner_id,
             "Only owner can call this method"
         );
+    }
+
+    /// Turn a free-form ticker into a valid NEAR sub-account label:
+    ///   • lowercase
+    ///   • only [a-z0-9_-]
+    ///   • leading/trailing separators trimmed
+    ///   • max 24 chars (leaves room for `-{index}.<factory>` and the
+    ///     NEAR 64-char account limit)
+    /// Returns an empty string if nothing valid remains — the caller
+    /// falls back to `coin{index}` in that case.
+    fn sanitize_label(raw: &str) -> String {
+        let mut out = String::with_capacity(raw.len());
+        for c in raw.chars() {
+            let lc = c.to_ascii_lowercase();
+            if lc.is_ascii_alphanumeric() || lc == '_' || lc == '-' {
+                out.push(lc);
+            }
+        }
+        while out.starts_with(|c: char| !c.is_ascii_alphanumeric()) {
+            out.remove(0);
+        }
+        while out.ends_with(|c: char| !c.is_ascii_alphanumeric()) {
+            out.pop();
+        }
+        out.truncate(24);
+        out
     }
 }
