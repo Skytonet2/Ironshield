@@ -7,7 +7,7 @@ import {
   Smile, MapPin, Calendar, BarChart3, Home as HomeIcon, ArrowLeft,
   Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins, Phone, Eye,
   Settings, Copy as CopyIcon, Users as UsersIcon, RefreshCw,
-  Twitter, Plus, ExternalLink, Megaphone,
+  Plus, ExternalLink, Megaphone,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -2777,8 +2777,11 @@ function TweetCard({ tweet, t }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ color: t.white, fontWeight: 700 }}>@{handle}</span>
-          <span style={{ ...chipStyle("#1D9BF0"), fontSize: 9 }}>
-            <Twitter size={10} /> X
+          <span style={{
+            ...chipStyle("#1D9BF0"), fontSize: 9, padding: "1px 6px",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          }}>
+            𝕏
           </span>
           <span style={{ color: t.textDim, fontSize: 13 }}>· {ago}</span>
           <a href={tUrl} target="_blank" rel="noreferrer"
