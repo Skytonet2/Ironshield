@@ -7,6 +7,7 @@ import {
   Smile, MapPin, Calendar, BarChart3, Home as HomeIcon, ArrowLeft,
   Zap, Lock, Flame, CheckCircle2, FileText, Type as TypeIcon, Coins, Phone, Eye,
   Settings, Copy as CopyIcon, Users as UsersIcon, RefreshCw,
+  Twitter, Plus, ExternalLink, Megaphone,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { Btn } from "@/components/Primitives";
@@ -2747,6 +2748,260 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet, onOpenProfile
   );
 }
 
+/* ───────────────────── Voices tab (X/Twitter aggregator) ─────────────────────
+
+Inspired by Uxento's watchlist-feed surface. IronFeed used to be post-only;
+this tab adds a second mode that pulls tweets from X accounts curated by
+the user (or, if they haven't customised, a CT preset served by the
+backend). The backend handles Nitter/RSS fallback and caching — the UI
+stays dumb: fetch → render tweet cards → "Manage" button to edit the list.
+
+*/
+function TweetCard({ tweet, t }) {
+  const handle = tweet.handle || "x";
+  const avatar = `https://unavatar.io/twitter/${handle}`;
+  const ago    = tweet.createdAt ? timeAgo(tweet.createdAt) : "";
+  const tUrl   = tweet.url || `https://x.com/${handle}`;
+  return (
+    <article style={{
+      display: "flex", gap: 12, padding: "14px 18px",
+      borderBottom: `1px solid ${t.border}`,
+    }}>
+      <a href={`https://x.com/${handle}`} target="_blank" rel="noreferrer"
+         style={{ flexShrink: 0 }}>
+        <img src={avatar} alt={handle} width={40} height={40}
+          style={{ borderRadius: "50%", background: t.bgSurface }}
+          onError={(e) => { e.currentTarget.style.background = t.accent + "22"; e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"; }}
+        />
+      </a>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ color: t.white, fontWeight: 700 }}>@{handle}</span>
+          <span style={{ ...chipStyle("#1D9BF0"), fontSize: 9 }}>
+            <Twitter size={10} /> X
+          </span>
+          <span style={{ color: t.textDim, fontSize: 13 }}>· {ago}</span>
+          <a href={tUrl} target="_blank" rel="noreferrer"
+             style={{ marginLeft: "auto", color: t.textMuted, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, textDecoration: "none" }}>
+            Open <ExternalLink size={12} />
+          </a>
+        </div>
+        <div style={{ color: t.text, fontSize: 15, lineHeight: 1.45, marginTop: 4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {tweet.text}
+        </div>
+        {Array.isArray(tweet.media) && tweet.media.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: tweet.media.length === 1 ? "1fr" : "1fr 1fr", gap: 6, marginTop: 10 }}>
+            {tweet.media.slice(0, 4).map((src, i) => (
+              <img key={i} src={src} alt="" loading="lazy"
+                style={{ width: "100%", maxHeight: 340, objectFit: "cover", borderRadius: 12, border: `1px solid ${t.border}` }}
+                onError={(e) => { e.currentTarget.style.display = "none"; }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ManageHandlesModal({ wallet, onClose, onChanged }) {
+  const t = useTheme();
+  const [handles, setHandles] = useState([]);
+  const [preset, setPreset]   = useState([]);
+  const [custom, setCustom]   = useState(false);
+  const [input, setInput]     = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [err, setErr]         = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api(`/api/xfeed/follows?wallet=${encodeURIComponent(wallet || "")}`);
+      setHandles(r.handles || []);
+      setPreset(r.preset || []);
+      setCustom(!!r.custom);
+    } catch (e) { setErr(e.message); }
+  }, [wallet]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!wallet) return;
+    const h = input.trim().replace(/^@/, "");
+    if (!/^[A-Za-z0-9_]{1,15}$/.test(h)) { setErr("Invalid X handle"); return; }
+    setBusy(true); setErr("");
+    try {
+      const r = await api("/api/xfeed/follows", { method: "POST", body: { wallet, handle: h } });
+      setHandles(r.handles || []);
+      setCustom(true);
+      setInput("");
+      onChanged?.();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async (h) => {
+    if (!wallet) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await api("/api/xfeed/follows", { method: "DELETE", body: { wallet, handle: h } });
+      setHandles(r.handles || []);
+      setCustom((r.handles || []).length > 0);
+      onChanged?.();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal onClose={onClose} title="Manage X accounts" maxWidth={520}>
+      {!wallet && (
+        <div style={{ padding: 10, background: t.bgSurface, borderRadius: 10, color: t.textDim, marginBottom: 12, fontSize: 13 }}>
+          Connect a wallet to save your own list. The CT preset below will keep rendering for now.
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="@handle e.g. cobie"
+          style={{ ...inputStyle(t), flex: 1 }}
+          disabled={!wallet || busy}
+        />
+        <Btn onClick={add} disabled={!wallet || busy || !input.trim()}>
+          <Plus size={14} /> Add
+        </Btn>
+      </div>
+      {err && <div style={{ color: "#F87171", fontSize: 13, marginBottom: 10 }}>{err}</div>}
+
+      <div style={{ fontSize: 12, color: t.textDim, marginBottom: 6 }}>
+        {custom
+          ? `Your list (${handles.length})`
+          : `Default CT preset (${handles.length}) — add a handle to start your own list`}
+      </div>
+      <div style={{ maxHeight: 320, overflowY: "auto", border: `1px solid ${t.border}`, borderRadius: 10 }}>
+        {handles.map((h) => (
+          <div key={h} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: `1px solid ${t.border}` }}>
+            <img src={`https://unavatar.io/twitter/${h}`} alt=""
+              width={28} height={28} style={{ borderRadius: "50%", background: t.bgSurface }}
+              onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+            />
+            <a href={`https://x.com/${h}`} target="_blank" rel="noreferrer"
+               style={{ color: t.text, fontWeight: 600, textDecoration: "none", flex: 1 }}>
+              @{h}
+            </a>
+            {wallet && (
+              <button
+                onClick={() => remove(h)}
+                disabled={busy}
+                title="Remove"
+                style={{ background: "none", border: "none", cursor: "pointer", color: t.textMuted }}>
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        ))}
+        {handles.length === 0 && (
+          <div style={{ padding: 16, textAlign: "center", color: t.textDim, fontSize: 13 }}>No handles yet.</div>
+        )}
+      </div>
+
+      {custom && preset.length > 0 && (
+        <div style={{ marginTop: 14, fontSize: 12, color: t.textDim }}>
+          CT preset available to re-add: {preset.filter((p) => !handles.map(h => h.toLowerCase()).includes(p.toLowerCase())).slice(0, 10).map((p) => (
+            <button key={p} onClick={() => { setInput(p); }} style={{
+              display: "inline-block", margin: "0 4px 4px 0", padding: "2px 8px",
+              borderRadius: 999, background: t.bgSurface, border: `1px solid ${t.border}`,
+              color: t.text, fontSize: 11, cursor: "pointer",
+            }}>@{p}</button>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function VoicesFeed({ wallet, t, onManage }) {
+  const [tweets, setTweets]         = useState([]);
+  const [handles, setHandles]       = useState([]);
+  const [loading, setLoading]       = useState(false);
+  const [err, setErr]               = useState("");
+  const [notConfigured, setNC]      = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const q = wallet ? `?wallet=${encodeURIComponent(wallet)}` : "";
+      const r = await api(`/api/xfeed/timeline${q}`);
+      setTweets(r.tweets || []);
+      setHandles(r.handles || []);
+      setNC(!!r.notConfigured);
+    } catch (e) {
+      setErr(e.message);
+    } finally { setLoading(false); }
+  }, [wallet]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, padding: "10px 18px",
+        borderBottom: `1px solid ${t.border}`, background: t.bgCard,
+      }}>
+        <Megaphone size={16} color={t.accent} />
+        <div style={{ fontSize: 13, color: t.text, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          Watching <strong>{handles.length}</strong> voice{handles.length === 1 ? "" : "s"}
+          {handles.length > 0 && <span style={{ color: t.textDim }}> · @{handles.slice(0, 3).join(", @")}{handles.length > 3 ? "…" : ""}</span>}
+        </div>
+        <button
+          onClick={load}
+          title="Refresh"
+          disabled={loading}
+          style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 8, padding: "4px 8px", color: t.text, cursor: "pointer" }}>
+          <RefreshCw size={13} className={loading ? "ix-spin" : ""} />
+        </button>
+        <Btn onClick={onManage}>
+          <Settings size={14} /> Manage
+        </Btn>
+      </div>
+
+      {notConfigured && (
+        <div style={{ padding: 20, color: t.textDim, fontSize: 13, borderBottom: `1px solid ${t.border}`, background: t.bgSurface }}>
+          The X feed aggregator isn't configured on this deployment. Admin: set
+          <code style={{ margin: "0 4px", padding: "1px 6px", background: t.bgCard, borderRadius: 4, color: t.text }}>NITTER_BASE_URL</code>
+          in the backend .env to enable live tweets. In the meantime, your
+          watchlist below is still editable and will populate once configured.
+          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {handles.slice(0, 12).map((h) => (
+              <a key={h} href={`https://x.com/${h}`} target="_blank" rel="noreferrer"
+                 style={{ color: t.accent, textDecoration: "none", padding: "2px 8px", borderRadius: 999, border: `1px solid ${t.border}`, fontSize: 12 }}>
+                @{h}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+      {err && !notConfigured && (
+        <div style={{ padding: 20, color: "#F87171", fontSize: 13 }}>{err}</div>
+      )}
+      {tweets.map((tw) => (
+        <TweetCard key={tw.id} tweet={tw} t={t} />
+      ))}
+      {!loading && !err && !notConfigured && tweets.length === 0 && (
+        <div style={{ padding: 40, textAlign: "center", color: t.textDim, fontSize: 14 }}>
+          No tweets right now. Try refreshing in a minute — upstream may be cold.
+        </div>
+      )}
+      {loading && (
+        <div style={{ padding: 20, textAlign: "center", color: t.textDim }}>
+          <Loader2 size={16} className="ix-spin" />
+          <style>{`.ix-spin { animation: ixSpin 1s linear infinite; } @keyframes ixSpin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ───────────────────── Infinite scroll sentinel ───────────────────── */
 function InfiniteScrollSentinel({ cursor, loading, onMore, t }) {
   const ref = useRef(null);
@@ -2795,6 +3050,8 @@ export default function IronFeedPage({ openWallet }) {
   const [coinPost, setCoinPost] = useState(null);   // { post, coins } for CoinModal
   const [mintPost, setMintPost] = useState(null);   // post for MintModal
   const [railOpen, setRailOpen] = useState(true);
+  const [manageVoices, setManageVoices] = useState(false);
+  const [voicesRefreshKey, setVoicesRefreshKey] = useState(0);
 
   // Deep-link support: #/Feed?profile=alice.near  or  #/Feed?invite=bob.near
   //                    #/Feed?joinGroup=<token>   (opens DMs + joins that group)
@@ -2852,6 +3109,8 @@ export default function IronFeedPage({ openWallet }) {
   }, [wallet]);
 
   const load = useCallback(async (reset = true) => {
+    // "voices" tab isn't a post feed — it's an X aggregator handled by VoicesFeed.
+    if (tab === "voices") return;
     setLoading(true);
     try {
       const base = `/api/feed/${tab}`;
@@ -2863,7 +3122,7 @@ export default function IronFeedPage({ openWallet }) {
     finally { setLoading(false); }
   }, [tab, cursor, wallet]);
 
-  useEffect(() => { load(true); /* eslint-disable-next-line */ }, [tab, wallet]);
+  useEffect(() => { if (tab !== "voices") load(true); /* eslint-disable-next-line */ }, [tab, wallet]);
 
   const onPosted = (p) => setPosts(prev => [p, ...prev]);
   const share = async (p) => {
@@ -2932,7 +3191,7 @@ export default function IronFeedPage({ openWallet }) {
             <h2 style={{ margin: 0, color: t.white, fontSize: 20, fontWeight: 800 }}>IronFeed</h2>
           </div>
           <div style={{ display: "flex" }}>
-            {[["foryou", "For you"], ["following", "Squad"]].map(([k, label]) => (
+            {[["foryou", "For you"], ["following", "Squad"], ["voices", "Voices"]].map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)} style={{
                 flex: 1, padding: "14px 0", background: "none", border: "none", cursor: "pointer",
                 color: tab === k ? t.white : t.textMuted, fontWeight: 700, fontSize: 15,
@@ -2945,27 +3204,38 @@ export default function IronFeedPage({ openWallet }) {
           </div>
         </header>
 
-        <ComposePost wallet={wallet} selector={selector} onPosted={onPosted} />
+        {tab === "voices" ? (
+          <VoicesFeed
+            key={voicesRefreshKey}
+            wallet={wallet}
+            t={t}
+            onManage={() => setManageVoices(true)}
+          />
+        ) : (
+          <>
+            <ComposePost wallet={wallet} selector={selector} onPosted={onPosted} />
 
-        {posts.length === 0 && !loading && (
-          <div style={{ padding: 40, textAlign: "center", color: t.textDim }}>
-            {tab === "following" ? `${FOLLOW} people to fill your Squad feed.` : "No posts yet: be first!"}
-          </div>
+            {posts.length === 0 && !loading && (
+              <div style={{ padding: 40, textAlign: "center", color: t.textDim }}>
+                {tab === "following" ? `${FOLLOW} people to fill your Squad feed.` : "No posts yet: be first!"}
+              </div>
+            )}
+            {posts.map(p => (
+              <PostCard key={p.id + (p._promoted ? "-ad" : "")} post={p} viewerWallet={wallet}
+                onRefresh={() => load(true)}
+                onOpenComments={() => setOpenComments(p)}
+                onShare={() => share(p)}
+                onBoost={() => setBoostPost(p)}
+                onOpenProfile={(w) => setOpenProfile(w)}
+                onTip={(post) => wallet ? setTipPost(post) : openWallet?.()}
+                onOpenTipHistory={(post) => setTipHistoryPost(post)}
+                onOpenCoin={(post, coins) => setCoinPost({ post, coins })}
+                onMintCoin={(post) => wallet ? setMintPost(post) : openWallet?.()}
+                openWallet={openWallet} />
+            ))}
+            <InfiniteScrollSentinel cursor={cursor} loading={loading} onMore={() => load(false)} t={t} />
+          </>
         )}
-        {posts.map(p => (
-          <PostCard key={p.id + (p._promoted ? "-ad" : "")} post={p} viewerWallet={wallet}
-            onRefresh={() => load(true)}
-            onOpenComments={() => setOpenComments(p)}
-            onShare={() => share(p)}
-            onBoost={() => setBoostPost(p)}
-            onOpenProfile={(w) => setOpenProfile(w)}
-            onTip={(post) => wallet ? setTipPost(post) : openWallet?.()}
-            onOpenTipHistory={(post) => setTipHistoryPost(post)}
-            onOpenCoin={(post, coins) => setCoinPost({ post, coins })}
-            onMintCoin={(post) => wallet ? setMintPost(post) : openWallet?.()}
-            openWallet={openWallet} />
-        ))}
-        <InfiniteScrollSentinel cursor={cursor} loading={loading} onMore={() => load(false)} t={t} />
       </section>
 
       {/* Right rail */}
@@ -2995,6 +3265,13 @@ export default function IronFeedPage({ openWallet }) {
       </aside>
       )}
 
+      {manageVoices && (
+        <ManageHandlesModal
+          wallet={wallet}
+          onClose={() => setManageVoices(false)}
+          onChanged={() => setVoicesRefreshKey(k => k + 1)}
+        />
+      )}
       {openComments && <CommentsModal post={openComments} wallet={wallet} openWallet={openWallet} onClose={() => setOpenComments(null)} />}
       {openProfile && <ProfileModal wallet={openProfile} viewerWallet={wallet} viewerSelector={selector} openWallet={openWallet}
         onOpenDM={(w) => { setOpenProfile(null); setDmPeer(w); setOpenDMs(true); }} onClose={() => setOpenProfile(null)} />}

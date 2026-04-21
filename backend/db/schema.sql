@@ -591,3 +591,18 @@ ALTER TABLE feed_group_chats ADD COLUMN IF NOT EXISTS invite_token TEXT;
 ALTER TABLE feed_group_chats ADD COLUMN IF NOT EXISTS pfp_url      TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_group_chats_handle ON feed_group_chats(LOWER(handle)) WHERE handle IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_group_chats_invite ON feed_group_chats(invite_token) WHERE invite_token IS NOT NULL;
+
+-- ============================================================
+-- IronFeed "Voices" tab — per-wallet X/Twitter handle follow list.
+-- Each row is (wallet, handle) with handle normalized case-insensitively
+-- via the unique index. Missing rows = wallet hasn't customized their
+-- list and the xfeed route falls back to the curated CT preset.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS feed_xfeed_follows (
+  id SERIAL PRIMARY KEY,
+  wallet TEXT NOT NULL,
+  handle TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_xfeed_follows_unique ON feed_xfeed_follows(wallet, LOWER(handle));
+CREATE INDEX IF NOT EXISTS idx_xfeed_follows_wallet ON feed_xfeed_follows(wallet);
