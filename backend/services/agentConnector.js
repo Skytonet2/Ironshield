@@ -1,11 +1,27 @@
 // backend/services/agentConnector.js
+//
+// Agent dispatch for IronShield. This module has two modes:
+//
+//   1. Legacy (default): direct OpenAI-compatible chat completions via
+//      cloud-api.near.ai. Stateless, per-call system+user prompt.
+//   2. IronClaw agent mode (IRONCLAW_AGENT_MODE=true): routes every
+//      call through our hosted agent on IronClaw (stark-goat.agent0.
+//      near.ai) using threads + SSE. This is the "built on IronClaw"
+//      path — our agent runs IN IronClaw's runtime, we are a client.
+//
+// Both modes expose the same public surface (summarize, research,
+// verify, scan, chat, portfolio, personalAssistant, suggestPostFormats)
+// so callers don't need to know which is active. Governance-injected
+// prompt + mission are still prepended in both modes.
 const fetch = require("node-fetch");
 const path  = require("path");
 const fs    = require("fs");
+const ironclaw = require("./ironclawClient");
 
-const ENDPOINT = process.env.NEAR_AI_ENDPOINT || "https://cloud-api.near.ai/v1/chat/completions";
-const API_KEY  = process.env.NEAR_AI_KEY       || "";
-const MODEL    = process.env.NEAR_AI_MODEL     || "Qwen/Qwen3-30B-A3B-Instruct-2507";
+const ENDPOINT        = process.env.NEAR_AI_ENDPOINT     || "https://cloud-api.near.ai/v1/chat/completions";
+const API_KEY         = process.env.NEAR_AI_KEY          || "";
+const MODEL           = process.env.NEAR_AI_MODEL        || "Qwen/Qwen3-30B-A3B-Instruct-2507";
+const IRONCLAW_MODE   = String(process.env.IRONCLAW_AGENT_MODE || "").toLowerCase() === "true";
 
 const PROMPT_FILE   = path.join(__dirname, "../../agent/activePrompt.json");
 const MISSION_FILE  = path.join(__dirname, "../../agent/activeMission.json");
@@ -197,8 +213,33 @@ RULES:
 - Do NOT fabricate data. If you don't have real metrics, say "unavailable".`;
 };
 
+/* ── IronClaw-mode helper ─────────────────────────────────────
+ * Routes one system+user prompt pair through the hosted agent.
+ * IronClaw's /api/chat/send takes a single `content` field; we
+ * collapse system+user into a labelled preamble so the agent can
+ * still see both. One-shot: fresh thread per call (stateless at
+ * the agentConnector layer — thread state is IronClaw's concern).
+ */
+const ironclawDispatch = async ({ systemPrompt, userPrompt, expectJson, timeoutMs = 60000 }) => {
+  const content =
+    `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userPrompt}` +
+    (expectJson ? `\n\n[OUTPUT]\nRespond with a single valid JSON object only. No prose, no markdown fences.` : "");
+  try {
+    const { reply } = await ironclaw.chat({ content, timeoutMs });
+    if (!expectJson) return reply || "";
+    const clean = String(reply || "{}").replace(/```json|```/g, "").trim();
+    return JSON.parse(clean || "{}");
+  } catch (err) {
+    throw new Error(`IronClaw dispatch failed: ${err.message}`);
+  }
+};
+
+/* ── Legacy direct chat-completions helpers ────────────────── */
 const dispatch = async (taskType, userPrompt, systemPrompt) => {
   const sysPrompt  = systemPrompt || baseSystemPrompt();
+  if (IRONCLAW_MODE) {
+    return ironclawDispatch({ systemPrompt: sysPrompt, userPrompt, expectJson: true });
+  }
   const maxTokens  = taskType === "summary" ? 1200 : 800;
   const controller = new AbortController();
   const timeout    = setTimeout(() => controller.abort(), 30000);
@@ -229,6 +270,9 @@ const dispatch = async (taskType, userPrompt, systemPrompt) => {
 };
 
 const complete = async ({ systemPrompt, userPrompt, maxTokens = 600, expectJson = false }) => {
+  if (IRONCLAW_MODE) {
+    return ironclawDispatch({ systemPrompt, userPrompt, expectJson });
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {

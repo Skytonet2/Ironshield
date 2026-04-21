@@ -142,11 +142,15 @@ function applyExecutedToRuntime(proposals, state) {
   for (const p of newExec) {
     if (p.proposal_type === "PromptUpdate") {
       writeJson(PROMPT_FILE, { content: p.content, updatedAt: new Date().toISOString(), proposalId: p.id });
-      console.log(`[runtime] IronClaw prompt updated by proposal #${p.id}: "${p.title}"`);
+      // This prompt is injected into every call agentConnector.js makes
+      // to our IronShield agent running on IronClaw (NEAR's hosted
+      // agent runtime). We do NOT mutate IronClaw's own config — we
+      // prepend governance-approved guidance at the application layer.
+      console.log(`[governance] IronShield agent prompt updated by proposal #${p.id}: "${p.title}" (will ship on next IronClaw call)`);
     }
     if (p.proposal_type === "Mission") {
       writeJson(MISSION_FILE, { content: p.content, updatedAt: new Date().toISOString(), proposalId: p.id });
-      console.log(`[runtime] IronClaw mission updated by proposal #${p.id}: "${p.title}"`);
+      console.log(`[governance] IronShield agent mission updated by proposal #${p.id}: "${p.title}" (will ship on next IronClaw call)`);
     }
     if (p.id > state.lastSeenId) state.lastSeenId = p.id;
   }
