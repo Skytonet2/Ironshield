@@ -54,6 +54,28 @@ const PRESET_HANDLES = [
 // Comma-separated env is nicer than JSON for ops. If nothing is set,
 // the timeline endpoint returns a structured "not_configured" payload
 // and the UI shows a friendly stub — nothing crashes.
+//
+// ── Rotation playbook ─────────────────────────────────────────────
+// Nitter instances are volunteer-run and die often. As of 2026-04-21
+// nitter.net is the only reliably-up public instance. When it goes:
+//   1. Pull the latest green list from the upstream wiki:
+//        https://github.com/zedeus/nitter/wiki/Instances
+//      (or the Markdown mirror: https://status.d420.de)
+//   2. Test the candidate with a preset handle:
+//        curl -sI <base>/cobie/rss | head -1    # expect 200
+//        curl -s  <base>/cobie/rss | head -c 400
+//      A healthy instance returns `<rss` in the body; a gateway returns
+//      empty/HTML. Check multiple handles — some instances rate-limit
+//      high-volume accounts.
+//   3. Update NITTER_BASE_URL on Render to `new.instance,nitter.net`
+//      (comma-separated, preferred first). The cache TTL is 3 min, so
+//      the first batch of stale responses will age out quickly.
+//   4. If every public instance is dead, stand up a private one: the
+//      Nitter Docker image plus a Twitter guest-token pool takes ~20
+//      min on a small VPS. Document the host in NITTER_BASE_URL and
+//      keep it off the public wiki to preserve the token budget.
+// The list order matters: `fetchWithFallback` tries them left-to-right
+// and returns the first 2xx, so put the fastest responder first.
 const NITTER_INSTANCES = (process.env.NITTER_BASE_URL || "")
   .split(",")
   .map((s) => s.trim().replace(/\/+$/, ""))
@@ -102,6 +124,23 @@ function parseRss(xml) {
     });
   }
   return items;
+}
+
+// Nitter RSS concatenates a quote-tweet's original content into the same
+// <description> blob as the author's own text, using a `Re @<handle>:`
+// marker (optionally preceded by a fresh <p> or a double <br>). Split on
+// that marker so the UI can render the quoted post as a nested card
+// instead of a run-on paragraph. If no marker is found, the whole blob
+// is the main body and `quoted*` are null. Replies (Nitter titles like
+// `R to @x:`) are left alone — those go into `text` as-is because the
+// reply target is metadata, not embedded content.
+function splitQuotedTweet(html = "") {
+  const markerRe = /(?:<p[^>]*>\s*|<br\s*\/?>\s*<br\s*\/?>\s*|\n\s*\n\s*)Re\s+@([A-Za-z0-9_]{1,15}):\s*/i;
+  const m = html.match(markerRe);
+  if (!m) return { mainHtml: html, quotedHandle: null, quotedHtml: null };
+  const mainHtml = html.slice(0, m.index);
+  const quotedHtml = html.slice(m.index + m[0].length);
+  return { mainHtml, quotedHandle: m[1], quotedHtml };
 }
 
 // Turn the HTML description from Nitter RSS into plain text, preserving
@@ -188,13 +227,27 @@ async function fetchHandleTweets(handle, limit = 10) {
       } catch { return u; }
     };
     const items = raw.map((r) => {
-      const { text: body, media } = extractTextAndMedia(r.html);
+      const { mainHtml, quotedHandle, quotedHtml } = splitQuotedTweet(r.html);
+      const { text: body, media } = extractTextAndMedia(mainHtml);
+      let quoted = null;
+      if (quotedHandle && quotedHtml) {
+        const q = extractTextAndMedia(quotedHtml);
+        if (q.text || q.media.length) {
+          quoted = {
+            handle: quotedHandle,
+            text: q.text,
+            media: q.media,
+            url: `https://x.com/${quotedHandle}`,
+          };
+        }
+      }
       return {
         id: r.guid || r.link,
         handle,
         url: toXUrl(r.link),
         text: body || r.title,
         media,
+        quoted,
         createdAt: r.pubDate ? new Date(r.pubDate).toISOString() : null,
         source: "nitter",
         instance,

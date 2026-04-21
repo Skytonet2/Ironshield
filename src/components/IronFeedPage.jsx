@@ -2802,6 +2802,52 @@ function TweetCard({ tweet, t }) {
             ))}
           </div>
         )}
+        {tweet.quoted && (tweet.quoted.text || (tweet.quoted.media && tweet.quoted.media.length > 0)) && (
+          <a
+            href={tweet.quoted.url || `https://x.com/${tweet.quoted.handle}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "block",
+              marginTop: 10,
+              padding: "10px 12px",
+              border: `1px solid ${t.border}`,
+              borderRadius: 12,
+              background: t.bgSurface,
+              textDecoration: "none",
+              color: "inherit",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <img
+                src={`https://unavatar.io/twitter/${tweet.quoted.handle}`}
+                alt={tweet.quoted.handle}
+                width={16}
+                height={16}
+                style={{ borderRadius: "50%", background: t.accent + "22" }}
+                onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+              />
+              <span style={{ color: t.white, fontWeight: 600, fontSize: 13 }}>
+                @{tweet.quoted.handle}
+              </span>
+            </div>
+            {tweet.quoted.text && (
+              <div style={{ color: t.text, fontSize: 14, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {tweet.quoted.text}
+              </div>
+            )}
+            {Array.isArray(tweet.quoted.media) && tweet.quoted.media.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: tweet.quoted.media.length === 1 ? "1fr" : "1fr 1fr", gap: 6, marginTop: 8 }}>
+                {tweet.quoted.media.slice(0, 4).map((src, i) => (
+                  <img key={i} src={src} alt="" loading="lazy"
+                    style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 10, border: `1px solid ${t.border}` }}
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                ))}
+              </div>
+            )}
+          </a>
+        )}
       </div>
     </article>
   );
