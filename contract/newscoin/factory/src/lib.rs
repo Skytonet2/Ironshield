@@ -11,6 +11,10 @@ const MAX_COINS_PER_STORY: usize = 3;
 const GAS_FOR_DEPLOY: Gas = Gas::from_tgas(100);
 /// Gas for registry call
 const GAS_FOR_REGISTRY: Gas = Gas::from_tgas(20);
+/// Gas for the curve's `admin_delete_account` cross-contract call.
+/// The callee logs an event and dispatches a DeleteAccount promise on itself —
+/// 30 Tgas is comfortably above the ~5 Tgas it actually needs.
+const GAS_FOR_ADMIN_DELETE: Gas = Gas::from_tgas(30);
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -168,9 +172,13 @@ impl NewsCoinFactory {
     /// Also scrubs the coin from `all_coins` and `story_coins` so it
     /// stops appearing in the factory's index.
     ///
-    /// NOTE: the sub-account still holds the curve contract. A delete-
-    /// account receipt dispatched to it transfers its full balance to
-    /// the beneficiary and removes the account.
+    /// NOTE: only the coin's own curve contract can delete its account —
+    /// a DeleteAccount action from the factory would be rejected because
+    /// the signer isn't the target. We therefore call the curve's
+    /// `admin_delete_account(beneficiary)`, which is gated on
+    /// `predecessor == owner_id` (the factory) and self-dispatches the
+    /// DeleteAccount. The curve also enforces `killed && total_supply == 0`
+    /// so holders never lose their refund pool.
     pub fn admin_delete_coin(
         &mut self,
         coin_address: AccountId,
@@ -207,10 +215,19 @@ impl NewsCoinFactory {
             "EVENT_JSON:{{\"standard\":\"newscoin\",\"event\":\"coin_deleted\",\"data\":{{\"coin_address\":\"{}\",\"beneficiary\":\"{}\"}}}}",
             coin_address, beneficiary
         ));
-        // Dispatch a delete-account receipt to the sub-account. The
-        // sub-account receives the receipt and executes DeleteAccount
-        // on itself, which transfers its whole balance to beneficiary.
-        Promise::new(coin_address).delete_account(beneficiary)
+        // Invoke the curve's self-delete. It validates preconditions
+        // (killed, zero supply) and issues a DeleteAccount on itself,
+        // which is the only way DeleteAccount is accepted — the action
+        // must originate from the account being deleted.
+        let args = near_sdk::serde_json::json!({ "beneficiary": beneficiary })
+            .to_string()
+            .into_bytes();
+        Promise::new(coin_address).function_call(
+            "admin_delete_account".to_string(),
+            args,
+            NearToken::from_yoctonear(0),
+            GAS_FOR_ADMIN_DELETE,
+        )
     }
 
     /// Remove an orphan coin entry (sub-account never successfully deployed).
