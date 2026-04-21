@@ -161,6 +161,58 @@ impl NewsCoinFactory {
         self.rhea_router = rhea_router;
     }
 
+    /// Delete a coin sub-account on-chain and refund its remaining balance
+    /// to `beneficiary`. Owner only. Use this to kill a coin and recover
+    /// the ~3 NEAR seed that was used to create the sub-account.
+    ///
+    /// Also scrubs the coin from `all_coins` and `story_coins` so it
+    /// stops appearing in the factory's index.
+    ///
+    /// NOTE: the sub-account still holds the curve contract. A delete-
+    /// account receipt dispatched to it transfers its full balance to
+    /// the beneficiary and removes the account.
+    pub fn admin_delete_coin(
+        &mut self,
+        coin_address: AccountId,
+        beneficiary: AccountId,
+    ) -> Promise {
+        self.assert_owner();
+        // Scrub local index.
+        let mut found_index: Option<u32> = None;
+        let mut found_story: Option<String> = None;
+        let len = self.all_coins.len();
+        for i in 0..len {
+            if let Some(ci) = self.all_coins.get(i) {
+                if ci.coin_address == coin_address {
+                    found_index = Some(i);
+                    found_story = Some(ci.story_id.clone());
+                    break;
+                }
+            }
+        }
+        if let Some(i) = found_index {
+            self.all_coins.swap_remove(i);
+        }
+        if let Some(story_id) = found_story {
+            if let Some(mut addrs) = self.story_coins.get(&story_id).cloned() {
+                addrs.retain(|a| a != &coin_address);
+                if addrs.is_empty() {
+                    self.story_coins.remove(&story_id);
+                } else {
+                    self.story_coins.insert(story_id, addrs);
+                }
+            }
+        }
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"newscoin\",\"event\":\"coin_deleted\",\"data\":{{\"coin_address\":\"{}\",\"beneficiary\":\"{}\"}}}}",
+            coin_address, beneficiary
+        ));
+        // Dispatch a delete-account receipt to the sub-account. The
+        // sub-account receives the receipt and executes DeleteAccount
+        // on itself, which transfers its whole balance to beneficiary.
+        Promise::new(coin_address).delete_account(beneficiary)
+    }
+
     /// Remove an orphan coin entry (sub-account never successfully deployed).
     /// Owner only. Takes the index in `all_coins` and scrubs it from both
     /// `all_coins` and `story_coins[story_id]`.
