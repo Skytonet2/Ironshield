@@ -21,13 +21,15 @@ import { usePathname } from "next/navigation";
 import {
   LazyMotion, domAnimation, m, AnimatePresence, pageVariants,
 } from "@/lib/motion";
+import { useNotifications } from "@/lib/hooks/useNotifications";
+import NotificationsDrawer from "@/components/notifications/NotificationsDrawer";
 import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
   Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
   Home, Menu, X as XIcon, User,
 } from "lucide-react";
-import { useTheme } from "@/lib/contexts";
+import { useTheme, useWallet as useCtxWallet } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
 import { useFeed } from "@/lib/stores/feedStore";
 import { usePrices } from "@/lib/hooks/usePrices";
@@ -394,7 +396,7 @@ const TOP_PILLS = [
   { label: "Profile",     href: "/profile" },
 ];
 
-function TopNav({ pathname, onAction, isMobile, onDrawer }) {
+function TopNav({ pathname, onAction, isMobile, onDrawer, unreadCount = 0 }) {
   const t = useTheme();
   const pillBase = {
     padding: "6px 14px",
@@ -554,10 +556,25 @@ function TopNav({ pathname, onAction, isMobile, onDrawer }) {
       {!isMobile && (
         <button
           type="button"
-          style={iconBtn}
+          style={{ ...iconBtn, position: "relative" }}
           title="Notifications"
           onClick={() => onAction("notifications")}
-        ><Bell size={14} /></button>
+        >
+          <Bell size={14} />
+          {unreadCount > 0 && (
+            <span style={{
+              position: "absolute", top: -4, right: -4,
+              minWidth: 16, height: 16, padding: "0 4px",
+              borderRadius: 999,
+              background: "linear-gradient(135deg, #ef4444, #f97316)",
+              color: "#fff", fontSize: 10, fontWeight: 800,
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 0 0 2px var(--bg-surface)",
+            }}>
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </button>
       )}
       <UserMenu />
     </header>
@@ -578,13 +595,13 @@ function fmtUsd(n) {
  * The middle +, centered and raised, is the post shortcut — tapping
  * it fires the same "post" action that opens the feed composer.
  * Active route shows an accent tint + top-edge bar. */
-function MobileBottomNav({ pathname, onAction }) {
+function MobileBottomNav({ pathname, onAction, unreadCount = 0 }) {
   const t = useTheme();
   const items = [
     { key: "home",    label: "Home",    Icon: Home,   kind: "link",   href: "/"        },
     { key: "search",  label: "Search",  Icon: Search, kind: "action", action: "search" },
     { key: "post",    label: "",        Icon: Plus,   kind: "fab",    action: "post"   },
-    { key: "alerts",  label: "Alerts",  Icon: Bell,   kind: "action", action: "notifications", badge: 3 },
+    { key: "alerts",  label: "Alerts",  Icon: Bell,   kind: "action", action: "notifications", badge: unreadCount },
     { key: "profile", label: "Profile", Icon: User,   kind: "link",   href: "/profile" },
   ];
   const activeKey = (() => {
@@ -788,13 +805,20 @@ function BottomBar() {
 export default function AppShell({ children, rightPanel = null, onAction }) {
   const t = useTheme();
   const pathname = usePathname();
+  const wallet = useCtxWallet();
+  const walletAddress = wallet?.address || null;
   const [note, setNote] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefill, setCreatePrefill] = useState(null);
   const [bridgeOpen, setBridgeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const setPaused = useFeed((s) => s.setPaused);
   const pausedNow = useFeed((s) => s.paused);
+  // Shared notifications cache — populates both the TopNav bell
+  // badge and the mobile Alerts tab badge with the viewer's real
+  // unread count (polled every 30s while the shell is mounted).
+  const { unreadCount } = useNotifications(walletAddress);
 
   // AppShell routes CREATE / bridge / scan / search centrally so every
   // route gets these modals without plumbing props. Callers can still
@@ -841,7 +865,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
       return;
     }
     if (kind === "notifications") {
-      setNote("Notifications drawer — coming next build.");
+      setNotificationsOpen(true);
       return;
     }
     setNote(`${kind} (wires up in a later phase)`);
@@ -915,6 +939,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
         onAction={handleAction}
         isMobile={isMobile}
         onDrawer={() => setDrawerOpen(true)}
+        unreadCount={unreadCount}
       />
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <Sidebar
@@ -987,7 +1012,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
       {/* Bottom region splits by viewport: mobile gets the native
           five-tab nav, desktop keeps the status/chip strip. */}
       {isMobile
-        ? <MobileBottomNav pathname={pathname} onAction={handleAction} />
+        ? <MobileBottomNav pathname={pathname} onAction={handleAction} unreadCount={unreadCount} />
         : <BottomBar />}
       {createOpen && (
         <LaunchpadSelector
@@ -1002,6 +1027,10 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onAction={handleAction}
+      />
+      <NotificationsDrawer
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
       />
       {note && (
         <div
