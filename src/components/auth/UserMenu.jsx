@@ -197,8 +197,12 @@ function UserMenuInner({ t, open, setOpen, refEl }) {
             )}
           </div>
           <div style={{ padding: "4px 0" }}>
-            <CopyableAddress label="EVM / BNB" address={evm?.address} t={t} />
-            <CopyableAddress label="SOL"       address={sol?.address} t={t} />
+            {/* Label says "EVM" not "BNB": BNB trading is opted out,
+             * but Privy still provisions an embedded EVM wallet that's
+             * usable on Ethereum/Polygon/etc. Keeping the address
+             * visible in case the user wants to copy it. */}
+            <CopyableAddress label="EVM" address={evm?.address} t={t} />
+            <CopyableAddress label="SOL" address={sol?.address} t={t} />
           </div>
           <div style={{ borderTop: `1px solid ${t.border}`, padding: 4 }}>
             <button

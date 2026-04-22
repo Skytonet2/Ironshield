@@ -59,7 +59,9 @@ export const useSettings = create(
       keywords: [],                      // [{ id, term, highlight, notify }]
 
       // ── Chain ──────────────────────────────────────────────────
-      activeChain: "near",               // near | sol | bnb
+      // BNB is structurally supported by walletStore + setter below,
+      // but opted out of the UI until the fee wallet is funded.
+      activeChain: "near",               // near | sol (bnb hidden)
 
       // ── Per-user mute list. IDs so we don't store stale handles ─
       mutedAccounts: [],

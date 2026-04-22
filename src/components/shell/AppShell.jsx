@@ -355,14 +355,16 @@ function BottomBar() {
       <div style={{ flex: 1 }} />
       <span style={chip}>SOL {fmtUsd(prices.sol)}</span>
       <span style={chip}>NEAR {fmtUsd(prices.near)}</span>
-      <span style={chip}>BNB {fmtUsd(prices.bnb)}</span>
-      {/* Cycle NEAR → SOL → BNB → NEAR. Active chain is a settings-store
-       * concern; traded/viewed balances will hang off walletStore later. */}
+      {/* BNB price hidden — BNB is opted out until the fee wallet is funded. */}
+      {/* Cycle NEAR ↔ SOL. BNB is opted out until the fee wallet is
+       * funded — the walletStore still has a `bnb` slot so toggling
+       * back on later is a one-line change here. */}
       <button
         type="button"
         onClick={() => {
-          const order = ["near", "sol", "bnb"];
-          setActiveChain(order[(order.indexOf(activeChain) + 1) % 3]);
+          const order = ["near", "sol"];
+          const i = order.indexOf(activeChain);
+          setActiveChain(order[(i + 1) % order.length] || order[0]);
         }}
         style={{
           ...chip,
