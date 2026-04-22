@@ -31,7 +31,7 @@ import {
   GitBranch, Globe, TrendingUp, ChevronDown,
 } from "lucide-react";
 import {
-  LazyMotion, domAnimation, m, useInView,
+  LazyMotion, domAnimation, m, AnimatePresence, useInView,
 } from "@/lib/motion";
 
 const NAV_LINKS = [
@@ -830,15 +830,10 @@ function ProductPreview() {
             <span>News</span>
             <span>Alerts</span>
           </div>
-          {/* Cards */}
-          <PreviewPost name="MEEK" handle="@meekblaze" age="3h" body="GM Shields 🛡" likes={42} replies={12} reposts={8} tips={12.4} />
-          <PreviewPost
-            name="Miracles" handle="@32b790ba7bae" age="1d"
-            body={<>A post a day keeps your feed away from slops.<br />Stay sharp, stay consistent, stay visible.</>}
-            likes={81} replies={24} reposts={16} tips={21.7}
-            media
-          />
-          <PreviewPost name="Shield Claw" handle="@shieldclaw" age="18h" body={<>imminent <span role="img" aria-label="shield">🛡️</span> <span role="img" aria-label="magic">✨</span></>} likes={52} replies={15} reposts={11} tips={17.3} verified />
+          {/* Cards — cycled by LiveFeed so the preview animates
+              continuously. Same visual density as the static version,
+              just with rotation + a periodic "new posts" ticker. */}
+          <LiveFeed />
         </div>
 
         {/* Right rail */}
@@ -979,6 +974,140 @@ function PreviewPost({ name, handle, age, body, likes, replies, reposts, tips, v
         <span style={{ color: "#ef4444" }}>♥ {likes}</span>
         <span style={{ color: "#3b82f6", fontFamily: "var(--font-jetbrains-mono), monospace" }}>💎 IRON {tips}</span>
       </div>
+    </div>
+  );
+}
+
+/* ─────────── LIVE FEED (animated preview) ───────────
+ * Rotates from a pool of posts every few seconds so the dashboard
+ * preview doesn't read as a static mock. Also:
+ *   · the top card's like counter ticks upward on its own
+ *   · a "N new posts" pill slides in periodically; clicking or the
+ *     next rotation dismisses it
+ * Effects respect prefers-reduced-motion by virtue of the framer
+ * variants — the shell CSS already disables their transition. */
+
+const LIVE_POOL = [
+  { name: "MEEK",       handle: "@meekblaze",    age: "3h",  body: "GM Shields 🛡",
+    likes: 42, replies: 12, reposts: 8,  tips: 12.4 },
+  { name: "Miracles",   handle: "@32b790ba7bae", age: "1d",
+    body: (<>A post a day keeps your feed away from slops.<br />Stay sharp, stay consistent, stay visible.</>),
+    likes: 81, replies: 24, reposts: 16, tips: 21.7, media: true },
+  { name: "Shield Claw", handle: "@shieldclaw",  age: "18h", verified: true,
+    body: (<>imminent <span role="img" aria-label="shield">🛡️</span> <span role="img" aria-label="magic">✨</span></>),
+    likes: 52, replies: 15, reposts: 11, tips: 17.3 },
+  { name: "punk9059",   handle: "@punk9059",     age: "2m",  verified: true,
+    body: "NEAR is quietly becoming the AI-chain nobody books. The automations flipped me.",
+    likes: 18, replies: 4, reposts: 2, tips: 3.1 },
+  { name: "Young001",   handle: "@unknown",      age: "5h",
+    body: "Spent 20min setting up an AI Trend Monitor — already fired 3 signals before coffee.",
+    likes: 26, replies: 6, reposts: 3, tips: 4.2 },
+  { name: "icebergy_",  handle: "@icebergy_",    age: "17m",
+    body: "bought 2 NEAR on that dip. small. but the thesis keeps compounding.",
+    likes: 34, replies: 9, reposts: 5, tips: 8.8 },
+];
+
+function LiveFeed() {
+  const [offset, setOffset] = useState(0);
+  const [newPill, setNewPill] = useState(0); // 0 = hidden, >0 = "N new"
+  const [topLikes, setTopLikes] = useState(LIVE_POOL[0].likes);
+
+  // Rotate the visible window of 3 every 6.5s.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setOffset((o) => (o + 1) % LIVE_POOL.length);
+      setTopLikes(LIVE_POOL[(offset + 1) % LIVE_POOL.length].likes);
+    }, 6500);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Every ~15s surface a "new posts" pill. Auto-dismiss after 4s
+  // or when the next rotation arrives.
+  useEffect(() => {
+    const fire = () => setNewPill(Math.floor(Math.random() * 4) + 1);
+    const id = setInterval(fire, 15_000);
+    const t = setTimeout(fire, 3_000); // first appearance soon after mount
+    return () => { clearInterval(id); clearTimeout(t); };
+  }, []);
+  useEffect(() => {
+    if (!newPill) return;
+    const id = setTimeout(() => setNewPill(0), 4200);
+    return () => clearTimeout(id);
+  }, [newPill]);
+
+  // Tiny tick on the top card's likes counter so it feels alive
+  // without being noisy.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (Math.random() < 0.45) setTopLikes((v) => v + 1);
+    }, 1800);
+    return () => clearInterval(id);
+  }, []);
+
+  const visible = useMemo(() => {
+    const n = LIVE_POOL.length;
+    return [0, 1, 2].map((i) => LIVE_POOL[(offset + i) % n]);
+  }, [offset]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      {/* New-posts ticker */}
+      <AnimatePresence>
+        {newPill > 0 && (
+          <m.button
+            type="button"
+            key="ticker"
+            initial={{ opacity: 0, y: -6, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0,  scale: 1 }}
+            exit={{    opacity: 0, y: -6, scale: 0.95 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            onClick={() => setNewPill(0)}
+            style={{
+              position: "absolute", top: -8, left: "50%", transform: "translateX(-50%)",
+              zIndex: 2,
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "5px 12px", borderRadius: 999,
+              background: "linear-gradient(135deg, #6d28d9, #3b82f6)",
+              color: "#fff", border: "none", cursor: "pointer",
+              fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
+              boxShadow: "0 12px 28px rgba(109,40,217,0.45)",
+            }}
+          >
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: "#fff",
+              boxShadow: "0 0 8px #fff",
+              animation: "ix-live-blink 1.4s ease-in-out infinite",
+            }} />
+            {newPill} new post{newPill > 1 ? "s" : ""}
+          </m.button>
+        )}
+      </AnimatePresence>
+
+      <style jsx global>{`
+        @keyframes ix-live-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+      `}</style>
+
+      <AnimatePresence mode="popLayout" initial={false}>
+        {visible.map((p, i) => (
+          <m.div
+            key={`${offset}-${i}-${p.handle}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{    opacity: 0, y: -6 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            style={{ position: "relative", marginBottom: 10 }}
+          >
+            <PreviewPost
+              {...p}
+              // Live tick only on the top card; others keep their
+              // pool-defined numbers so the rotation reads clean.
+              likes={i === 0 ? topLikes : p.likes}
+            />
+          </m.div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
