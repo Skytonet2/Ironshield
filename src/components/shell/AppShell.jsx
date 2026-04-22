@@ -16,12 +16,13 @@
 // tracker controls; Trading → order book. Children fill the main
 // feed column.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
-  Shield, Rss, Activity,
+  Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
+  Home, Menu, X as XIcon,
 } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
@@ -33,6 +34,7 @@ import LaunchpadSelector from "@/components/create/LaunchpadSelector";
 import BridgeModal from "@/components/bridge/BridgeModal";
 import SearchOverlay from "@/components/search/SearchOverlay";
 import useKeyboardShortcuts from "@/lib/hooks/useKeyboardShortcuts";
+import useMediaQuery from "@/lib/hooks/useMediaQuery";
 
 // lucide-react has no Bridge glyph; ArrowLeftRight is the closest
 // semantic fit for a cross-chain swap action.
@@ -53,25 +55,37 @@ const SIDEBAR_GROUPS = [
   {
     label: "Platform",
     items: [
+      { key: "home",        label: "Home",             Icon: Home,       href: "/"            },
       { key: "aio",         label: "AIO Feed",         Icon: Rss,        href: "/aio"         },
-      { key: "vision",      label: "Vision",           Icon: Eye,        href: "/vision"      },
+      { key: "feed",        label: "IronFeed",         Icon: Rss,        href: "/feed"        },
       { key: "trading",     label: "Trading Terminal", Icon: Activity,   href: "/trading"     },
-      { key: "portfolio",   label: "Portfolio",        Icon: Briefcase,  href: "/portfolio"   },
-      { key: "rewards",     label: "Rewards",          Icon: Trophy,     href: "/rewards"     },
-      { key: "automations", label: "Automations",      Icon: Bot,        href: "/automations" },
+      { key: "newscoin",    label: "NewsCoin",         Icon: Coins,      href: "/newscoin"    },
+      { key: "launch",      label: "Launch",           Icon: Rocket,     href: "/launch"      },
+      { key: "rooms",       label: "Rooms",            Icon: Mic,        href: "/rooms"       },
+    ],
+  },
+  {
+    label: "IronClaw",
+    items: [
+      { key: "staking",     label: "Staking",          Icon: Coins,      href: "/staking"     },
+      { key: "governance",  label: "Governance",       Icon: Vote,       href: "/governance"  },
+      { key: "treasury",    label: "Treasury",         Icon: Briefcase,  href: "/treasury"    },
+      { key: "earn",        label: "Earn",             Icon: Trophy,     href: "/earn"        },
+      { key: "agent",       label: "Agent",            Icon: Bot,        href: "/agent"       },
+      { key: "ecosystem",   label: "Ecosystem",        Icon: Network,    href: "/ecosystem"   },
+      { key: "docs",        label: "Docs",             Icon: BookOpen,   href: "/docs"        },
     ],
   },
   {
     label: "Tools",
     items: [
       { key: "settings",  label: "Settings",  Icon: Settings,    href: "/settings"  },
-      { key: "earnings",  label: "Earnings",  Icon: DollarSign,  href: "/settings/earnings" },
       { key: "analytics", label: "Analytics", Icon: BarChart2,   href: "/analytics", soon: true },
     ],
   },
 ];
 
-function SidebarItem({ item, active, onAction, t }) {
+function SidebarItem({ item, active, onAction, onClick, t }) {
   const { Icon, label, soon } = item;
   const content = (
     <>
@@ -111,7 +125,12 @@ function SidebarItem({ item, active, onAction, t }) {
   };
   if (item.href) {
     return (
-      <a href={item.href} className={active ? "sidebar-item active" : "sidebar-item"} style={base}>
+      <a
+        href={item.href}
+        onClick={onClick}
+        className={active ? "sidebar-item active" : "sidebar-item"}
+        style={base}
+      >
         {content}
       </a>
     );
@@ -128,19 +147,10 @@ function SidebarItem({ item, active, onAction, t }) {
   );
 }
 
-function Sidebar({ pathname, onAction }) {
+function SidebarContent({ pathname, onAction, onItemPick }) {
   const t = useTheme();
   return (
-    <aside style={{
-      width: 220,
-      flexShrink: 0,
-      borderRight: `1px solid ${t.border}`,
-      padding: "16px 10px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 20,
-      overflowY: "auto",
-    }}>
+    <>
       {SIDEBAR_GROUPS.map((group) => (
         <div key={group.label}>
           <div style={{
@@ -154,19 +164,94 @@ function Sidebar({ pathname, onAction }) {
             {group.label}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {group.items.map((item) => (
-              <SidebarItem
-                key={item.key}
-                item={item}
-                active={item.href && pathname?.startsWith(item.href)}
-                onAction={onAction}
-                t={t}
-              />
-            ))}
+            {group.items.map((item) => {
+              // Home matches only exactly "/"; other hrefs startsWith.
+              const active = item.href &&
+                (item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href));
+              return (
+                <SidebarItem
+                  key={item.key}
+                  item={item}
+                  active={active}
+                  onAction={(a) => { onAction(a); onItemPick?.(); }}
+                  onClick={() => onItemPick?.()}
+                  t={t}
+                />
+              );
+            })}
           </div>
         </div>
       ))}
+    </>
+  );
+}
+
+/** Desktop: always-visible 220px rail. Mobile: slide-in drawer with
+ *  backdrop, opened by the TopNav hamburger. Body scroll is locked
+ *  while the drawer is open so long content doesn't bleed through. */
+function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
+  const t = useTheme();
+  useEffect(() => {
+    if (!isMobile) return;
+    document.body.style.overflow = drawerOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [isMobile, drawerOpen]);
+
+  const panel = (
+    <aside style={{
+      width: 240,
+      flexShrink: 0,
+      borderRight: `1px solid ${t.border}`,
+      padding: "16px 10px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 20,
+      overflowY: "auto",
+      background: "var(--bg-surface)",
+      height: "100%",
+    }}>
+      <SidebarContent
+        pathname={pathname}
+        onAction={onAction}
+        onItemPick={isMobile ? onClose : undefined}
+      />
     </aside>
+  );
+
+  if (!isMobile) return panel;
+
+  // Mobile: drawer only mounts when open so it doesn't steal tab-order
+  // or fire matchmedia reflows while hidden.
+  if (!drawerOpen) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 180,
+        background: "rgba(0,0,0,0.55)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          height: "100dvh",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.5), var(--accent-glow)",
+          animation: "drawerIn 200ms var(--ease-out)",
+        }}
+      >
+        {panel}
+      </div>
+      <style jsx>{`
+        @keyframes drawerIn {
+          from { transform: translateX(-100%); }
+          to   { transform: translateX(0); }
+        }
+      `}</style>
+    </div>
   );
 }
 
@@ -181,7 +266,7 @@ const TOP_PILLS = [
   { label: "Settings",    href: "/settings" },
 ];
 
-function TopNav({ pathname, onAction }) {
+function TopNav({ pathname, onAction, isMobile, onDrawer }) {
   const t = useTheme();
   const pillBase = {
     padding: "6px 14px",
@@ -214,10 +299,30 @@ function TopNav({ pathname, onAction }) {
       borderBottom: `1px solid ${t.border}`,
       background: "var(--bg-surface)",
     }}>
+      {isMobile && (
+        <button
+          type="button"
+          onClick={onDrawer}
+          aria-label="Open menu"
+          style={{
+            width: 34, height: 34, borderRadius: 8,
+            border: `1px solid ${t.border}`,
+            background: "transparent",
+            color: t.textMuted,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          <Menu size={16} />
+        </button>
+      )}
       <a href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
         <Shield size={18} style={{ color: t.accent }} />
         <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>IronShield</span>
       </a>
+      {!isMobile && (
       <nav style={{ display: "flex", gap: 4, marginLeft: 20 }}>
         {TOP_PILLS.map((p) => {
           const active = pathname?.startsWith(p.href);
@@ -236,7 +341,9 @@ function TopNav({ pathname, onAction }) {
           );
         })}
       </nav>
+      )}
       <div style={{ flex: 1 }} />
+      {!isMobile && (
       <button
         type="button"
         onClick={() => onAction("search")}
@@ -267,14 +374,28 @@ function TopNav({ pathname, onAction }) {
           fontFamily: "var(--font-jetbrains-mono), monospace",
         }}>/</span>
       </button>
-      <button type="button" onClick={() => onAction("tweet")} style={iconBtn} title="Post">
-        <span style={{ fontWeight: 700 }}>𝕏</span>
-      </button>
+      )}
+      {/* Mobile: compact search icon only. */}
+      {isMobile && (
+        <button
+          type="button"
+          onClick={() => onAction("search")}
+          style={iconBtn}
+          aria-label="Search"
+        >
+          <Search size={14} />
+        </button>
+      )}
+      {!isMobile && (
+        <button type="button" onClick={() => onAction("tweet")} style={iconBtn} title="Post">
+          <span style={{ fontWeight: 700 }}>𝕏</span>
+        </button>
+      )}
       <button
         type="button"
         onClick={() => onAction("create")}
         style={{
-          padding: "6px 14px",
+          padding: isMobile ? "6px 10px" : "6px 14px",
           height: 34,
           borderRadius: 8,
           background: t.accent,
@@ -286,14 +407,16 @@ function TopNav({ pathname, onAction }) {
           cursor: "pointer",
         }}
       >
-        CREATE
+        {isMobile ? <Plus size={14} /> : "CREATE"}
       </button>
-      <button type="button" onClick={() => onAction("scan")} style={{ ...iconBtn, fontSize: 11, width: "auto", padding: "0 10px" }} title="Scan">
-        <Zap size={14} />
-        <span style={{ marginLeft: 4, fontWeight: 700, letterSpacing: 0.6 }}>SCAN</span>
-      </button>
-      <button type="button" style={iconBtn} title="Bookmarks"><Bookmark size={14} /></button>
-      <button type="button" style={iconBtn} title="Notifications"><Bell size={14} /></button>
+      {!isMobile && (
+        <button type="button" onClick={() => onAction("scan")} style={{ ...iconBtn, fontSize: 11, width: "auto", padding: "0 10px" }} title="Scan">
+          <Zap size={14} />
+          <span style={{ marginLeft: 4, fontWeight: 700, letterSpacing: 0.6 }}>SCAN</span>
+        </button>
+      )}
+      {!isMobile && <button type="button" style={iconBtn} title="Bookmarks"><Bookmark size={14} /></button>}
+      {!isMobile && <button type="button" style={iconBtn} title="Notifications"><Bell size={14} /></button>}
       <UserMenu />
     </header>
   );
@@ -341,6 +464,12 @@ function BottomBar() {
       background: "var(--bg-surface)",
       fontSize: 11,
       color: t.textMuted,
+      // On mobile the chip row overflows; scroll horizontally instead
+      // of wrapping (keeping a single 32px-tall strip).
+      overflowX: "auto",
+      overflowY: "hidden",
+      whiteSpace: "nowrap",
+      flexShrink: 0,
     }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
         <span style={{
@@ -421,27 +550,50 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
     onPauseToggle: () => setPaused(!pausedNow),
   });
 
+  // Responsive: <900px collapses sidebar to drawer, hides center top-
+  // nav pills + secondary icon buttons, hides the right panel. Match
+  // the query exactly so desktop-at-exactly-900 stays desktop.
+  const isMobile = useMediaQuery("(max-width: 899px)");
+  const isNarrow = useMediaQuery("(max-width: 1199px)");  // hides right panel
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Close drawer on route change so navigating from inside it feels
+  // natural. pathname dependency makes this automatic.
+  useEffect(() => { setDrawerOpen(false); }, [pathname]);
+
   return (
     <div style={{
       display: "flex",
       flexDirection: "column",
-      height: "100vh",
+      height: "100dvh",
       background: "var(--bg-app)",
       color: t.text,
     }}>
       <AmbientBackground />
-      <TopNav pathname={pathname} onAction={handleAction} />
+      <TopNav
+        pathname={pathname}
+        onAction={handleAction}
+        isMobile={isMobile}
+        onDrawer={() => setDrawerOpen(true)}
+      />
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <Sidebar pathname={pathname} onAction={handleAction} />
+        <Sidebar
+          pathname={pathname}
+          onAction={handleAction}
+          isMobile={isMobile}
+          drawerOpen={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+        />
         <main className="page-enter" style={{
           flex: 1,
           minWidth: 0,
           overflowY: "auto",
+          overflowX: "hidden",   // avoid horizontal overflow from legacy pages
           padding: "0",
+          WebkitOverflowScrolling: "touch",
         }}>
           {children}
         </main>
-        {rightPanel && (
+        {rightPanel && !isNarrow && (
           <aside style={{
             width: 280,
             flexShrink: 0,
