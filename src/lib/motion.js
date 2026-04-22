@@ -7,7 +7,7 @@
 // the DOM animation subset (no layout-animations / projections) is
 // loaded. That's ~4.5kb gzipped vs ~20kb for the full package.
 
-import { LazyMotion, domAnimation, m, AnimatePresence, useReducedMotion } from "framer-motion";
+import { LazyMotion, domAnimation, m, AnimatePresence, useReducedMotion, useInView } from "framer-motion";
 
 // Page-level transitions — children render with a soft fade + 4px
 // lift. Kept subtle; on reduced-motion we drop the y translate so
@@ -54,4 +54,4 @@ export const expandVariants = {
   },
 };
 
-export { LazyMotion, domAnimation, m, AnimatePresence, useReducedMotion };
+export { LazyMotion, domAnimation, m, AnimatePresence, useReducedMotion, useInView };
