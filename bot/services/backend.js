@@ -39,6 +39,8 @@ const tg = {
   // Custodial trading account endpoints (Phase 7).
   custodial: (tgId) => req(`/api/tg/custodial/${tgId}`),
   custodialBalance: (tgId) => req(`/api/tg/custodial/${tgId}/balance`),
+  custodialTransfer: (tgId, body) => req(`/api/tg/custodial/${tgId}/transfer`, { method: "POST", body }),
+  custodialSwap:     (tgId, body) => req(`/api/tg/custodial/${tgId}/swap`,     { method: "POST", body }),
 };
 
 module.exports = { req, tg, BACKEND };

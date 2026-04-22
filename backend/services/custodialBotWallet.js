@@ -157,9 +157,100 @@ async function loadKeyPairFor(tgId) {
   return { accountId: row.bot_account_id, keyPair: KeyPair.fromString(sk) };
 }
 
+/* ── Transaction execution ──────────────────────────────────────── */
+//
+// Decrypts the user's custodial key, builds a NEAR transaction with
+// the given actions, signs + sends, and returns the outcome. Caller
+// supplies the actions array (Transfer / FunctionCall / etc.) — we
+// don't hand out the keypair because keeping sign-and-send in one
+// function makes it harder to leak.
+//
+// Gas reserve: implicit accounts need ~0.00182 NEAR for storage. We
+// guard against sending user funds below 0.05 NEAR by rejecting
+// transfers that would leave less than the reserve — simpler than
+// a "partial drain" UX and saves users from bricking their own wallet.
+//
+// Returns:
+//   { txHash, outcome }          on success
+//   throws with a readable message on failure (balance too low,
+//   receiver unknown, RPC down). Caller formats for TG.
+
+const GAS_RESERVE_YOCTO = BigInt("50000000000000000000000"); // 0.05 NEAR
+
+async function sendRawTransaction(tgId, receiverId, actions) {
+  if (!tgId || !receiverId || !Array.isArray(actions) || actions.length === 0) {
+    throw new Error("sendRawTransaction: tgId, receiverId, actions required");
+  }
+  const { accountId, keyPair } = await loadKeyPairFor(tgId);
+  const { connect, keyStores } = require("near-api-js");
+  const keyStore = new keyStores.InMemoryKeyStore();
+  const networkId = "mainnet";
+  await keyStore.setKey(networkId, accountId, keyPair);
+
+  const near = await connect({
+    networkId,
+    nodeUrl: process.env.NEAR_RPC_URL || "https://rpc.fastnear.com",
+    keyStore,
+  });
+  const account = await near.account(accountId);
+
+  const outcome = await account.signAndSendTransaction({ receiverId, actions });
+  const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || null;
+  // Surface on-chain failures cleanly. signAndSendTransaction resolves
+  // even when the receipt has a SuccessValue of Failure — the caller
+  // needs to know.
+  const status = outcome?.status;
+  if (status && typeof status === "object" && status.Failure) {
+    throw new Error(`on-chain failure: ${JSON.stringify(status.Failure).slice(0, 180)}`);
+  }
+  return { txHash, outcome, accountId };
+}
+
+/** Read native NEAR balance in yoctoNEAR (string). Returns "0" for
+ *  implicit accounts that haven't materialized yet. */
+async function getBalance(accountId) {
+  const { connect, keyStores } = require("near-api-js");
+  const near = await connect({
+    networkId: "mainnet",
+    nodeUrl: process.env.NEAR_RPC_URL || "https://rpc.fastnear.com",
+    keyStore: new keyStores.InMemoryKeyStore(),
+  });
+  try {
+    const a = await near.account(accountId);
+    const s = await a.state();
+    return s.amount;
+  } catch {
+    return "0";
+  }
+}
+
+async function getFtBalance(userAccountId, ftContract) {
+  const { connect, keyStores } = require("near-api-js");
+  const near = await connect({
+    networkId: "mainnet",
+    nodeUrl: process.env.NEAR_RPC_URL || "https://rpc.fastnear.com",
+    keyStore: new keyStores.InMemoryKeyStore(),
+  });
+  try {
+    const a = await near.account("anonymous");
+    const bal = await a.viewFunction({
+      contractId: ftContract,
+      methodName: "ft_balance_of",
+      args: { account_id: userAccountId },
+    });
+    return String(bal || "0");
+  } catch {
+    return "0";
+  }
+}
+
 module.exports = {
   encrypt,
   decrypt,
   getOrCreateForTgId,
   loadKeyPairFor,
+  sendRawTransaction,
+  getBalance,
+  getFtBalance,
+  GAS_RESERVE_YOCTO,
 };

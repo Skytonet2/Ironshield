@@ -162,6 +162,215 @@ router.get("/custodial/:tgId", async (req, res) => {
   }
 });
 
+// POST /api/tg/custodial/:tgId/transfer
+// body: { to: string, amountNear: string | null }   (null = drain)
+//
+// Sends native NEAR from the user's custodial account. Reserves
+// GAS_RESERVE_YOCTO so drains don't brick the account below storage.
+// Used by both /send and /withdraw — the bot decides which semantic
+// to apply client-side (explicit amount vs "drain everything").
+router.post("/custodial/:tgId/transfer", async (req, res) => {
+  try {
+    const tgId = req.params.tgId;
+    const { to, amountNear } = req.body || {};
+    if (!to) return res.status(400).json({ error: "to required" });
+
+    const custodial = require("../services/custodialBotWallet");
+    const acct = await custodial.getOrCreateForTgId(tgId);
+    const balYocto = BigInt(await custodial.getBalance(acct.accountId));
+
+    // Resolve the transfer amount.
+    let sendYocto;
+    if (amountNear == null || amountNear === "all" || amountNear === "max") {
+      sendYocto = balYocto - custodial.GAS_RESERVE_YOCTO;
+    } else {
+      // Scale a human amount (e.g. "0.5") into yocto (10^24). BigInt-safe
+      // via a 6-decimal intermediate so Number() precision doesn't bite.
+      const n = Number(amountNear);
+      if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: "amountNear invalid" });
+      const asMicro = BigInt(Math.floor(n * 1_000_000));         // 6-decimal
+      sendYocto = asMicro * 10n ** 18n;                          // → yocto
+    }
+    if (sendYocto <= 0n) {
+      return res.status(400).json({
+        error: `Not enough balance. You have ${formatNear(balYocto)} NEAR; ${formatNear(custodial.GAS_RESERVE_YOCTO)} NEAR is reserved for storage.`,
+      });
+    }
+    if (sendYocto + custodial.GAS_RESERVE_YOCTO > balYocto) {
+      return res.status(400).json({
+        error: `Not enough balance. You have ${formatNear(balYocto)} NEAR; need ${formatNear(sendYocto + custodial.GAS_RESERVE_YOCTO)} including reserve.`,
+      });
+    }
+
+    const { transactions } = require("near-api-js");
+    const result = await custodial.sendRawTransaction(tgId, to, [
+      transactions.transfer(sendYocto),
+    ]);
+
+    res.json({
+      ok: true,
+      txHash: result.txHash,
+      fromAccountId: acct.accountId,
+      to,
+      amountYocto: sendYocto.toString(),
+      amountNear: formatNear(sendYocto),
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// POST /api/tg/custodial/:tgId/swap
+// body: {
+//   tokenIn:  NEP-141 contract id,
+//   tokenOut: NEP-141 contract id,
+//   amountBase: string,              // base units of tokenIn
+//   slippageBps?: number,             // default 100 = 1%
+// }
+//
+// Swap via Ref Finance on the user's custodial NEAR account. Follows
+// the same hand-rolled pattern as src/lib/trading/ref.js: get_return
+// for a quote, build ft_transfer_call to the router with the swap
+// action payload, 0.2% fee prepended as ft_transfer to
+// fees.ironshield.near. Returns the swap tx hash.
+router.post("/custodial/:tgId/swap", async (req, res) => {
+  try {
+    const tgId = req.params.tgId;
+    const { tokenIn, tokenOut, amountBase, slippageBps = 100 } = req.body || {};
+    if (!tokenIn || !tokenOut || !amountBase) {
+      return res.status(400).json({ error: "tokenIn, tokenOut, amountBase required" });
+    }
+
+    const custodial = require("../services/custodialBotWallet");
+    const acct = await custodial.getOrCreateForTgId(tgId);
+    const { connect, keyStores, transactions } = require("near-api-js");
+
+    // Ref Finance quote via view method — anonymous read account.
+    const near = await connect({
+      networkId: "mainnet",
+      nodeUrl: process.env.NEAR_RPC_URL || "https://rpc.fastnear.com",
+      keyStore: new keyStores.InMemoryKeyStore(),
+    });
+    const view = await near.account("anonymous");
+
+    // 1. Find a Ref pool that contains both tokens. We iterate the
+    //    user's pair to cover the common case; deep pathfinding can
+    //    come later. get_pool_by_ids would be ideal but isn't a view.
+    //    Fallback: iterate known-good pools per ticker in a future
+    //    migration. For this turn we require the caller to know or
+    //    we query Ref's simple routing.
+    //
+    //    Simpler: use get_return on a guess pool, adjust if needed.
+    //    For stablest MVP we pass `pool_id` in the body and let the
+    //    bot caller resolve it via search. But the current parser
+    //    doesn't know pool IDs...
+    //
+    //    Pragmatic MVP: require `poolId` in the body. Bot will hit
+    //    our /trading/ohlcv discovery to find a pool, or pass the
+    //    canonical wrap.near/stablecoin pools. Surface the error
+    //    cleanly when poolId is missing so the bot tells the user.
+    const poolId = req.body?.poolId;
+    if (poolId == null) {
+      return res.status(400).json({
+        error: "poolId required — the bot's /swap handler should resolve a Ref pool for the token pair before calling.",
+      });
+    }
+
+    const FEE_BPS = 20;
+    const inAmount = BigInt(amountBase);
+    const feeAmount = (inAmount * BigInt(FEE_BPS)) / 10_000n;
+    const swapAmount = inAmount - feeAmount;
+
+    let estimatedOut;
+    try {
+      estimatedOut = await view.viewFunction({
+        contractId: "v2.ref-finance.near",
+        methodName: "get_return",
+        args: {
+          pool_id: Number(poolId),
+          token_in: tokenIn,
+          amount_in: swapAmount.toString(),
+          token_out: tokenOut,
+        },
+      });
+    } catch (e) {
+      return res.status(400).json({ error: `Ref quote failed: ${e.message || e}` });
+    }
+    if (!estimatedOut || estimatedOut === "0") {
+      return res.status(400).json({ error: "Ref returned zero output — pool drained or wrong pair." });
+    }
+    const mult = BigInt(10_000 - slippageBps);
+    const minOut = ((BigInt(estimatedOut) * mult) / 10_000n).toString();
+
+    // Balance check on the user's tokenIn holding.
+    const ftBal = BigInt(await custodial.getFtBalance(acct.accountId, tokenIn));
+    if (ftBal < inAmount) {
+      return res.status(400).json({
+        error: `Not enough ${tokenIn}. You have ${ftBal.toString()}, need ${inAmount.toString()} (base units).`,
+      });
+    }
+
+    // Fire two transactions: ft_transfer(fee) + ft_transfer_call(swap).
+    // Two separate sends keep the fee landing even if Ref rejects the
+    // swap (preserves our 0.2% on failed attempts — matches the
+    // on-chain behavior in src/lib/trading/ref.js).
+    const feeReceiver = process.env.PLATFORM_WALLET_NEAR || "fees.ironshield.near";
+    const feeTx = await custodial.sendRawTransaction(tgId, tokenIn, [
+      transactions.functionCall(
+        "ft_transfer",
+        {
+          receiver_id: feeReceiver,
+          amount: feeAmount.toString(),
+          memo: "ironshield platform fee (tg bot)",
+        },
+        "30000000000000",
+        "1"
+      ),
+    ]);
+
+    const swapMsg = JSON.stringify({
+      actions: [{
+        pool_id: Number(poolId),
+        token_in: tokenIn,
+        amount_in: swapAmount.toString(),
+        token_out: tokenOut,
+        min_amount_out: minOut,
+      }],
+    });
+    const swapTx = await custodial.sendRawTransaction(tgId, tokenIn, [
+      transactions.functionCall(
+        "ft_transfer_call",
+        {
+          receiver_id: "v2.ref-finance.near",
+          amount: swapAmount.toString(),
+          msg: swapMsg,
+        },
+        "180000000000000",
+        "1"
+      ),
+    ]);
+
+    res.json({
+      ok: true,
+      swapTxHash: swapTx.txHash,
+      feeTxHash:  feeTx.txHash,
+      estimatedOut,
+      minOut,
+      amountIn: inAmount.toString(),
+      feeAmount: feeAmount.toString(),
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+function formatNear(yocto) {
+  const n = BigInt(yocto);
+  const whole = n / (10n ** 24n);
+  const frac  = (n % (10n ** 24n)).toString().padStart(24, "0").slice(0, 4);
+  return `${whole}${frac ? "." + frac.replace(/0+$/, "") : ""}`;
+}
+
 // GET /api/tg/custodial/:tgId/balance — native NEAR balance on the
 // custodial account. Zero-balance implicit accounts look "not exist"
 // to the RPC; treat that as 0 rather than erroring.
