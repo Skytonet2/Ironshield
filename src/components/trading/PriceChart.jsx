@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "@/lib/contexts";
-import { fetchOhlcv } from "@/lib/api/geckoTerminal";
+import { fetchOhlcv } from "@/lib/api/ohlcv";
 
 const LIVE_REFRESH_MS = 5_000;
 
