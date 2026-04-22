@@ -70,12 +70,14 @@ const SIDEBAR_GROUPS = [
   {
     label: "Platform",
     items: [
-      { key: "ironfeed",    label: "IronFeed",         Icon: Rss,        href: "/feed"        },
-      { key: "newscoin",    label: "NewsCoin",         Icon: Coins,      href: "/newscoin"    },
-      { key: "automations", label: "Automations",      Icon: Zap,        href: "/automations" },
-      { key: "profile",     label: "Profile",          Icon: User,       href: "/profile"     },
-      { key: "rewards",     label: "Rewards",          Icon: Trophy,     href: "/rewards"     },
-      { key: "rooms",       label: "Rooms",            Icon: Mic,        href: "/rooms"       },
+      { key: "ironfeed",    label: "IronFeed",         Icon: Rss,           href: "/feed"        },
+      { key: "newscoin",    label: "NewsCoin",         Icon: Coins,         href: "/newscoin"    },
+      { key: "portfolio",   label: "Portfolio",        Icon: Briefcase,     href: "/portfolio"   },
+      { key: "bridge",      label: "Bridge",           Icon: ArrowLeftRight, href: "/bridge"     },
+      { key: "automations", label: "Automations",      Icon: Zap,           href: "/automations" },
+      { key: "profile",     label: "Profile",          Icon: User,          href: "/profile"     },
+      { key: "rewards",     label: "Rewards",          Icon: Trophy,        href: "/rewards"     },
+      { key: "rooms",       label: "Rooms",            Icon: Mic,           href: "/rooms"       },
     ],
   },
   {
@@ -386,10 +388,10 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
 const TOP_PILLS = [
   { label: "Feed",        href: "/feed" },
   { label: "NewsCoin",    href: "/newscoin" },
+  { label: "Portfolio",   href: "/portfolio" },
   { label: "Automations", href: "/automations" },
   { label: "Rewards",     href: "/rewards" },
   { label: "Profile",     href: "/profile" },
-  { label: "Settings",    href: "/settings" },
 ];
 
 function TopNav({ pathname, onAction, isMobile, onDrawer }) {
@@ -800,7 +802,13 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   // the order book" later).
   const handleAction = onAction || ((kind) => {
     if (kind === "create") { setCreateOpen(true); setCreatePrefill(null); return; }
-    if (kind === "bridge") { setBridgeOpen(true); return; }
+    if (kind === "bridge") {
+      // Bridge used to open as a modal; it's now a dedicated route
+      // with chain pickers + amount + review flow. Deep-link over so
+      // the modal state doesn't double-mount alongside the page.
+      if (typeof window !== "undefined") window.location.href = "/bridge";
+      return;
+    }
     if (kind === "search") { setSearchOpen(true); return; }
     // Sidebar "Post" and TopNav "tweet" both land on the feed
     // composer. If we're already on the feed, broadcast an event
