@@ -20,18 +20,22 @@ const CUSTODIAL_EXPLAINER = `
 🔐 *How your IronShield trading account works*
 
 When you linked, we minted a fresh NEAR implicit account just for
-this bot. Think of it like a Venmo wallet — fast and convenient,
-but only for funds you choose to move in. Your main wallets stay
-untouched.
+this bot. Think of it like Venmo for crypto — fast and
+conversational, funds stay in this account only. Your main wallets
+are never touched.
 
 • *Custody:* We hold the encrypted signing key for your bot
   account. Your main wallets are not affected.
 • *Fund it:* From any NEAR wallet, or bridge in from SOL / ETH /
-  BTC / 15+ chains with /deposit.
-• *Trade fast:* "swap $10 sol to near" or "send $2 to alice.near"
-  execute instantly inside TG.
-• *Withdraw anytime:* /withdraw <address> drains everything back
-  out.
+  BTC / 15+ chains — run /deposit.
+• *Trade with plain text:* Just type what you want. "swap $10 sol
+  to near" or "send 2 near to alice.near". No slashes needed.
+  Powered by NEAR Intents (near.com) — one engine, every chain.
+• *Withdraw anytime:* /withdraw <address> drains everything.
+
+One-time *$5 activation* unlocks the fast commands. The fee pays
+for IronClaw agent infra (LLM + routing) that understands your
+plain-text requests. Run /activate after funding.
 
 Only deposit what you're willing to trade with.
 `.trim();
@@ -190,33 +194,55 @@ function toBaseUnits(tokenAmount, assetId) {
   return (BigInt(whole || "0") * factor + BigInt(fracPadded || "0")).toString();
 }
 
-/* ── /swap ───────────────────────────────────────────────────────
+/* ── /activate ──────────────────────────────────────────────────
  *
- * Real on-chain path: Ref Finance NEP-141 → NEP-141 on the user's
- * custodial account. 1click cross-chain bridge swaps (e.g. sol →
- * SOL on Solana) land in the next turn once the recipient-address
- * UX is designed.
+ * Two-step: first call returns the preview (how much NEAR = $5 at
+ * today's price); confirmation reply fires the on-chain transfer.
  */
+async function handleActivate(bot, msg) {
+  const chatId = msg.chat.id;
+  const tgId   = msg.from.id;
+  const text   = (msg.text || "").toLowerCase();
+  const confirm = /confirm|yes|ok|go/.test(text);
 
-// Known-good Ref pool IDs for common pairs. `null` means we'll try to
-// resolve dynamically via a pool-lookup; unknown pairs error cleanly
-// rather than guessing. Expand as needed.
-const REF_POOLS = {
-  // (tokenIn|tokenOut) → pool_id
-  "nep141:sol.omft.near|nep141:wrap.near": null,  // dynamic
-  "nep141:wrap.near|nep141:sol.omft.near": null,
-  // Add common pairs here as we verify pool IDs on-chain.
-};
-
-async function resolveRefPool(tokenIn, tokenOut) {
-  // Today we rely on the caller to know. A `/swap <poolId> ...` escape
-  // hatch lives in the parser; future: fetch pool list via
-  // v2.ref-finance.near's get_pool_by_token_pair view once we verify
-  // that's actually a view method.
-  const key = `${tokenIn}|${tokenOut}`;
-  return REF_POOLS[key] || null;
+  const r = await tg.custodialActivate(tgId, { confirm });
+  if (!r.ok) {
+    return bot.sendMessage(chatId, `❌ ${r.error || "Activation failed"}`);
+  }
+  if (r.alreadyActivated) {
+    return bot.sendMessage(chatId, `✅ You're already activated — trade away.`);
+  }
+  if (r.needsConfirm) {
+    return bot.sendMessage(
+      chatId,
+      `💳 *Activate bot trading*\n\n` +
+      `One-time fee: *$${r.usd}* ≈ *${r.nearAmount} NEAR* (@ $${r.nearUsdPrice}/NEAR)\n` +
+      `Paid to: \`${r.feeRecipient}\`\n\n` +
+      `Covers IronClaw agent infrastructure (LLM routing, usage cost).\n\n` +
+      `Reply *\`/activate confirm\`* to send.`,
+      { parse_mode: "Markdown" }
+    );
+  }
+  return bot.sendMessage(
+    chatId,
+    `✅ *Activated!*\n\n` +
+    `Paid ${r.paidNear} NEAR ($${r.usd}).\n` +
+    `[View tx →](${txLink(r.txHash)})\n\n` +
+    `Fast trading is unlocked. Just type naturally:\n` +
+    `• \`swap $10 sol to near\`\n` +
+    `• \`send 0.5 near to alice.near\``,
+    { parse_mode: "Markdown", disable_web_page_preview: true }
+  );
 }
 
+/* ── swap (plain-text or /swap) ─────────────────────────────────
+ *
+ * Every swap flows through NEAR Intents (1click chaindefuser). One
+ * engine, every chain. If both originAsset and destinationAsset are
+ * on NEAR, the solver handles it as an internal swap; if they're on
+ * different chains, same call, same shape — the solver figures out
+ * routing. Our 0.2% fee rides along via 1click's appFees.
+ */
 async function handleSwap(bot, msg, override) {
   const chatId = msg.chat.id;
   const tgId   = msg.from.id;
@@ -224,48 +250,45 @@ async function handleSwap(bot, msg, override) {
   if (!parsed || parsed.kind !== "swap") {
     return bot.sendMessage(
       chatId,
-      "Usage: `swap <amount> <from> to <to>`\nExample: `swap 0.1 sol to near`\n\n" +
-      "Supports NEP-141 → NEP-141 pairs on your NEAR custodial account " +
-      "via Ref Finance. Cross-chain bridge swaps arrive in the next turn.",
+      "Tell me what to swap. Examples:\n" +
+      "• `swap $10 sol to near`\n" +
+      "• `swap 0.5 near to usdc`\n\n" +
+      "Every pair goes through near.com (NEAR Intents). Works cross-chain too — " +
+      "pass a destination wallet and I'll deliver there.",
       { parse_mode: "Markdown" }
     );
   }
 
   try {
-    // Resolve USD → token amount if the user said "$10".
     let tokenAmount = parsed.amount;
     if (parsed.amountIsUsd) {
       tokenAmount = await resolveUsdToToken(parsed.amount, parsed.fromToken);
     }
     const amountBase = toBaseUnits(tokenAmount, parsed.fromToken);
 
-    const poolId = await resolveRefPool(parsed.fromToken, parsed.toToken);
-    if (poolId == null) {
-      return bot.sendMessage(
-        chatId,
-        `⚠️ No Ref pool registered for ${formatToken(parsed.fromToken)} → ${formatToken(parsed.toToken)}.\n\n` +
-        `Swappable pairs need a known pool ID. If you know the Ref pool ID, ` +
-        `try \`/swap ${poolId || "<poolId>"} ${tokenAmount} ${formatToken(parsed.fromToken)} ${formatToken(parsed.toToken)}\`.`,
-        { parse_mode: "Markdown" }
-      );
-    }
-
-    await bot.sendMessage(chatId, `⏳ Signing swap…`);
+    await bot.sendMessage(chatId, `⏳ Routing through near.com…`);
     const r = await tg.custodialSwap(tgId, {
-      tokenIn:  parsed.fromToken,
-      tokenOut: parsed.toToken,
+      originAsset:      parsed.fromToken,
+      destinationAsset: parsed.toToken,
       amountBase,
-      poolId,
       slippageBps: 100,
     });
     if (!r.ok) {
+      if (r.status === 402 || /activation/i.test(r.error || "")) {
+        return bot.sendMessage(
+          chatId,
+          `🔒 Activate first. Run /activate — one-time $5 unlocks fast trading.`
+        );
+      }
       return bot.sendMessage(chatId, `❌ Swap failed: ${r.error || "unknown error"}`);
     }
+    const outStr = fromBaseUnits(r.estimatedOut, parsed.toToken);
     const text =
-      `✅ *Swap complete*\n\n` +
-      `${tokenAmount} ${formatToken(parsed.fromToken)} → ~${fromBaseUnits(r.estimatedOut, parsed.toToken)} ${formatToken(parsed.toToken)}\n` +
-      `[Swap tx →](${txLink(r.swapTxHash)})  ·  [Fee tx →](${txLink(r.feeTxHash)})\n` +
-      `Platform fee: 0.20%`;
+      `✅ *Swap sent via near.com*\n\n` +
+      `${tokenAmount} ${formatToken(parsed.fromToken)} → ~${outStr} ${formatToken(parsed.toToken)}\n` +
+      `[View ft_transfer →](${txLink(r.swapTxHash)})\n` +
+      `Platform fee: 0.20% (routed via 1click appFees)\n\n` +
+      `The solver typically settles in 15–60s. Run /balance to check.`;
     return bot.sendMessage(chatId, text, {
       parse_mode: "Markdown",
       disable_web_page_preview: true,
@@ -311,6 +334,12 @@ async function handleSend(bot, msg, override) {
       amountNear: String(nearAmount),
     });
     if (!r.ok) {
+      if (r.status === 402 || /activation/i.test(r.error || "")) {
+        return bot.sendMessage(
+          chatId,
+          `🔒 Activate first. Run /activate — one-time $5 unlocks fast sending.`
+        );
+      }
       return bot.sendMessage(chatId, `❌ ${r.error || "Send failed"}`);
     }
     const text =
@@ -352,6 +381,12 @@ async function handleWithdraw(bot, msg) {
       amountNear: amt || null,
     });
     if (!r.ok) {
+      if (r.status === 402 || /activation/i.test(r.error || "")) {
+        return bot.sendMessage(
+          chatId,
+          `🔒 Activate first. Run /activate — one-time $5 unlocks withdrawals.`
+        );
+      }
       return bot.sendMessage(chatId, `❌ ${r.error || "Withdraw failed"}`);
     }
     const text =
@@ -396,6 +431,7 @@ function formatToken(ref) {
 module.exports = {
   handleDeposit,
   handleBalance,
+  handleActivate,
   handleSwap,
   handleSend,
   handleWithdraw,

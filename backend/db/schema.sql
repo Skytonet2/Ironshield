@@ -770,3 +770,12 @@ ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS bot_key_encrypted TEXT;
 ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS bot_created_at    TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_links_bot_account
   ON feed_tg_links(bot_account_id) WHERE bot_account_id IS NOT NULL;
+
+-- Bot activation: one-time $5-in-NEAR fee to fees.ironshield.near
+-- that unlocks /swap /send /withdraw. Covers IronClaw agent-usage
+-- costs (LLM call + infra). `activated_tx_hash` is the on-chain
+-- proof so activations can be audited without hitting Nearblocks.
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activated_at      TIMESTAMPTZ;
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activated_tx_hash TEXT;
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activation_near   NUMERIC(40,18);
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activation_usd    NUMERIC(10,2);

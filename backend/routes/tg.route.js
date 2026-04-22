@@ -162,6 +162,119 @@ router.get("/custodial/:tgId", async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────────
+// Activation gate
+// ──────────────────────────────────────────────────────────────
+//
+// Bot trading is paywalled: users pay a one-time $5 NEAR fee to
+// fees.ironshield.near before /swap, /send, /withdraw unlock. The
+// fee covers IronClaw LLM + infra usage — agent calls aren't free
+// and we don't want abandoned accounts spending our budget.
+//
+// Price resolution: CoinGecko simple/price for near/usd at the time
+// of the /activate call. The user sees the USD-denominated
+// confirmation; the NEAR amount is what actually moves. Stamped
+// permanently in activation_near so we can prove what each user
+// paid.
+
+const ACTIVATION_USD = 5;
+const FEE_WALLET = () =>
+  process.env.PLATFORM_WALLET_NEAR ||
+  process.env.BRIDGE_FEE_RECIPIENT  ||
+  "fees.ironshield.near";
+
+async function fetchNearUsd() {
+  const url = "https://api.coingecko.com/api/v3/simple/price?ids=near&vs_currencies=usd";
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`CoinGecko ${r.status}`);
+  const j = await r.json();
+  const px = j?.near?.usd;
+  if (!px || !Number.isFinite(px)) throw new Error("No NEAR/USD price");
+  return Number(px);
+}
+
+async function isActivated(tgId) {
+  const r = await db.query(
+    "SELECT activated_at FROM feed_tg_links WHERE tg_id = $1",
+    [tgId]
+  );
+  return !!r.rows[0]?.activated_at;
+}
+
+async function requireActivation(tgId, res) {
+  if (await isActivated(tgId)) return true;
+  res.status(402).json({
+    error: "Bot trading is locked. Pay a one-time $5 activation fee with /activate to unlock /swap, /send, and /withdraw. The fee covers IronClaw agent infra.",
+    code: "not_activated",
+  });
+  return false;
+}
+
+// POST /api/tg/custodial/:tgId/activate
+//   body: { confirm?: boolean }  confirm=true executes; default is
+//   a dry-preview returning { preparedNear, usd } so the bot can show
+//   the user the exact NEAR amount to approve.
+router.post("/custodial/:tgId/activate", async (req, res) => {
+  try {
+    const tgId = req.params.tgId;
+    const { confirm } = req.body || {};
+    if (await isActivated(tgId)) {
+      return res.json({ ok: true, alreadyActivated: true });
+    }
+
+    const nearUsd = await fetchNearUsd();
+    const nearAmount = ACTIVATION_USD / nearUsd;        // float — fine for display
+    const yoctoFloat = nearAmount * 1e24;
+    // BigInt-safe: scale through 6 decimals to survive float precision.
+    const yocto = BigInt(Math.floor(nearAmount * 1_000_000)) * 10n ** 18n;
+
+    if (!confirm) {
+      return res.json({
+        needsConfirm: true,
+        usd: ACTIVATION_USD,
+        nearAmount: nearAmount.toFixed(4),
+        nearUsdPrice: nearUsd.toFixed(4),
+        feeRecipient: FEE_WALLET(),
+      });
+    }
+
+    // Balance check so a failed activation gives a clear message
+    // instead of an on-chain reject.
+    const custodial = require("../services/custodialBotWallet");
+    const acct = await custodial.getOrCreateForTgId(tgId);
+    const bal = BigInt(await custodial.getBalance(acct.accountId));
+    if (bal < yocto + custodial.GAS_RESERVE_YOCTO) {
+      return res.status(400).json({
+        error: `Not enough NEAR. Need ${nearAmount.toFixed(4)} + 0.05 reserve = ${(nearAmount + 0.05).toFixed(4)} NEAR. You have ${formatNear(bal)}. Run /deposit to fund.`,
+      });
+    }
+
+    const { transactions } = require("near-api-js");
+    const tx = await custodial.sendRawTransaction(tgId, FEE_WALLET(), [
+      transactions.transfer(yocto),
+    ]);
+
+    await db.query(
+      `UPDATE feed_tg_links
+          SET activated_at = NOW(),
+              activated_tx_hash = $2,
+              activation_near   = $3,
+              activation_usd    = $4
+        WHERE tg_id = $1`,
+      [tgId, tx.txHash, nearAmount, ACTIVATION_USD]
+    );
+
+    res.json({
+      ok: true,
+      txHash: tx.txHash,
+      paidNear: nearAmount.toFixed(4),
+      usd: ACTIVATION_USD,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // POST /api/tg/custodial/:tgId/transfer
 // body: { to: string, amountNear: string | null }   (null = drain)
 //
@@ -172,6 +285,7 @@ router.get("/custodial/:tgId", async (req, res) => {
 router.post("/custodial/:tgId/transfer", async (req, res) => {
   try {
     const tgId = req.params.tgId;
+    if (!(await requireActivation(tgId, res))) return;
     const { to, amountNear } = req.body || {};
     if (!to) return res.status(400).json({ error: "to required" });
 
@@ -222,130 +336,100 @@ router.post("/custodial/:tgId/transfer", async (req, res) => {
 
 // POST /api/tg/custodial/:tgId/swap
 // body: {
-//   tokenIn:  NEP-141 contract id,
-//   tokenOut: NEP-141 contract id,
-//   amountBase: string,              // base units of tokenIn
-//   slippageBps?: number,             // default 100 = 1%
+//   originAsset:      NEAR Intents assetId (e.g. "nep141:sol.omft.near")
+//   destinationAsset: NEAR Intents assetId
+//   amountBase:       string        (base units of originAsset)
+//   recipient?:       string        (defaults to custodial — for
+//                                    same-chain swaps back onto the
+//                                    custodial; pass an external
+//                                    address for cross-chain "send
+//                                    to my Phantom" style swaps)
+//   slippageBps?:     number        (default 100 = 1%)
 // }
 //
-// Swap via Ref Finance on the user's custodial NEAR account. Follows
-// the same hand-rolled pattern as src/lib/trading/ref.js: get_return
-// for a quote, build ft_transfer_call to the router with the swap
-// action payload, 0.2% fee prepended as ft_transfer to
-// fees.ironshield.near. Returns the swap tx hash.
+// All swaps flow through NEAR Intents (1click chaindefuser). No
+// DEX-specific pool resolution; no Ref; no separate cross-chain
+// handler. The solver handles every pair — NEP-141↔NEP-141 on NEAR,
+// NEP-141→native on another chain, native→NEP-141 in — in one shape.
+//
+// 0.2% platform fee is stamped via 1click's appFees field so it
+// lands atomically inside the solver's settlement. No separate
+// ft_transfer.
 router.post("/custodial/:tgId/swap", async (req, res) => {
   try {
     const tgId = req.params.tgId;
-    const { tokenIn, tokenOut, amountBase, slippageBps = 100 } = req.body || {};
-    if (!tokenIn || !tokenOut || !amountBase) {
-      return res.status(400).json({ error: "tokenIn, tokenOut, amountBase required" });
+    if (!(await requireActivation(tgId, res))) return;
+    const {
+      originAsset, destinationAsset, amountBase,
+      slippageBps = 100, recipient,
+    } = req.body || {};
+    if (!originAsset || !destinationAsset || !amountBase) {
+      return res.status(400).json({
+        error: "originAsset, destinationAsset, amountBase required",
+      });
     }
 
     const custodial = require("../services/custodialBotWallet");
     const acct = await custodial.getOrCreateForTgId(tgId);
-    const { connect, keyStores, transactions } = require("near-api-js");
 
-    // Ref Finance quote via view method — anonymous read account.
-    const near = await connect({
-      networkId: "mainnet",
-      nodeUrl: process.env.NEAR_RPC_URL || "https://rpc.fastnear.com",
-      keyStore: new keyStores.InMemoryKeyStore(),
+    // Balance check on the user's originAsset. Implicit accounts can
+    // only swap from NEP-141s they actually hold.
+    const ftContract = originAsset.startsWith("nep141:")
+      ? originAsset.slice("nep141:".length)
+      : originAsset;
+    const haveBase = BigInt(await custodial.getFtBalance(acct.accountId, ftContract));
+    const needBase = BigInt(amountBase);
+    if (haveBase < needBase) {
+      return res.status(400).json({
+        error: `Not enough ${ftContract}. You have ${haveBase.toString()}, need ${needBase.toString()} (base units).`,
+      });
+    }
+
+    // 1click non-dry quote → deposit address. Uses the same
+    // /api/bridge/submit flow as the web bridge but with our
+    // custodial as both refund + recipient (unless caller overrides
+    // recipient, e.g. for cross-chain send to a Solana wallet).
+    const submitUrl = `http://localhost:${process.env.BACKEND_PORT || 3001}/api/bridge/submit`;
+    const qRes = await fetch(submitUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originAsset,
+        destinationAsset,
+        amount: needBase.toString(),
+        slippageBps,
+        recipient: recipient || acct.accountId,
+        refundTo:  acct.accountId,
+      }),
     });
-    const view = await near.account("anonymous");
-
-    // 1. Find a Ref pool that contains both tokens. We iterate the
-    //    user's pair to cover the common case; deep pathfinding can
-    //    come later. get_pool_by_ids would be ideal but isn't a view.
-    //    Fallback: iterate known-good pools per ticker in a future
-    //    migration. For this turn we require the caller to know or
-    //    we query Ref's simple routing.
-    //
-    //    Simpler: use get_return on a guess pool, adjust if needed.
-    //    For stablest MVP we pass `pool_id` in the body and let the
-    //    bot caller resolve it via search. But the current parser
-    //    doesn't know pool IDs...
-    //
-    //    Pragmatic MVP: require `poolId` in the body. Bot will hit
-    //    our /trading/ohlcv discovery to find a pool, or pass the
-    //    canonical wrap.near/stablecoin pools. Surface the error
-    //    cleanly when poolId is missing so the bot tells the user.
-    const poolId = req.body?.poolId;
-    if (poolId == null) {
-      return res.status(400).json({
-        error: "poolId required — the bot's /swap handler should resolve a Ref pool for the token pair before calling.",
+    const quote = await qRes.json().catch(() => ({}));
+    if (!qRes.ok) {
+      return res.status(qRes.status).json({
+        error: quote.error || `Quote failed (${qRes.status})`,
       });
     }
-
-    const FEE_BPS = 20;
-    const inAmount = BigInt(amountBase);
-    const feeAmount = (inAmount * BigInt(FEE_BPS)) / 10_000n;
-    const swapAmount = inAmount - feeAmount;
-
-    let estimatedOut;
-    try {
-      estimatedOut = await view.viewFunction({
-        contractId: "v2.ref-finance.near",
-        methodName: "get_return",
-        args: {
-          pool_id: Number(poolId),
-          token_in: tokenIn,
-          amount_in: swapAmount.toString(),
-          token_out: tokenOut,
-        },
-      });
-    } catch (e) {
-      return res.status(400).json({ error: `Ref quote failed: ${e.message || e}` });
-    }
-    if (!estimatedOut || estimatedOut === "0") {
-      return res.status(400).json({ error: "Ref returned zero output — pool drained or wrong pair." });
-    }
-    const mult = BigInt(10_000 - slippageBps);
-    const minOut = ((BigInt(estimatedOut) * mult) / 10_000n).toString();
-
-    // Balance check on the user's tokenIn holding.
-    const ftBal = BigInt(await custodial.getFtBalance(acct.accountId, tokenIn));
-    if (ftBal < inAmount) {
-      return res.status(400).json({
-        error: `Not enough ${tokenIn}. You have ${ftBal.toString()}, need ${inAmount.toString()} (base units).`,
-      });
+    const depositAddress = quote?.quote?.depositAddress;
+    const amountOut      = quote?.quote?.amountOut;
+    const minOut         = quote?.quote?.minAmountOut;
+    if (!depositAddress) {
+      return res.status(502).json({ error: "1click didn't return a deposit address" });
     }
 
-    // Fire two transactions: ft_transfer(fee) + ft_transfer_call(swap).
-    // Two separate sends keep the fee landing even if Ref rejects the
-    // swap (preserves our 0.2% on failed attempts — matches the
-    // on-chain behavior in src/lib/trading/ref.js).
-    const feeReceiver = process.env.PLATFORM_WALLET_NEAR || "fees.ironshield.near";
-    const feeTx = await custodial.sendRawTransaction(tgId, tokenIn, [
+    // Single on-chain action: ft_transfer from the user's custodial
+    // to the deposit address. 1click solver picks up the deposit,
+    // executes the swap (possibly cross-chain), and delivers to
+    // `recipient`. Our 0.2% appFee is stamped server-side in the
+    // bridge route, so no second fee tx here.
+    const { transactions } = require("near-api-js");
+    const swapTx = await custodial.sendRawTransaction(tgId, ftContract, [
       transactions.functionCall(
         "ft_transfer",
         {
-          receiver_id: feeReceiver,
-          amount: feeAmount.toString(),
-          memo: "ironshield platform fee (tg bot)",
+          receiver_id: depositAddress,
+          amount: needBase.toString(),
+          memo: "ironshield bot swap",
         },
         "30000000000000",
-        "1"
-      ),
-    ]);
-
-    const swapMsg = JSON.stringify({
-      actions: [{
-        pool_id: Number(poolId),
-        token_in: tokenIn,
-        amount_in: swapAmount.toString(),
-        token_out: tokenOut,
-        min_amount_out: minOut,
-      }],
-    });
-    const swapTx = await custodial.sendRawTransaction(tgId, tokenIn, [
-      transactions.functionCall(
-        "ft_transfer_call",
-        {
-          receiver_id: "v2.ref-finance.near",
-          amount: swapAmount.toString(),
-          msg: swapMsg,
-        },
-        "180000000000000",
         "1"
       ),
     ]);
@@ -353,11 +437,10 @@ router.post("/custodial/:tgId/swap", async (req, res) => {
     res.json({
       ok: true,
       swapTxHash: swapTx.txHash,
-      feeTxHash:  feeTx.txHash,
-      estimatedOut,
+      depositAddress,
+      estimatedOut: amountOut,
       minOut,
-      amountIn: inAmount.toString(),
-      feeAmount: feeAmount.toString(),
+      amountIn: needBase.toString(),
     });
   } catch (e) {
     res.status(400).json({ error: e.message });

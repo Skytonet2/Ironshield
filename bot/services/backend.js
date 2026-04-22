@@ -41,6 +41,7 @@ const tg = {
   custodialBalance: (tgId) => req(`/api/tg/custodial/${tgId}/balance`),
   custodialTransfer: (tgId, body) => req(`/api/tg/custodial/${tgId}/transfer`, { method: "POST", body }),
   custodialSwap:     (tgId, body) => req(`/api/tg/custodial/${tgId}/swap`,     { method: "POST", body }),
+  custodialActivate: (tgId, body) => req(`/api/tg/custodial/${tgId}/activate`, { method: "POST", body: body || {} }),
 };
 
 module.exports = { req, tg, BACKEND };

@@ -54,6 +54,7 @@ const COMMANDS = {
   // Phase 7 — custodial trading account
   "/deposit":   custodial.handleDeposit,
   "/balance":   custodial.handleBalance,
+  "/activate":  custodial.handleActivate,
   "/swap":      custodial.handleSwap,
   "/send":      custodial.handleSend,
   "/withdraw":  custodial.handleWithdraw,
