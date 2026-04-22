@@ -357,28 +357,15 @@ export default function ComposeBar({ onPosted }) {
           and <main> has a page-enter animation whose transform lingered
           in the computed style. Portal sidesteps that class of bug for
           good. */}
-      {/* Compact collapsed-state FAB (mobile) — lives in a portal so
-          ancestor transforms can't turn position:fixed into a scroll-
-          relative coordinate (this has bitten us once already). */}
-      {!open && typeof document !== "undefined" && createPortal(
-        <button
-          type="button"
-          onClick={() => { setOpen(true); setTimeout(() => taRef.current?.focus(), 40); }}
-          aria-label="Post"
-          className="ix-compose-fab"
-          style={{
-            position: "fixed", bottom: 74, right: 16, zIndex: 90,
-            width: 52, height: 52, borderRadius: "50%",
-            background: `linear-gradient(135deg, ${t.accent}, #a855f7)`, color: "#fff",
-            border: "none", cursor: "pointer",
-            boxShadow: "0 10px 30px rgba(168,85,247,0.45)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          <Plus size={22} />
-        </button>,
-        document.body
-      )}
+      {/* The standalone FAB used to live here, but the mobile
+          bottom nav now carries a gradient + button in the center
+          slot — we don't want two pink blobs fighting for the same
+          corner. On desktop there's no FAB either; the composer
+          itself is always visible at the top of /feed.
+          The ComposerBar still listens for the global
+          "ironshield:open-composer" event + the ?compose=1 query,
+          so the bottom-nav + button (which fires that action) still
+          opens this composer in place. */}
     </>
   );
 }

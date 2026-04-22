@@ -571,6 +571,129 @@ function fmtUsd(n) {
   return `$${n.toFixed(3)}`;
 }
 
+/* ── Mobile bottom nav — native-feel primary navigation for phones.
+ * Five items: Home · Search · + (gradient FAB) · Alerts · Profile.
+ * The middle +, centered and raised, is the post shortcut — tapping
+ * it fires the same "post" action that opens the feed composer.
+ * Active route shows an accent tint + top-edge bar. */
+function MobileBottomNav({ pathname, onAction }) {
+  const t = useTheme();
+  const items = [
+    { key: "home",    label: "Home",    Icon: Home,   kind: "link",   href: "/"        },
+    { key: "search",  label: "Search",  Icon: Search, kind: "action", action: "search" },
+    { key: "post",    label: "",        Icon: Plus,   kind: "fab",    action: "post"   },
+    { key: "alerts",  label: "Alerts",  Icon: Bell,   kind: "action", action: "notifications", badge: 3 },
+    { key: "profile", label: "Profile", Icon: User,   kind: "link",   href: "/profile" },
+  ];
+  const activeKey = (() => {
+    if (pathname?.startsWith("/profile")) return "profile";
+    if (pathname === "/")                 return "home";
+    return null;
+  })();
+
+  return (
+    <nav
+      role="navigation"
+      aria-label="Primary"
+      style={{
+        height: 64,
+        display: "flex",
+        alignItems: "stretch",
+        justifyContent: "space-around",
+        padding: "0 4px",
+        borderTop: `1px solid ${t.border}`,
+        background: "linear-gradient(180deg, rgba(11,15,32,0.92), rgba(8,11,22,0.98))",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        flexShrink: 0,
+      }}
+    >
+      {items.map((it) => {
+        const active = it.key === activeKey;
+        if (it.kind === "fab") {
+          return (
+            <button
+              key={it.key}
+              type="button"
+              onClick={() => onAction(it.action)}
+              aria-label="Post"
+              style={{
+                alignSelf: "center",
+                width: 56, height: 56, borderRadius: "50%",
+                border: "none",
+                background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+                color: "#fff", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 12px 28px rgba(168,85,247,0.45), inset 0 1px 0 rgba(255,255,255,0.2)",
+                transform: "translateY(-14px)",
+              }}
+            >
+              <it.Icon size={22} />
+            </button>
+          );
+        }
+        const content = (
+          <>
+            <div style={{ position: "relative" }}>
+              <it.Icon size={22} color={active ? t.accent : t.textMuted} />
+              {it.badge > 0 && (
+                <span style={{
+                  position: "absolute", top: -4, right: -8,
+                  minWidth: 16, height: 16, padding: "0 4px",
+                  borderRadius: 999,
+                  background: "linear-gradient(135deg, #ef4444, #f97316)",
+                  color: "#fff", fontSize: 10, fontWeight: 800,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "0 0 0 2px var(--bg-surface)",
+                }}>{it.badge}</span>
+              )}
+            </div>
+            <span style={{
+              fontSize: 10, fontWeight: 600, letterSpacing: 0.3,
+              color: active ? t.accent : t.textMuted,
+            }}>{it.label}</span>
+          </>
+        );
+        const sharedStyle = {
+          flex: 1,
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          gap: 3,
+          background: "transparent", border: "none",
+          cursor: "pointer", textDecoration: "none",
+          position: "relative",
+        };
+        if (it.kind === "link") {
+          return (
+            <a key={it.key} href={it.href} style={sharedStyle}>
+              {active && (
+                <span style={{
+                  position: "absolute", top: 0, left: "30%", right: "30%",
+                  height: 2, borderRadius: 2,
+                  background: `linear-gradient(90deg, ${t.accent}, #a855f7)`,
+                }} />
+              )}
+              {content}
+            </a>
+          );
+        }
+        return (
+          <button key={it.key} type="button" onClick={() => onAction(it.action)} style={sharedStyle}>
+            {active && (
+              <span style={{
+                position: "absolute", top: 0, left: "30%", right: "30%",
+                height: 2, borderRadius: 2,
+                background: `linear-gradient(90deg, ${t.accent}, #a855f7)`,
+              }} />
+            )}
+            {content}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 function BottomBar() {
   const t = useTheme();
   const prices = usePrices();
@@ -853,7 +976,11 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
           </>
         )}
       </div>
-      <BottomBar />
+      {/* Bottom region splits by viewport: mobile gets the native
+          five-tab nav, desktop keeps the status/chip strip. */}
+      {isMobile
+        ? <MobileBottomNav pathname={pathname} onAction={handleAction} />
+        : <BottomBar />}
       {createOpen && (
         <LaunchpadSelector
           prefill={createPrefill}

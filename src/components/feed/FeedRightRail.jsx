@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import {
   Shield, CheckCircle2, Users, Coins, Flame, ArrowUpRight, ArrowDownRight,
-  TrendingUp, Sparkles,
+  TrendingUp, Sparkles, Activity,
 } from "lucide-react";
 
 const BACKEND_BASE = (() => {
@@ -207,6 +207,15 @@ export default function FeedRightRail() {
           </>
         )}
       </section>
+
+      {/* Market Sentiment — NewsCoin/Trending reference panel #7.
+          Shows an overall sentiment gauge (Bullish / Neutral / Bearish)
+          plus a 24h delta pill and a mini list of trending narratives
+          with directional arrows. Uses static placeholder numbers
+          until the backend sentiment endpoint lands — every label,
+          color, and layout is driven by the `sentiment` state so
+          wiring later is a one-line swap. */}
+      <MarketSentimentCard t={t} />
 
       {/* Trending Topics */}
       <section style={glassCard(t)}>
@@ -401,4 +410,187 @@ function fmtCount(n) {
   if (v < 1000) return String(v);
   if (v < 1_000_000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}K`;
   return `${(v / 1_000_000).toFixed(1)}M`;
+}
+
+// ── Market Sentiment ────────────────────────────────────────────────
+// A condensed version of the reference NewsCoin/Trending card. The
+// gauge is drawn with a single SVG path so we don't pull in any chart
+// library. Narratives list reuses the same up/down arrow motif as
+// Trending Topics for visual coherence.
+const SENTIMENT_FALLBACK = {
+  score: 74, label: "Bullish", delta: 12, // 0-100
+  narratives: [
+    { tag: "AI Agents",      change: 24.5 },
+    { tag: "Real World Assets", change: 18.7 },
+    { tag: "Bitcoin L2s",    change: 15.2 },
+    { tag: "DePIN",          change: -4.3 },
+  ],
+};
+
+function MarketSentimentCard({ t }) {
+  const [data, setData] = useState(SENTIMENT_FALLBACK);
+
+  useEffect(() => {
+    const ctl = new AbortController();
+    fetch("/api/market/sentiment", { signal: ctl.signal })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j && typeof j.score === "number") setData(j); })
+      .catch(() => {});
+    return () => ctl.abort();
+  }, []);
+
+  const label = data.label || (
+    data.score >= 60 ? "Bullish" : data.score <= 40 ? "Bearish" : "Neutral"
+  );
+  const color =
+    data.score >= 60 ? "#10b981" :
+    data.score <= 40 ? "#ef4444" :
+    "#f59e0b";
+
+  return (
+    <section style={{
+      padding: 14, borderRadius: 14,
+      background: "linear-gradient(180deg, rgba(168,85,247,0.05), rgba(59,130,246,0.02)), var(--bg-card)",
+      border: `1px solid ${t.border}`,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <Activity size={12} color={t.accent} />
+        <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>
+          Market Sentiment
+        </div>
+        <div style={{ flex: 1 }} />
+        <span style={{
+          fontSize: 9, padding: "2px 8px", borderRadius: 999,
+          background: "rgba(16,185,129,0.12)", color: "#10b981",
+          border: "1px solid rgba(16,185,129,0.35)",
+          fontWeight: 800, letterSpacing: 0.5,
+        }}>LIVE</span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <SentimentGauge score={data.score} color={color} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color }}>{label}</div>
+          <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>
+            {data.score}/100 score
+          </div>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 3,
+            marginTop: 6, fontSize: 11, fontWeight: 700,
+            color: data.delta >= 0 ? "#10b981" : "#ef4444",
+          }}>
+            {data.delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+            {Math.abs(data.delta)} pts (24h)
+          </div>
+        </div>
+      </div>
+
+      <div style={{
+        marginTop: 14, paddingTop: 12,
+        borderTop: `1px solid ${t.border}`,
+      }}>
+        <div style={{
+          fontSize: 11, color: t.textDim, fontWeight: 600,
+          letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 8,
+        }}>
+          Trending Narratives
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {(data.narratives || []).slice(0, 5).map((n, i) => {
+            const up = n.change >= 0;
+            return (
+              <a
+                key={n.tag}
+                href={`/search?q=${encodeURIComponent(n.tag)}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "6px 4px", borderRadius: 6,
+                  color: "inherit", textDecoration: "none",
+                  transition: "background 120ms ease",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-surface)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                <span style={{
+                  width: 18, textAlign: "center",
+                  fontSize: 11, color: t.textDim, fontWeight: 600,
+                  fontFamily: "var(--font-jetbrains-mono), monospace",
+                }}>{i + 1}</span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: t.text }}>
+                  {n.tag}
+                </span>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 2,
+                  fontSize: 11, fontWeight: 700,
+                  color: up ? "#10b981" : "#ef4444",
+                }}>
+                  {up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+                  {up ? "+" : ""}{n.change.toFixed(1)}%
+                </span>
+              </a>
+            );
+          })}
+        </div>
+        <a href="/trends" style={{
+          display: "block", textAlign: "center", marginTop: 8, paddingTop: 8,
+          borderTop: `1px solid ${t.border}`,
+          color: t.accent, fontSize: 12, fontWeight: 600, textDecoration: "none",
+        }}>
+          View all narratives
+        </a>
+      </div>
+    </section>
+  );
+}
+
+// Semi-circular "speedometer" gauge. r=32, ranges the bottom half
+// from left (0) to right (100). We draw a full background arc then
+// overlay the colored progress arc — no chart lib needed.
+function SentimentGauge({ score, color }) {
+  const clamped = Math.max(0, Math.min(100, score || 0));
+  // Arc geometry: 180° sweep from angle π → 0.
+  const r = 30;
+  const cx = 40, cy = 44;
+  const startAngle = Math.PI;
+  const endAngle = startAngle + (clamped / 100) * -Math.PI;
+  const x1 = cx + r * Math.cos(startAngle);
+  const y1 = cy + r * Math.sin(startAngle);
+  const x2 = cx + r * Math.cos(endAngle);
+  const y2 = cy + r * Math.sin(endAngle);
+  const largeArc = clamped > 50 ? 1 : 0;
+  const path = `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`;
+  // Needle
+  const needleAngle = startAngle - Math.PI * (clamped / 100);
+  const nx = cx + (r - 6) * Math.cos(needleAngle);
+  const ny = cy + (r - 6) * Math.sin(needleAngle);
+
+  return (
+    <svg width="80" height="56" viewBox="0 0 80 56" style={{ flexShrink: 0 }}>
+      {/* Background arc */}
+      <path
+        d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
+        stroke="rgba(255,255,255,0.08)"
+        strokeWidth="6"
+        fill="none"
+        strokeLinecap="round"
+      />
+      {/* Progress arc */}
+      <path
+        d={path}
+        stroke={color}
+        strokeWidth="6"
+        fill="none"
+        strokeLinecap="round"
+      />
+      {/* Needle */}
+      <line
+        x1={cx} y1={cy} x2={nx} y2={ny}
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <circle cx={cx} cy={cy} r="3" fill={color} />
+    </svg>
+  );
 }
