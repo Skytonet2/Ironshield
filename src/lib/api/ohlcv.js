@@ -5,13 +5,13 @@
 //
 // Dispatch rules:
 //   chain === 'near':
-//     1. Try our backend /api/trading/ohlcv first. If the pool is a
-//        NewsCoin we get fully self-hosted candles from
-//        feed_newscoin_trades in Postgres (response source='newscoin').
-//     2. If the backend returns source='unavailable' (general NEAR
-//        pool, no self-hosted data) fall through to GeckoTerminal's
-//        near-protocol coverage. Ref Finance's public trades endpoint
-//        is gone; self-hosting this tier needs Pikespeak or NEAR Lake.
+//     1. Try our backend /api/trading/ohlcv first. NewsCoin pools
+//        return source='newscoin' (SQL-aggregated from our own
+//        feed_newscoin_trades). General NEAR pool IDs return
+//        source='pikespeak' when the backend has a PIKESPEAK_API_KEY
+//        and upstream has data. Both are self-hosted paths.
+//     2. Anything else (unavailable, empty, backend down) falls
+//        through to GeckoTerminal's near-protocol coverage.
 //   chain === 'sol' → GeckoTerminal direct (Tier 3 self-host deferred).
 
 import { fetchOhlcv as fetchGtOhlcv } from "./geckoTerminal";
@@ -45,10 +45,18 @@ export async function fetchOhlcv({ chain, pool, timeframe = "1h", limit = 300, s
       const res = await fetch(url, { signal, cache: "no-store" });
       if (res.ok) {
         const j = await res.json();
-        if (j?.source === "newscoin" && Array.isArray(j.candles) && j.candles.length > 0) {
+        // Accept any self-sourced data. 'newscoin' = our bonding-curve
+        // SQL; 'pikespeak' = Pikespeak-indexed Ref swaps bucketed
+        // server-side. Both are preferable to GT fallback because
+        // they're (a) lower-latency, (b) not subject to GT rate
+        // limits, (c) include pools GT may not cover yet.
+        if (
+          (j?.source === "newscoin" || j?.source === "pikespeak") &&
+          Array.isArray(j.candles) && j.candles.length > 0
+        ) {
           return j.candles;
         }
-        // source === 'unavailable' or an empty NewsCoin: fall through.
+        // source === 'unavailable' or empty: fall through.
       }
     } catch (e) {
       if (e.name === "AbortError") throw e;

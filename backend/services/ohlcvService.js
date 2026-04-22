@@ -3,22 +3,18 @@
 // OHLCV data source for the /trading chart.
 //
 //   Tier 1 — NewsCoins: aggregate our own feed_newscoin_trades in
-//   SQL. Zero third-party dependency; we own every trade row. This
-//   is the only real "self-hosted OHLCV" source today.
+//   SQL. Zero third-party dependency; we own every trade row.
 //
-//   Tier 2 — NEAR general pools: DEFERRED. Ref Finance's public
-//   indexer removed `list-pool-trades` sometime in 2025 and the
-//   community replacements (Pikespeak / NEAR Lake) require keys or
-//   infrastructure we don't have yet. Backend returns an empty
-//   candle list with source='unavailable' for non-NewsCoin NEAR
-//   pools; the client falls through to GeckoTerminal's near-protocol
-//   coverage to keep charts alive in the meantime. When budget
-//   clears, the unlock path is either (a) Pikespeak signup + re-add
-//   the fetchRefOhlcv() shape, or (b) subscribe to NEAR Lake via
-//   S3 and index Ref contract receipts ourselves.
+//   Tier 2 — NEAR general pools: Pikespeak event-historic API
+//   (https://api.pikespeak.ai/event-historic/ref_finance_swap).
+//   Pikespeak indexes every swap event on v2.ref-finance.near; we
+//   filter by pool_id client-side, bucket to OHLCV, and cache 60s
+//   so hot pools stay warm without burning quota. Disabled cleanly
+//   when PIKESPEAK_API_KEY is unset — route returns 'unavailable'
+//   and the client falls through to GeckoTerminal.
 //
-// Solana is not served here either; the client hits GeckoTerminal
-// directly. Tier 3 (self-hosted Solana indexer) needs a paid RPC.
+// Solana is not served here; the client hits GeckoTerminal directly.
+// Tier 3 (self-hosted Solana indexer) needs a paid RPC.
 
 const db = require("../db/client");
 
@@ -105,14 +101,145 @@ async function fetchNewscoinOhlcv({ pool, timeframe, limit }) {
   }));
 }
 
+/* ── Tier 2: NEAR general pools via Pikespeak ───────────────────── */
+
+const PIKESPEAK_BASE = "https://api.pikespeak.ai";
+const PIKESPEAK_TIMEOUT_MS = 10_000;
+
+// Pikespeak rate limits aggressively on the free tier; 60s cache
+// keyed by pool+timeframe keeps the 5s client poll from burning
+// quota, and a shared in-flight map coalesces concurrent requests
+// for the same key into one upstream call.
+const CACHE_TTL_MS = 60 * 1000;
+const MAX_CACHE_ENTRIES = 200;
+const pikespeakCache = new Map();   // key → { ts, candles }
+const pikespeakInflight = new Map(); // key → Promise
+
+function cacheGet(key) {
+  const hit = pikespeakCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > CACHE_TTL_MS) { pikespeakCache.delete(key); return null; }
+  return hit.candles;
+}
+function cacheSet(key, candles) {
+  if (pikespeakCache.size >= MAX_CACHE_ENTRIES) {
+    const firstKey = pikespeakCache.keys().next().value;
+    if (firstKey) pikespeakCache.delete(firstKey);
+  }
+  pikespeakCache.set(key, { ts: Date.now(), candles });
+}
+
+/**
+ * Fetch recent ref_finance_swap events. Pikespeak's shape:
+ *   [{ block_timestamp, pool_id, token_in, token_out,
+ *      amount_in, amount_out, predecessor_id, … }, …]
+ * Field names vary slightly between versions; we read defensively.
+ */
+async function fetchPikespeakSwaps({ poolId, limit = 1000 }) {
+  const key = process.env.PIKESPEAK_API_KEY;
+  if (!key) return null;
+  const url = `${PIKESPEAK_BASE}/event-historic/ref_finance_swap?limit=${limit}`;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), PIKESPEAK_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: ctl.signal,
+      headers: {
+        "x-api-key": key,
+        "User-Agent": "IronShield/ohlcv",
+        "Accept": "application/json",
+      },
+    });
+    if (!res.ok) {
+      // 429 is common on the free tier; surface via null so the
+      // caller returns `unavailable` and the client falls through.
+      return null;
+    }
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return null;
+    // Pikespeak returns the whole stream; narrow to the requested
+    // pool. Accept string or numeric pool_id since Pikespeak has
+    // mixed both in the wild.
+    const target = String(poolId);
+    return rows.filter((r) => {
+      const pid = r?.pool_id ?? r?.arguments?.pool_id ?? r?.args?.pool_id;
+      return String(pid) === target;
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function bucketSwaps({ swaps, timeframe, limit }) {
+  const stepSec = SECONDS_PER_BUCKET[timeframe];
+  const buckets = new Map();
+  for (const sw of swaps) {
+    // Timestamp — Pikespeak uses block_timestamp in nanoseconds (string).
+    const tsNs = sw?.block_timestamp ?? sw?.timestamp ?? sw?.ts;
+    if (!tsNs) continue;
+    const tsSec = Math.floor(Number(tsNs) / 1_000_000_000);
+    if (!isFinite(tsSec)) continue;
+    const bucket = tsSec - (tsSec % stepSec);
+
+    // Price = amount_out / amount_in. This gives the raw ratio in
+    // base units of whichever direction the swap went; for OHLCV on
+    // a single pool, all swaps reference the same pair so the
+    // relative motion is meaningful even though units aren't
+    // normalised. A follow-up can fetch token decimals and convert
+    // to USD when we care about cross-pool comparisons.
+    const amountIn  = Number(sw?.amount_in  ?? sw?.arguments?.amount_in  ?? 0);
+    const amountOut = Number(sw?.amount_out ?? sw?.arguments?.min_amount_out ?? sw?.arguments?.amount_out ?? 0);
+    if (!amountIn || !amountOut) continue;
+    const price = amountOut / amountIn;
+    const volume = amountIn; // base-unit volume of the sold side
+
+    let b = buckets.get(bucket);
+    if (!b) {
+      b = { o: price, h: price, l: price, c: price, v: volume, firstTs: tsSec, lastTs: tsSec };
+      buckets.set(bucket, b);
+    } else {
+      if (tsSec < b.firstTs) { b.o = price; b.firstTs = tsSec; }
+      if (tsSec > b.lastTs)  { b.c = price; b.lastTs = tsSec;  }
+      if (price > b.h) b.h = price;
+      if (price < b.l) b.l = price;
+      b.v += volume;
+    }
+  }
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .slice(-limit)
+    .map(([time, b]) => ({ time, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }));
+}
+
+async function fetchPikespeakOhlcv({ pool, timeframe, limit }) {
+  if (!SECONDS_PER_BUCKET[timeframe]) throw new Error(`Unsupported timeframe: ${timeframe}`);
+  const key = `${pool}|${timeframe}|${limit}`;
+
+  const cached = cacheGet(key);
+  if (cached) return cached;
+
+  if (pikespeakInflight.has(key)) return pikespeakInflight.get(key);
+  const p = (async () => {
+    const swaps = await fetchPikespeakSwaps({ poolId: pool, limit: 1000 });
+    if (!swaps || swaps.length === 0) return null;
+    const candles = bucketSwaps({ swaps, timeframe, limit });
+    cacheSet(key, candles);
+    return candles;
+  })().finally(() => { pikespeakInflight.delete(key); });
+  pikespeakInflight.set(key, p);
+  return p;
+}
+
 /* ── Dispatch ───────────────────────────────────────────────────── */
 
 /**
- * Resolve OHLCV candles for a NEAR pool. Returns NewsCoin candles
- * when the pool is one of ours; returns an empty list with source
- * 'unavailable' otherwise so the client knows to fall through to
- * GeckoTerminal. Ordered oldest-first so the chart can setData()
- * without re-sorting.
+ * Resolve OHLCV candles for a NEAR pool. Tries NewsCoins first
+ * (owned data), then Pikespeak for general pools. Returns
+ * `unavailable` with empty candles if both miss so the client
+ * falls through to GeckoTerminal cleanly. Ordered oldest-first
+ * so the chart can setData() without re-sorting.
  */
 async function getNearOhlcv({ pool, timeframe, limit }) {
   if (!pool) throw new Error("pool required");
@@ -120,10 +247,19 @@ async function getNearOhlcv({ pool, timeframe, limit }) {
   const lim = Math.max(1, Math.min(Number(limit) || 300, 1000));
 
   const newscoinCandles = await fetchNewscoinOhlcv({ pool, timeframe: tf, limit: lim });
-  if (newscoinCandles) return { source: "newscoin", candles: newscoinCandles };
+  if (newscoinCandles && newscoinCandles.length > 0) {
+    return { source: "newscoin", candles: newscoinCandles };
+  }
 
-  // Tier 2 deferred (see top-of-file rationale). Fall through to the
-  // client's GeckoTerminal path by returning an unambiguous empty.
+  // Pikespeak only makes sense for pools identified by numeric ID;
+  // skip if the caller passed an address-shaped pool.
+  if (/^\d+$/.test(pool) && process.env.PIKESPEAK_API_KEY) {
+    const pikeCandles = await fetchPikespeakOhlcv({ pool, timeframe: tf, limit: lim });
+    if (pikeCandles && pikeCandles.length > 0) {
+      return { source: "pikespeak", candles: pikeCandles };
+    }
+  }
+
   return { source: "unavailable", candles: [] };
 }
 
