@@ -16,7 +16,7 @@
 // tracker controls; Trading → order book. Children fill the main
 // feed column.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
@@ -415,8 +415,22 @@ function TopNav({ pathname, onAction, isMobile, onDrawer }) {
           <span style={{ marginLeft: 4, fontWeight: 700, letterSpacing: 0.6 }}>SCAN</span>
         </button>
       )}
-      {!isMobile && <button type="button" style={iconBtn} title="Bookmarks"><Bookmark size={14} /></button>}
-      {!isMobile && <button type="button" style={iconBtn} title="Notifications"><Bell size={14} /></button>}
+      {!isMobile && (
+        <button
+          type="button"
+          style={iconBtn}
+          title="Bookmarks"
+          onClick={() => onAction("bookmarks")}
+        ><Bookmark size={14} /></button>
+      )}
+      {!isMobile && (
+        <button
+          type="button"
+          style={iconBtn}
+          title="Notifications"
+          onClick={() => onAction("notifications")}
+        ><Bell size={14} /></button>
+      )}
       <UserMenu />
     </header>
   );
@@ -539,10 +553,11 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
     if (kind === "create") { setCreateOpen(true); setCreatePrefill(null); return; }
     if (kind === "bridge") { setBridgeOpen(true); return; }
     if (kind === "search") { setSearchOpen(true); return; }
-    if (kind === "post") {
-      // "Post" action lives on the feed page. If we're not there, route
-      // over with a query param the feed page reads to auto-open the
-      // composer; if we are, just broadcast an event the page listens for.
+    // Sidebar "Post" and TopNav "tweet" both land on the feed
+    // composer. If we're already on the feed, broadcast an event
+    // the composer listens for; otherwise deep-link over with
+    // ?compose=1 which the ComposeBar reads on mount.
+    if (kind === "post" || kind === "tweet") {
       if (typeof window !== "undefined") {
         if (pathname?.startsWith("/feed")) {
           window.dispatchEvent(new CustomEvent("ironshield:open-composer"));
@@ -550,6 +565,26 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
           window.location.href = "/feed?compose=1";
         }
       }
+      return;
+    }
+    if (kind === "scan") {
+      // Quick Scan: ask for a CA or ticker and route to NewsCoin's
+      // detail terminal. The terminal handles "this coin doesn't
+      // exist" gracefully.
+      if (typeof window !== "undefined") {
+        const q = window.prompt("Enter a contract address or ticker to scan:");
+        if (q && q.trim()) {
+          window.location.href = `/newscoin?token=${encodeURIComponent(q.trim())}`;
+        }
+      }
+      return;
+    }
+    if (kind === "bookmarks") {
+      if (typeof window !== "undefined") window.location.href = "/profile?tab=bookmarks";
+      return;
+    }
+    if (kind === "notifications") {
+      setNote("Notifications drawer — coming next build.");
       return;
     }
     setNote(`${kind} (wires up in a later phase)`);
@@ -572,6 +607,41 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   // Close drawer on route change so navigating from inside it feels
   // natural. pathname dependency makes this automatic.
   useEffect(() => { setDrawerOpen(false); }, [pathname]);
+
+  // ── Resizable right panel ────────────────────────────────────────
+  // Users drag the divider between <main> and the right-rail <aside>.
+  // Width is clamped to [220, 520] and persisted in localStorage so
+  // the preference sticks across sessions and routes.
+  const [rightWidth, setRightWidth] = useState(280);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem("ironshield:rightPanelWidth");
+      const n = parseInt(raw || "", 10);
+      if (Number.isFinite(n) && n >= 220 && n <= 520) setRightWidth(n);
+    } catch {}
+  }, []);
+  const beginResize = useCallback((ev) => {
+    ev.preventDefault();
+    const startX = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+    const startW = rightWidth;
+    const onMove = (e) => {
+      const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+      const next = Math.max(220, Math.min(520, startW + (startX - x)));
+      setRightWidth(next);
+    };
+    const onEnd = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onEnd);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+      try { localStorage.setItem("ironshield:rightPanelWidth", String(rightWidth)); } catch {}
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onEnd);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+  }, [rightWidth]);
 
   return (
     <div data-app-shell="ready" style={{
@@ -607,14 +677,36 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
           {children}
         </main>
         {rightPanel && !isNarrow && (
-          <aside style={{
-            width: 280,
-            flexShrink: 0,
-            borderLeft: `1px solid ${t.border}`,
-            overflowY: "auto",
-          }}>
-            {rightPanel}
-          </aside>
+          <>
+            {/* Drag handle — thin invisible bar that lets the user
+                resize the right rail. Shows a subtle highlight on
+                hover so it's discoverable without being heavy. */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize right panel"
+              onMouseDown={beginResize}
+              onTouchStart={beginResize}
+              style={{
+                width: 6,
+                flexShrink: 0,
+                cursor: "col-resize",
+                background: "transparent",
+                borderLeft: `1px solid ${t.border}`,
+                transition: "background 120ms ease",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-dim)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            />
+            <aside style={{
+              width: rightWidth,
+              flexShrink: 0,
+              borderLeft: `1px solid ${t.border}`,
+              overflowY: "auto",
+            }}>
+              {rightPanel}
+            </aside>
+          </>
         )}
       </div>
       <BottomBar />

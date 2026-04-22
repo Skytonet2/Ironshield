@@ -165,7 +165,9 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
       {/* Avatar */}
       <div style={{ position: "relative", flexShrink: 0 }}>
         <a
-          href={`/@${author?.username || ""}`}
+          href={author?.wallet_address
+              ? `/profile?address=${encodeURIComponent(author.wallet_address)}`
+              : `/profile?username=${encodeURIComponent(author?.username || "")}`}
           style={{ display: "block" }}
         >
           {author?.pfp_url ? (
