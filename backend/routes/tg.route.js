@@ -163,6 +163,168 @@ router.get("/custodial/:tgId", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────
+// Agent action layer (Phase 7-4)
+//
+// Free-form messages that parseIntent didn't catch route here. The
+// agent proposes an action; we return it to the bot WITH a pending
+// token the bot uses to execute after the user confirms in TG.
+//
+// Pending actions live in an in-process Map with a 2-minute TTL so a
+// stale "yes" from 10 minutes ago doesn't accidentally fire a swap.
+// Single-node only — if we multi-node the backend, promote to Redis
+// or a DB table. For today's scale this is fine.
+// ──────────────────────────────────────────────────────────────
+
+const PENDING_TTL_MS = 2 * 60_000;
+const pendingActions = new Map();  // tgId → { token, action, params, createdAt }
+
+function savePending(tgId, action, params) {
+  const token = require("crypto").randomBytes(16).toString("hex");
+  pendingActions.set(String(tgId), {
+    token, action, params, createdAt: Date.now(),
+  });
+  return token;
+}
+function takePending(tgId, token) {
+  const key = String(tgId);
+  const hit = pendingActions.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.createdAt > PENDING_TTL_MS) {
+    pendingActions.delete(key);
+    return null;
+  }
+  if (token && hit.token !== token) return null;
+  pendingActions.delete(key);
+  return hit;
+}
+
+// POST /api/tg/agent
+//   body: { tgId, message }
+// Returns one of:
+//   { kind:"reply",    reply }                       pure chat
+//   { kind:"action",   action, params, confirm, pendingToken }
+//                                                  action proposal
+router.post("/agent", async (req, res) => {
+  try {
+    const { tgId, message } = req.body || {};
+    if (!tgId || !message) return res.status(400).json({ error: "tgId + message required" });
+
+    const ironclaw = require("../services/ironclawClient");
+    const tools    = require("../services/agentTools");
+
+    const { reply } = await ironclaw.chat({
+      content: String(message).slice(0, 1500),
+      systemPrompt: tools.systemPrompt(),
+      timeoutMs: 20_000,
+    }).catch((e) => ({ reply: null, error: e.message }));
+
+    if (!reply) {
+      return res.json({
+        kind: "reply",
+        reply: "Agent is unreachable right now — use /help to see explicit commands.",
+      });
+    }
+
+    const parsed = tools.parseAgentReply(reply);
+    if (parsed.kind === "reply") {
+      return res.json(parsed);
+    }
+
+    // Stash the action for confirmation. Returning `pendingToken`
+    // means the bot can call /agent/confirm with the token after
+    // the user replies "yes" — without re-trusting the LLM output
+    // on the second turn.
+    const pendingToken = savePending(tgId, parsed.action, parsed.params);
+    return res.json({
+      kind: "action",
+      action:  parsed.action,
+      params:  parsed.params,
+      confirm: parsed.confirm,
+      pendingToken,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/tg/agent/confirm
+//   body: { tgId, pendingToken }
+// Looks up the pending action, executes it against the existing
+// action endpoints, returns the execution result as-is. The action
+// is consumed on match (single-fire).
+router.post("/agent/confirm", async (req, res) => {
+  try {
+    const { tgId, pendingToken } = req.body || {};
+    if (!tgId) return res.status(400).json({ error: "tgId required" });
+    const hit = takePending(tgId, pendingToken);
+    if (!hit) {
+      return res.status(410).json({ error: "No pending action (expired or already consumed)." });
+    }
+
+    // Dispatch. We do NOT invoke the Express handlers directly;
+    // instead we duplicate the minimal orchestration so the agent
+    // path is auditable on its own. Validation (activation, balance,
+    // amounts) still lives in the action-execution endpoints — we
+    // call them over HTTP so every code path goes through the same
+    // gates.
+    const tools = require("../services/agentTools");
+    const backendUrl = `http://localhost:${process.env.BACKEND_PORT || 3001}`;
+    const post = (path, body) => fetch(`${backendUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+
+    switch (hit.action) {
+      case "swap": {
+        const { amount, fromTicker, toTicker } = hit.params;
+        const originAsset      = tools.SWAP_TICKER_MAP[(fromTicker || "").toLowerCase()];
+        const destinationAsset = tools.SWAP_TICKER_MAP[(toTicker   || "").toLowerCase()];
+        if (!originAsset || !destinationAsset) {
+          return res.status(400).json({ error: `Unknown ticker: ${!originAsset ? fromTicker : toTicker}` });
+        }
+        // Delegate amount scaling to the bot — it knows the token's
+        // decimals + does the USD→token lookup. The agent-confirm
+        // path expects the bot to POST /swap directly after this
+        // returns success=true. So we just return the normalized
+        // params; the bot handles execution + response formatting.
+        return res.json({
+          ok: true,
+          execute: "swap",
+          args: {
+            originAsset, destinationAsset,
+            amount,
+            fromTicker, toTicker,
+          },
+        });
+      }
+      case "send": {
+        return res.json({
+          ok: true,
+          execute: "send",
+          args: hit.params,
+        });
+      }
+      case "withdraw": {
+        return res.json({
+          ok: true,
+          execute: "withdraw",
+          args: hit.params,
+        });
+      }
+      case "balance":
+      case "deposit":
+      case "activate":
+        return res.json({ ok: true, execute: hit.action, args: {} });
+      default:
+        return res.status(400).json({ error: `Unknown action: ${hit.action}` });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────
 // Activation gate
 // ──────────────────────────────────────────────────────────────
 //

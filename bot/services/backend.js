@@ -42,6 +42,8 @@ const tg = {
   custodialTransfer: (tgId, body) => req(`/api/tg/custodial/${tgId}/transfer`, { method: "POST", body }),
   custodialSwap:     (tgId, body) => req(`/api/tg/custodial/${tgId}/swap`,     { method: "POST", body }),
   custodialActivate: (tgId, body) => req(`/api/tg/custodial/${tgId}/activate`, { method: "POST", body: body || {} }),
+  agent:        (body) => req("/api/tg/agent",         { method: "POST", body }),
+  agentConfirm: (body) => req("/api/tg/agent/confirm", { method: "POST", body }),
 };
 
 module.exports = { req, tg, BACKEND };
