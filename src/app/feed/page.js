@@ -12,7 +12,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
 import ComposeBar from "@/components/feed/ComposeBar";
-import YourDeploysPanel from "@/components/feed/YourDeploysPanel";
+import FeedRightRail from "@/components/feed/FeedRightRail";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -24,9 +24,12 @@ const BACKEND_BASE = (() => {
 })();
 
 const TABS = [
-  { key: "foryou",    label: "For You",   endpoint: "/api/feed/foryou"    },
-  { key: "following", label: "Following", endpoint: "/api/feed/following" },
-  { key: "voices",    label: "Voices",    endpoint: "/api/feed/voices"    },
+  { key: "foryou",          label: "For You",         endpoint: "/api/feed/foryou"          },
+  { key: "following",       label: "Following",       endpoint: "/api/feed/following"       },
+  { key: "voices",          label: "Voices",          endpoint: "/api/feed/voices"          },
+  { key: "alpha",           label: "Alpha",           endpoint: "/api/feed/alpha"           },
+  { key: "news",            label: "News",            endpoint: "/api/feed/news"            },
+  { key: "ironclaw-alerts", label: "IronClaw Alerts", endpoint: "/api/feed/ironclaw-alerts" },
 ];
 
 function useMutedSet(wallet) {
@@ -50,7 +53,32 @@ export default function FeedPage() {
   const t = useTheme();
   const walletCtx = useWallet();
   const wallet = walletCtx?.address || null;
-  const [tab, setTab] = useState("foryou");
+  // Initial tab is read from ?tab= so the sidebar Feed-section
+  // shortcuts deep-link correctly (/feed?tab=voices etc). Subsequent
+  // sidebar picks fire an ironshield:feed-tab event which this page
+  // listens for — no remount when the tab changes from the sidebar.
+  const [tab, setTab] = useState(() => {
+    if (typeof window === "undefined") return "foryou";
+    try {
+      const q = new URLSearchParams(window.location.search).get("tab");
+      return TABS.some((t) => t.key === q) ? q : "foryou";
+    } catch { return "foryou"; }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onTab = (e) => { if (e.detail && TABS.some((t) => t.key === e.detail)) setTab(e.detail); };
+    window.addEventListener("ironshield:feed-tab", onTab);
+    return () => window.removeEventListener("ironshield:feed-tab", onTab);
+  }, []);
+  // When the tab strip (on-page) changes, mirror to the sidebar by
+  // broadcasting. Keeps the two in lockstep.
+  const setTabAndNotify = useCallback((next) => {
+    setTab(next);
+    if (typeof window !== "undefined") {
+      try { window.history.replaceState(null, "", `/feed?tab=${encodeURIComponent(next)}`); } catch {}
+      window.dispatchEvent(new CustomEvent("ironshield:feed-tab", { detail: next }));
+    }
+  }, []);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
@@ -173,7 +201,7 @@ export default function FeedPage() {
   }, []);
 
   return (
-    <AppShell rightPanel={<YourDeploysPanel />}>
+    <AppShell rightPanel={<FeedRightRail />}>
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "12px 16px" }}>
         <ComposeBar onPosted={prependPost} />
 
@@ -191,7 +219,7 @@ export default function FeedPage() {
               <button
                 key={tb.key}
                 type="button"
-                onClick={() => setTab(tb.key)}
+                onClick={() => setTabAndNotify(tb.key)}
                 style={{
                   padding: "10px 14px",
                   background: "transparent",
@@ -230,6 +258,10 @@ export default function FeedPage() {
               ? "Connect a wallet to see your Following feed."
               : tab === "voices"
               ? "No Voice posts yet. Tap the Voice toggle in the composer to add one."
+              : tab === "news"
+              ? "Newsbot hasn't ingested anything yet. Come back in a minute."
+              : tab === "ironclaw-alerts"
+              ? "No active alerts."
               : "Nothing here yet."}
           </div>
         )}

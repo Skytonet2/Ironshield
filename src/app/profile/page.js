@@ -10,7 +10,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
-import YourDeploysPanel from "@/components/feed/YourDeploysPanel";
+import FeedRightRail from "@/components/feed/FeedRightRail";
 import { Coins, Camera, X as XIcon, Loader2 } from "lucide-react";
 
 const BACKEND_BASE = (() => {
@@ -133,7 +133,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <AppShell rightPanel={<YourDeploysPanel />}>
+    <AppShell rightPanel={<FeedRightRail />}>
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "0 0 16px" }}>
         {/* Banner */}
         <div style={{

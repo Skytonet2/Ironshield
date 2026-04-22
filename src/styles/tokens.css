@@ -28,20 +28,28 @@
   --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.4);
   --glass-blur: blur(12px);
 
-  /* === BASE — Default preset (blue to preserve the current look) === */
-  --bg-app: #080b12;
-  --bg-surface: #0d1117;
+  /* === BASE — deep navy → near-black, with a subtle purple lift so
+   *           shells feel more "cyberpunk Apple keynote" than flat
+   *           admin dashboard. The contexts.js JS theme keeps
+   *           bgCard/bgSurface matching these for legacy components.
+   * ================================================================ */
+  --bg-app: #080b16;
+  --bg-surface: #0d1220;
   --bg-card: rgba(255, 255, 255, 0.03);
   --bg-card-hover: rgba(255, 255, 255, 0.055);
   --bg-input: rgba(255, 255, 255, 0.05);
-  --border: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(255, 255, 255, 0.15);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(255, 255, 255, 0.18);
 
-  /* === ACCENT (swaps per preset) === */
+  /* === ACCENT (swaps per preset) — default is electric blue+purple
+   * twin-glow. Purple is added as a companion so gradients can mix
+   * the two without per-component palette decisions.
+   * ================================================================ */
   --accent: #3b82f6;
-  --accent-dim: rgba(59, 130, 246, 0.1);
-  --accent-border: rgba(59, 130, 246, 0.25);
-  --accent-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+  --accent-2: #a855f7;   /* secondary neon-purple */
+  --accent-dim: rgba(59, 130, 246, 0.12);
+  --accent-border: rgba(59, 130, 246, 0.3);
+  --accent-glow: 0 0 24px rgba(59, 130, 246, 0.18), 0 0 60px rgba(168, 85, 247, 0.1);
 
   /* === TEXT === */
   --text-1: rgba(255, 255, 255, 0.92);
@@ -193,12 +201,61 @@
   to   { top: 100%; }
 }
 
+/* ── Premium interactive states ───────────────────────────────────────
+ * Sidebar item hover: soft accent wash + nudge. Keeps feedback
+ * subtle so a long vertical nav doesn't feel noisy. */
+.sidebar-item { position: relative; }
+.sidebar-item:hover:not(.active) {
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.06), transparent);
+  color: var(--text-1);
+}
+.sidebar-item:hover:not(.active) svg { filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.4)); }
+.sidebar-item.active svg { filter: drop-shadow(0 0 8px var(--accent)); }
+
+/* ── Glass card utility ──────────────────────────────────────────────
+ * Drop-in class for any card that wants the premium translucent look.
+ * Works over the gradient mesh without muddying the content. */
+.glass-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Card hover lift ─────────────────────────────────────────────────
+ * Feed cards (article.card) get a subtle elevation when hovered —
+ * border brightens to accent, shadow lifts slightly. Low-intensity so
+ * dense feeds don't feel like they're wobbling. */
+article.card,
+.card-lift {
+  transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out), border-color 160ms var(--ease-out);
+}
+article.card:hover,
+.card-lift:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent-border);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--accent-border) inset;
+}
+
+/* ── Glow pulse for primary CTAs ─────────────────────────────────── */
+@keyframes ironGlowPulse {
+  0%, 100% { box-shadow: 0 8px 24px rgba(168, 85, 247, 0.3); }
+  50%      { box-shadow: 0 12px 32px rgba(168, 85, 247, 0.55); }
+}
+.pulse-glow { animation: ironGlowPulse 3.2s ease-in-out infinite; }
+
 /* Reduced-motion: kill all decorative animations. */
 @media (prefers-reduced-motion: reduce) {
   .sidebar-item.active::before,
   .feed-item-enter,
   .page-enter,
-  .scan-reveal::after {
+  .scan-reveal::after,
+  article.card,
+  .card-lift,
+  .pulse-glow {
     animation: none;
+    transition: none;
   }
 }

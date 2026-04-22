@@ -44,19 +44,30 @@ const BridgeSafe = ArrowLeftRight;
 
 const SIDEBAR_GROUPS = [
   {
-    label: "Commands",
+    label: "Feed",
     items: [
-      { key: "search",     label: "Search",     Icon: Search,       action: "search" },
-      { key: "post",       label: "Post",       Icon: Plus,         action: "post"   },
-      { key: "create",     label: "Create",     Icon: Rocket,       action: "create" },
-      { key: "bridge",     label: "Bridge",     Icon: BridgeSafe,   action: "bridge" },
+      // Each of these cross-links to /feed and also broadcasts an
+      // "ironshield:feed-tab" event the feed page listens for, so the
+      // active tab follows the sidebar selection immediately — no
+      // need to re-navigate when the user's already on /feed.
+      { key: "feed/foryou",          label: "For You",          Icon: Home,      href: "/feed?tab=foryou",          feedTab: "foryou" },
+      { key: "feed/following",       label: "Following",        Icon: User,      href: "/feed?tab=following",       feedTab: "following" },
+      { key: "feed/voices",          label: "Voices",           Icon: Mic,       href: "/feed?tab=voices",          feedTab: "voices" },
+      { key: "feed/alpha",           label: "Alpha",            Icon: Activity,  href: "/feed?tab=alpha",           feedTab: "alpha" },
+      { key: "feed/news",            label: "News",             Icon: Rss,       href: "/feed?tab=news",            feedTab: "news" },
+      { key: "feed/ironclaw-alerts", label: "IronClaw Alerts",  Icon: Bell,      href: "/feed?tab=ironclaw-alerts", feedTab: "ironclaw-alerts" },
+    ],
+  },
+  {
+    label: "Create",
+    items: [
+      { key: "post", label: "Post", Icon: Rocket, action: "post", shortcut: "⌘K" },
     ],
   },
   {
     label: "Platform",
     items: [
-      { key: "home",        label: "Home",             Icon: Home,       href: "/"            },
-      { key: "feed",        label: "IronFeed",         Icon: Rss,        href: "/feed"        },
+      { key: "ironfeed",    label: "IronFeed",         Icon: Rss,        href: "/feed"        },
       { key: "newscoin",    label: "NewsCoin",         Icon: Coins,      href: "/newscoin"    },
       { key: "automations", label: "Automations",      Icon: Zap,        href: "/automations" },
       { key: "profile",     label: "Profile",          Icon: User,       href: "/profile"     },
@@ -79,27 +90,40 @@ const SIDEBAR_GROUPS = [
   {
     label: "Tools",
     items: [
-      { key: "settings",  label: "Settings",  Icon: Settings,    href: "/settings"  },
       { key: "analytics", label: "Analytics", Icon: BarChart2,   href: "/analytics", soon: true },
+      { key: "settings",  label: "Settings",  Icon: Settings,    href: "/settings"  },
     ],
   },
 ];
 
 function SidebarItem({ item, active, onAction, onClick, t }) {
-  const { Icon, label, soon } = item;
+  const { Icon, label, soon, shortcut, feedTab } = item;
   const content = (
     <>
+      {/* Active indicator — left edge accent bar. Glows softly. */}
+      {active && (
+        <span style={{
+          position: "absolute", left: 0, top: 6, bottom: 6,
+          width: 3, borderRadius: 2,
+          background: `linear-gradient(180deg, ${t.accent}, #0ea5e9)`,
+          boxShadow: `0 0 12px ${t.accent}`,
+        }} />
+      )}
       <Icon size={16} style={{ flexShrink: 0 }} />
-      <span>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      {shortcut && (
+        <span style={{
+          fontSize: 10, padding: "1px 6px", borderRadius: 4,
+          background: t.bgSurface, color: t.textDim,
+          letterSpacing: 0.4, fontFamily: "var(--font-jetbrains-mono), monospace",
+        }}>
+          {shortcut}
+        </span>
+      )}
       {soon && (
         <span style={{
-          marginLeft: "auto",
-          fontSize: 9,
-          padding: "1px 6px",
-          borderRadius: 4,
-          background: t.bgSurface,
-          color: t.textDim,
-          letterSpacing: 0.5,
+          fontSize: 9, padding: "1px 6px", borderRadius: 4,
+          background: t.bgSurface, color: t.textDim, letterSpacing: 0.5,
         }}>
           SOON
         </span>
@@ -110,24 +134,36 @@ function SidebarItem({ item, active, onAction, onClick, t }) {
     display: "flex",
     alignItems: "center",
     gap: 10,
-    padding: "8px 12px",
+    padding: "8px 12px 8px 14px",
     borderRadius: 8,
-    color: active ? t.accent : t.textMuted,
-    background: active ? "var(--accent-dim)" : "transparent",
+    color: active ? t.white : t.textMuted,
+    background: active ? "linear-gradient(90deg, var(--accent-dim), transparent)" : "transparent",
     fontSize: 13,
-    fontWeight: 500,
+    fontWeight: active ? 700 : 500,
     textDecoration: "none",
     cursor: "pointer",
     border: "none",
     width: "100%",
     textAlign: "left",
     position: "relative",
+    transition: "color 120ms ease, background 120ms ease",
+  };
+  const handleClick = (e) => {
+    // When the item is a feed filter AND we're already on /feed, swap
+    // the tab in place instead of reloading.
+    if (feedTab && typeof window !== "undefined" && window.location.pathname.startsWith("/feed")) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent("ironshield:feed-tab", { detail: feedTab }));
+      // Keep the URL in sync so refreshes land on the same tab.
+      try { window.history.replaceState(null, "", item.href); } catch {}
+    }
+    onClick?.(e);
   };
   if (item.href) {
     return (
       <a
         href={item.href}
-        onClick={onClick}
+        onClick={handleClick}
         className={active ? "sidebar-item active" : "sidebar-item"}
         style={base}
       >
@@ -149,6 +185,31 @@ function SidebarItem({ item, active, onAction, onClick, t }) {
 
 function SidebarContent({ pathname, onAction, onItemPick }) {
   const t = useTheme();
+  // Track the current feed tab so sidebar sub-feed items (For You,
+  // Following, Voices, ...) can show the correct active highlight
+  // even without a full navigation. Initial value reads ?tab=, then
+  // listens for the ironshield:feed-tab event we emit when a nav item
+  // is picked or the feed page's tab strip updates.
+  const [feedTab, setFeedTab] = useState(() => {
+    if (typeof window === "undefined") return "foryou";
+    try { return new URLSearchParams(window.location.search).get("tab") || "foryou"; }
+    catch { return "foryou"; }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onTab = (e) => { if (e.detail) setFeedTab(e.detail); };
+    const onPop = () => {
+      try { setFeedTab(new URLSearchParams(window.location.search).get("tab") || "foryou"); }
+      catch {}
+    };
+    window.addEventListener("ironshield:feed-tab", onTab);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("ironshield:feed-tab", onTab);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, []);
+
   return (
     <>
       {SIDEBAR_GROUPS.map((group) => (
@@ -165,16 +226,31 @@ function SidebarContent({ pathname, onAction, onItemPick }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {group.items.map((item) => {
-              // Home matches only exactly "/"; other hrefs startsWith.
-              const active = item.href &&
-                (item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href));
+              // A Feed-section item is active when we're on /feed AND
+              // its feedTab matches the currently-selected tab. A
+              // regular href item is active when the pathname matches;
+              // we also guard the plain /feed item so it's NOT active
+              // when a Feed-section sub-item has the focus.
+              let active = false;
+              if (item.feedTab) {
+                active = pathname?.startsWith("/feed") && feedTab === item.feedTab;
+              } else if (item.href === "/") {
+                active = pathname === "/";
+              } else if (item.href === "/feed") {
+                // Suppress the regular "IronFeed" row's highlight
+                // when a Feed-section sub-item owns it. Keeps the
+                // sidebar from showing two active rows at once.
+                active = pathname?.startsWith("/feed") && !SIDEBAR_GROUPS[0].items.some((i) => i.feedTab === feedTab);
+              } else if (item.href) {
+                active = pathname?.startsWith(item.href);
+              }
               return (
                 <SidebarItem
                   key={item.key}
                   item={item}
                   active={active}
                   onAction={(a) => { onAction(a); onItemPick?.(); }}
-                  onClick={() => onItemPick?.()}
+                  onClick={() => { onItemPick?.(); if (item.feedTab) setFeedTab(item.feedTab); }}
                   t={t}
                 />
               );
@@ -199,7 +275,7 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
 
   const panel = (
     <aside style={{
-      width: 240,
+      width: 260,
       flexShrink: 0,
       borderRight: `1px solid ${t.border}`,
       padding: "16px 10px",
@@ -210,11 +286,58 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
       background: "var(--bg-surface)",
       height: "100%",
     }}>
-      <SidebarContent
-        pathname={pathname}
-        onAction={onAction}
-        onItemPick={isMobile ? onClose : undefined}
-      />
+      {/* Brand cluster at the top of the rail — matches the TopNav
+          brand so the full-width shell feels unified. On mobile the
+          drawer gets the same header so users don't lose orientation. */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "0 10px 14px",
+        borderBottom: `1px solid ${t.border}`,
+        margin: "0 -4px 4px",
+      }}>
+        <Shield size={20} color={t.accent} />
+        <span style={{ fontSize: 15, fontWeight: 800, color: t.white, letterSpacing: -0.3 }}>
+          IronShield
+        </span>
+      </div>
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
+        <SidebarContent
+          pathname={pathname}
+          onAction={onAction}
+          onItemPick={isMobile ? onClose : undefined}
+        />
+      </div>
+
+      {/* IronShield Pro upgrade card — sticks to the bottom of the
+          rail. Gradient fill, subtle glow, premium call-to-action. */}
+      <a
+        href="/rewards"
+        style={{
+          display: "block", textDecoration: "none",
+          padding: 14, borderRadius: 14,
+          background: "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(59,130,246,0.14))",
+          border: `1px solid rgba(168,85,247,0.35)`,
+          boxShadow: "0 0 0 1px rgba(168,85,247,0.08) inset, 0 12px 30px rgba(168,85,247,0.12)",
+          color: "inherit",
+        }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.white, letterSpacing: -0.2 }}>
+          IronShield Pro
+        </div>
+        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, lineHeight: 1.45 }}>
+          Unlock advanced analytics and exclusive features.
+        </div>
+        <div style={{
+          marginTop: 10,
+          display: "inline-block",
+          padding: "6px 12px", borderRadius: 8,
+          background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+          color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+        }}>
+          Upgrade
+        </div>
+      </a>
     </aside>
   );
 
