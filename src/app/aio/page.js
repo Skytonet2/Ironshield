@@ -1,12 +1,16 @@
 "use client";
-// /aio — the AIO Feed route. Wraps the new AppShell chrome around a
-// scaffolded feed list. The WS pipeline + card components land in
-// later phases; for now this page proves the shell renders end-to-end
-// and shows an empty state when there are no feed events.
+// /aio — the AIO Feed route. Wraps the new AppShell chrome around the
+// live feed. Opens a WS to /ws/feed on mount; if the backend is
+// offline (dev without `npm run backend`), the local seeder
+// generates realistic events so the UI still has something to render.
+// Card components land in Phase 4; today each event is a raw JSON row.
 
+import { useEffect } from "react";
 import { useTheme } from "@/lib/contexts";
 import { useFeed } from "@/lib/stores/feedStore";
 import AppShell from "@/components/shell/AppShell";
+import * as wsClient from "@/lib/ws/wsClient";
+import * as seeder from "@/lib/ws/seeder";
 
 function YourDeploysPanel() {
   const t = useTheme();
@@ -62,6 +66,23 @@ function FeedEmpty() {
 export default function AioPage() {
   const t = useTheme();
   const items = useFeed((s) => s.items);
+
+  useEffect(() => {
+    // Connect the singleton WS (public subscription — every tracker).
+    // If the backend is unreachable, the wsClient will keep retrying
+    // with exponential backoff while the seeder keeps the UI alive
+    // in development. The seeder is a no-op in production builds.
+    wsClient.connect({
+      trackers: ["ca", "x", "dex", "near", "telegram", "news",
+                 "ironclaw", "newpair", "wallet", "trade"],
+    });
+    seeder.start();
+    return () => {
+      seeder.stop();
+      // Leave the socket open — another page in the same tab might
+      // want it. wsClient.disconnect() is only for explicit sign-out.
+    };
+  }, []);
 
   return (
     <AppShell rightPanel={<YourDeploysPanel />}>

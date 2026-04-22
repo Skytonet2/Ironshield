@@ -1,7 +1,9 @@
 require("dotenv").config();
+const http = require("http");
 const express = require("express");
 const app = express();
 const db = require("./db/client");
+const feedHub = require("./ws/feedHub");
 
 app.use(express.json());
 app.use(require("cors")());
@@ -84,7 +86,12 @@ async function start() {
   } catch (err) {
     console.warn("[Server] DB migration failed — running without database:", err.message);
   }
-  app.listen(PORT, () => console.log(`IronClaw backend running on port ${PORT}`));
+  // Wrap the Express app in an explicit HTTP server so the WS hub can
+  // share the same port. Render's single-port allocation needs this —
+  // app.listen() would claim the socket exclusively.
+  const server = http.createServer(app);
+  feedHub.attach(server);
+  server.listen(PORT, () => console.log(`IronClaw backend running on port ${PORT} (HTTP + WS /ws/feed)`));
   try { require("./services/batchWorker").start(); } catch (e) { console.warn("[batch] not started:", e.message); }
 }
 

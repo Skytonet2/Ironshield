@@ -110,8 +110,11 @@ export default function RootLayout({ children }) {
         ` }} />
       </head>
       <body style={{ background: "#080b12", margin: 0 }}>
-        {/* Pre-React loader: visible immediately on first paint, removed when React mounts */}
-        <div id="ic-pre-loader" aria-hidden="true">
+        {/* Pre-React loader: visible immediately on first paint, removed when React mounts.
+            suppressHydrationWarning because the inline script below mutates the DOM *before*
+            React hydrates (fading + removing this subtree), so React's SSR-vs-client diff is
+            expected to mismatch here. Without this, every page throws a noisy console error. */}
+        <div id="ic-pre-loader" aria-hidden="true" suppressHydrationWarning>
           <div className="ic-wrap">
             <div className="ic-brand">Iron<span>Shield</span></div>
             <div className="ic-track">

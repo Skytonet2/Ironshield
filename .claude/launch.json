@@ -7,6 +7,12 @@
       "runtimeArgs": ["next", "dev"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "ironshield-backend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["backend/server.js"],
+      "port": 3001
     }
   ]
 }
