@@ -22,7 +22,7 @@ import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
   Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
-  Home, Menu, X as XIcon,
+  Home, Menu, X as XIcon, User,
 } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
@@ -47,8 +47,8 @@ const SIDEBAR_GROUPS = [
     label: "Commands",
     items: [
       { key: "search",     label: "Search",     Icon: Search,       action: "search" },
-      { key: "quick-scan", label: "Quick Scan", Icon: Zap,          action: "scan"   },
-      { key: "create",     label: "Create",     Icon: Plus,         action: "create" },
+      { key: "post",       label: "Post",       Icon: Plus,         action: "post"   },
+      { key: "create",     label: "Create",     Icon: Rocket,       action: "create" },
       { key: "bridge",     label: "Bridge",     Icon: BridgeSafe,   action: "bridge" },
     ],
   },
@@ -56,11 +56,11 @@ const SIDEBAR_GROUPS = [
     label: "Platform",
     items: [
       { key: "home",        label: "Home",             Icon: Home,       href: "/"            },
-      { key: "aio",         label: "AIO Feed",         Icon: Rss,        href: "/aio"         },
       { key: "feed",        label: "IronFeed",         Icon: Rss,        href: "/feed"        },
-      { key: "trading",     label: "Trading Terminal", Icon: Activity,   href: "/trading"     },
       { key: "newscoin",    label: "NewsCoin",         Icon: Coins,      href: "/newscoin"    },
-      { key: "launch",      label: "Launch",           Icon: Rocket,     href: "/launch"      },
+      { key: "automations", label: "Automations",      Icon: Zap,        href: "/automations" },
+      { key: "profile",     label: "Profile",          Icon: User,       href: "/profile"     },
+      { key: "rewards",     label: "Rewards",          Icon: Trophy,     href: "/rewards"     },
       { key: "rooms",       label: "Rooms",            Icon: Mic,        href: "/rooms"       },
     ],
   },
@@ -258,11 +258,11 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
 /* ─── TopNav ──────────────────────────────────────────────────────── */
 
 const TOP_PILLS = [
-  { label: "AIO",         href: "/aio" },
-  { label: "Vision",      href: "/vision" },
+  { label: "Feed",        href: "/feed" },
+  { label: "NewsCoin",    href: "/newscoin" },
   { label: "Automations", href: "/automations" },
   { label: "Rewards",     href: "/rewards" },
-  { label: "Portfolio",   href: "/portfolio" },
+  { label: "Profile",     href: "/profile" },
   { label: "Settings",    href: "/settings" },
 ];
 
@@ -539,6 +539,19 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
     if (kind === "create") { setCreateOpen(true); setCreatePrefill(null); return; }
     if (kind === "bridge") { setBridgeOpen(true); return; }
     if (kind === "search") { setSearchOpen(true); return; }
+    if (kind === "post") {
+      // "Post" action lives on the feed page. If we're not there, route
+      // over with a query param the feed page reads to auto-open the
+      // composer; if we are, just broadcast an event the page listens for.
+      if (typeof window !== "undefined") {
+        if (pathname?.startsWith("/feed")) {
+          window.dispatchEvent(new CustomEvent("ironshield:open-composer"));
+        } else {
+          window.location.href = "/feed?compose=1";
+        }
+      }
+      return;
+    }
     setNote(`${kind} (wires up in a later phase)`);
   });
 

@@ -17,7 +17,7 @@
     {
       "name": "ironshield-prod",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "-s", "out", "-l", "3002", "--no-clipboard"],
+      "runtimeArgs": ["serve", "out", "-l", "3002", "--no-clipboard"],
       "port": 3002
     }
   ]

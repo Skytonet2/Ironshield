@@ -13,8 +13,10 @@
 //   - children render directly; `usePrivy()` calls from downstream
 //     components should guard with the `isPrivyConfigured` export.
 
-import { useEffect } from "react";
-import { PrivyProvider, usePrivy, useWallets } from "@privy-io/react-auth";
+import { useEffect, useRef } from "react";
+import {
+  PrivyProvider, usePrivy, useWallets, useCreateWallet,
+} from "@privy-io/react-auth";
 import { useWallet } from "@/lib/stores/walletStore";
 
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "";
@@ -51,9 +53,16 @@ export const isPrivyConfigured = APP_ID_VALID;
 function PrivySync() {
   const { ready, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
-  const setChain = useWallet((s) => s.setChain);
+  // useCreateWallet is the explicit escape hatch for when the
+  // createOnLogin auto-provisioner didn't fire — which we've seen on
+  // email / Google sign-ins where Privy considers the user "not
+  // without a wallet" because the browser has an injected EVM
+  // provider. We call it ourselves if no embedded wallet shows up.
+  const { createWallet: createEmbedded } = (useCreateWallet?.() || {});
+  const setChain     = useWallet((s) => s.setChain);
   const setCustodial = useWallet((s) => s.setCustodial);
-  const disconnect = useWallet((s) => s.disconnect);
+  const disconnect   = useWallet((s) => s.disconnect);
+  const attemptedRef = useRef(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -63,6 +72,7 @@ function PrivySync() {
       disconnect("sol");
       disconnect("bnb");
       setCustodial(false);
+      attemptedRef.current = false;
       return;
     }
     // Find the EVM and Solana wallets Privy reports for this user.
@@ -71,6 +81,18 @@ function PrivySync() {
     // brought in themselves (MetaMask, Phantom, etc.).
     const evm = wallets.find((w) => w.chainType === "ethereum");
     const sol = wallets.find((w) => w.chainType === "solana");
+    const hasEmbedded = wallets.some((w) => w.walletClientType === "privy");
+
+    // Belt-and-suspenders: if we're authenticated but no embedded
+    // wallet appeared, create one explicitly. Only attempted once per
+    // session to avoid loops on SDK errors.
+    if (!hasEmbedded && createEmbedded && !attemptedRef.current) {
+      attemptedRef.current = true;
+      Promise.resolve(createEmbedded()).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn("[privy] explicit wallet create failed:", err?.message || err);
+      });
+    }
 
     if (evm) {
       setChain("bnb", { address: evm.address, connected: true });
@@ -85,12 +107,11 @@ function PrivySync() {
 
     // Custodial = any Privy-embedded wallet is active. Drives the
     // seed-reveal affordance in /settings/security (Phase 6).
-    const hasEmbedded = wallets.some((w) => w.walletClientType === "privy");
     setCustodial(hasEmbedded);
 
     // Intentionally unused, but kept for when we want a user-id mirror:
     void user;
-  }, [ready, authenticated, user, wallets, setChain, setCustodial, disconnect]);
+  }, [ready, authenticated, user, wallets, setChain, setCustodial, disconnect, createEmbedded]);
 
   return null;
 }
@@ -107,11 +128,17 @@ export default function PrivyWrapper({ children }) {
         // 'wallet' out — users bring in external wallets through our
         // existing NEAR selector or Privy's auto-detect in the modal.
         loginMethods: ["email", "google"],
-        // Auto-create embedded wallets for users that don't connect an
-        // external one. Ethereum covers BNB; Solana ships its own slot.
+        // Auto-create embedded wallets on every login. "all-users"
+        // (vs "users-without-wallets") guarantees an embedded wallet
+        // even when the user has a browser extension like MetaMask —
+        // that extension is surfaced separately; the embedded wallet
+        // is what makes custodial features like the agent action layer
+        // and one-click tips work without popups. PrivySync adds an
+        // explicit createWallet() fallback in case the auto-provision
+        // misses for any reason.
         embeddedWallets: {
-          ethereum: { createOnLogin: "users-without-wallets" },
-          solana:   { createOnLogin: "users-without-wallets" },
+          ethereum: { createOnLogin: "all-users" },
+          solana:   { createOnLogin: "all-users" },
         },
         appearance: {
           theme: "dark",

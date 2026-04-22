@@ -135,6 +135,11 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
   const isVerified = !!author?.verified;
   const isNewsBot  = author?.wallet_address === "sys:ironnews";
   const isXCross   = author?.account_type === "X" || author?.username?.startsWith("x/");
+  // A post is a Voice when the composer flagged it as one (media_type
+  // mirrored via the "mediaType" field on the API) or when the legacy
+  // "kind" field is set to "voice". Voices render inline with everything
+  // else in the feed but carry a visible label.
+  const isVoice = post?.mediaType === "VOICE" || post?.media_type === "VOICE" || post?.kind === "voice";
 
   const rendered = useMemo(
     () => renderContentWithHighlights(post?.content, t.accent),
@@ -223,6 +228,16 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
               display: "inline-flex", alignItems: "center", gap: 3,
             }}>
               <Shield size={9} /> {isNewsBot ? "NEWS" : "AGENT"}
+            </span>
+          )}
+          {isVoice && (
+            <span style={{
+              fontSize: 9, padding: "1px 5px", borderRadius: 4,
+              background: "rgba(168,85,247,0.18)", color: "#c084fc",
+              letterSpacing: 0.6, textTransform: "uppercase",
+              display: "inline-flex", alignItems: "center", gap: 3,
+            }} title="Voice post — a short take from the author">
+              VOICE
             </span>
           )}
           <span style={{ color: t.textMuted, fontSize: 12 }}>

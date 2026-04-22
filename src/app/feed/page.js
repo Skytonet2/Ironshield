@@ -1,22 +1,18 @@
 "use client";
-// /feed — the Phase 4-2 IronFeed rebuild.
+// /feed — IronFeed, the social surface for IronShield.
 //
-// Separate route from the legacy / + <IronFeedPage/> so the live site
-// keeps working while this ships in parallel. Tabs match spec §8B:
-// For You | Following | Alpha | News | IronClaw Alerts.
-//
-// Alpha detection lives server-side (backend/routes/feed.route.js:
-// /alpha regex); we just render whatever the endpoint returns. Mute
-// list filters client-side from a memo — server already scopes
-// results per-viewer for /foryou so mutes you apply there take
-// effect on the next page load; Alpha and News tabs get the
-// filter applied locally because they're unscoped.
+// Tabs: For You | Following | Alpha | News | IronClaw Alerts | Voices
+// — plus a composer at the top and a Your Deploys panel in the right
+// rail. Engagement (like / repost / tip / reply) posts back to the
+// social endpoints and updates the local post in place so counters
+// react without a refetch.
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useTheme } from "@/lib/contexts";
-import { useWallet } from "@/lib/contexts";
+import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
+import ComposeBar from "@/components/feed/ComposeBar";
+import YourDeploysPanel from "@/components/feed/YourDeploysPanel";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -28,10 +24,11 @@ const BACKEND_BASE = (() => {
 })();
 
 const TABS = [
-  { key: "foryou",          label: "For You",         endpoint: "/api/feed/foryou" },
-  { key: "following",       label: "Following",       endpoint: "/api/feed/following" },
-  { key: "alpha",           label: "Alpha",           endpoint: "/api/feed/alpha" },
-  { key: "news",            label: "News",            endpoint: "/api/feed/news" },
+  { key: "foryou",          label: "For You",         endpoint: "/api/feed/foryou"          },
+  { key: "following",       label: "Following",       endpoint: "/api/feed/following"       },
+  { key: "voices",          label: "Voices",          endpoint: "/api/feed/voices"          },
+  { key: "alpha",           label: "Alpha",           endpoint: "/api/feed/alpha"           },
+  { key: "news",            label: "News",            endpoint: "/api/feed/news"            },
   { key: "ironclaw-alerts", label: "IronClaw Alerts", endpoint: "/api/feed/ironclaw-alerts" },
 ];
 
@@ -105,9 +102,81 @@ export default function FeedPage() {
     } catch { /* swallow */ }
   }, [wallet, refreshMuted]);
 
+  // Optimistic updates — flip the like/repost flag and adjust the
+  // counter client-side so the UI feels instant. If the API call
+  // fails, revert.
+  const patchPost = useCallback((id, patch) => {
+    setPosts((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } : p));
+  }, []);
+
+  const onLike = useCallback(async (post) => {
+    if (!wallet) { walletCtx?.showModal?.(); return; }
+    const next = !post.likedByMe;
+    patchPost(post.id, {
+      likedByMe: next,
+      likes: Math.max(0, (post.likes || 0) + (next ? 1 : -1)),
+    });
+    try {
+      await fetch(`${BACKEND_BASE}/api/social/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        body: JSON.stringify({ postId: post.id, on: next }),
+      });
+    } catch {
+      patchPost(post.id, { likedByMe: post.likedByMe, likes: post.likes });
+    }
+  }, [wallet, patchPost, walletCtx]);
+
+  const onRepost = useCallback(async (post) => {
+    if (!wallet) { walletCtx?.showModal?.(); return; }
+    const next = !post.repostedByMe;
+    patchPost(post.id, {
+      repostedByMe: next,
+      reposts: Math.max(0, (post.reposts || 0) + (next ? 1 : -1)),
+    });
+    try {
+      await fetch(`${BACKEND_BASE}/api/social/repost`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        body: JSON.stringify({ postId: post.id, on: next }),
+      });
+    } catch {
+      patchPost(post.id, { repostedByMe: post.repostedByMe, reposts: post.reposts });
+    }
+  }, [wallet, patchPost, walletCtx]);
+
+  const onReply = useCallback((post) => {
+    // Prompt a top-level compose prefilled with the reply text; the
+    // backend links the reply on submit via the replyTo field. Full
+    // inline comment UI lands with the profile page in the next cut.
+    const reply = typeof window !== "undefined" ? window.prompt(`Reply to @${post.author?.username || "user"}:`) : "";
+    if (!reply || !wallet) return;
+    fetch(`${BACKEND_BASE}/api/social/comment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      body: JSON.stringify({ postId: post.id, content: reply.slice(0, 500) }),
+    }).then(() => {
+      patchPost(post.id, { comments: (post.comments || 0) + 1 });
+    }).catch(() => {});
+  }, [wallet, patchPost]);
+
+  const onTip = useCallback((post) => {
+    // Tip modal lives in the legacy IronFeedPage; for the new shell we
+    // deep-link there for now. A dedicated TipModal extraction is
+    // tracked as a follow-up once all entry points use AppShell.
+    if (typeof window !== "undefined") window.location.href = `/?tip=${post.id}`;
+  }, []);
+
+  const prependPost = useCallback((p) => {
+    if (!p) return;
+    setPosts((prev) => [p, ...prev]);
+  }, []);
+
   return (
-    <AppShell>
+    <AppShell rightPanel={<YourDeploysPanel />}>
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "12px 16px" }}>
+        <ComposeBar onPosted={prependPost} />
+
         {/* Tab strip */}
         <div style={{
           display: "flex",
@@ -159,6 +228,8 @@ export default function FeedPage() {
           }}>
             {tab === "following" && !wallet
               ? "Connect a wallet to see your Following feed."
+              : tab === "voices"
+              ? "No Voice posts yet. Tap the Voice toggle in the composer to add one."
               : tab === "ironclaw-alerts"
               ? "No active alerts."
               : tab === "news"
@@ -176,10 +247,10 @@ export default function FeedPage() {
               viewer={walletCtx}
               isOwn={wallet && p.author?.wallet_address?.toLowerCase() === wallet.toLowerCase()}
               onMute={mute}
-              onLike={()   => {/* backend wiring carries over from legacy flow */}}
-              onRepost={() => {/* likewise */}}
-              onTip={()    => {/* likewise */}}
-              onReply={()  => {/* likewise */}}
+              onLike={()   => onLike(p)}
+              onRepost={() => onRepost(p)}
+              onTip={()    => onTip(p)}
+              onReply={()  => onReply(p)}
             />
           ))}
         </div>
