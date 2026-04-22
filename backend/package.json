@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "node-cron": "^4.2.1",
+    "open-graph-scraper": "^6.11.0",
+    "rss-parser": "^3.13.0"
+  }
+}

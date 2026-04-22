@@ -43,14 +43,85 @@ export const LIGHT = {
   navBg: "#f1f5f9", watermarkOpacity: 0.1,
 };
 
-export const ThemeCtx = createContext({ theme: DARK, isDark: true, setIsDark: () => {} });
+// Accent hex per preset. These are the same values as the --accent CSS
+// variable in src/styles/tokens.css — kept in sync manually so that
+// legacy inline-style components (which read t.accent) and new CSS-var
+// components render the same color when the user switches preset.
+export const PRESET_ACCENTS = {
+  default:  "#3b82f6",  // blue, preserves the repo's existing look
+  midnight: "#6366f1",  // indigo
+  steel:    "#94a3b8",  // slate
+  carbon:   "#a3a3a3",  // neutral gray
+  ember:    "#f97316",  // orange
+  ironclaw: "#ef4444",  // red
+};
+export const THEME_PRESETS = Object.keys(PRESET_ACCENTS);
+
+const accentGlowFor = (hex) => {
+  // Convert #RRGGBB → rgba(r,g,b,0.15) for the legacy theme object's
+  // accentGlow field. Alpha matches the CSS --accent-glow shadow.
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},0.15)`;
+};
+
+export const ThemeCtx = createContext({
+  theme: DARK,
+  isDark: true,
+  setIsDark: () => {},
+  preset: "default",
+  setPreset: () => {},
+});
 export const useThemeInfo = () => useContext(ThemeCtx);
 export const useTheme = () => useContext(ThemeCtx).theme;
 
+const PRESET_STORAGE_KEY = "ironshield-theme-preset";
+
 export function ThemeProvider({ children }) {
   const [isDark, setIsDark] = useState(true);
-  const theme = isDark ? DARK : LIGHT;
-  return <ThemeCtx.Provider value={{ theme, isDark, setIsDark }}>{children}</ThemeCtx.Provider>;
+  const [preset, setPresetState] = useState("default");
+
+  // Hydrate preset from localStorage on mount. We can't read localStorage
+  // during SSR/initial render so we accept a single client-side repaint.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(PRESET_STORAGE_KEY);
+      if (stored && PRESET_ACCENTS[stored]) setPresetState(stored);
+    } catch { /* private browsing / storage disabled — fine, use default */ }
+  }, []);
+
+  // Keep <html data-theme="..."> in sync so new CSS-var components retint.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (preset === "default") {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = preset;
+    }
+  }, [preset]);
+
+  const setPreset = useCallback((next) => {
+    if (!PRESET_ACCENTS[next]) return;
+    setPresetState(next);
+    try { window.localStorage.setItem(PRESET_STORAGE_KEY, next); } catch {}
+  }, []);
+
+  // Stamp the preset's accent onto the legacy inline-style theme so
+  // existing components (which read t.accent) retint without a rewrite.
+  // Memoized so that equal presets don't invalidate every child's
+  // useTheme() consumer on unrelated renders.
+  const theme = useMemo(() => {
+    const base = isDark ? DARK : LIGHT;
+    const accent = PRESET_ACCENTS[preset];
+    return { ...base, accent, accentGlow: accentGlowFor(accent) };
+  }, [isDark, preset]);
+
+  return (
+    <ThemeCtx.Provider value={{ theme, isDark, setIsDark, preset, setPreset }}>
+      {children}
+    </ThemeCtx.Provider>
+  );
 }
 
 export const WalletCtx = createContext({

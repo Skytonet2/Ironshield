@@ -1,0 +1,200 @@
+/* =====================================================================
+ * tokens.css — IronShield design tokens
+ *
+ * Two theme systems coexist while we migrate:
+ *
+ * 1. The legacy inline-style theme (src/lib/contexts.js DARK/LIGHT). Used
+ *    by every existing component via useTheme(). Values here don't affect
+ *    them — they read from the JS theme object directly.
+ *
+ * 2. CSS variables, per the Section 3A spec. Used by all NEW components
+ *    (AmbientBackground, redesigned TopNav/Sidebar, GlassCard, trading
+ *    terminal, etc.). Switched via `document.documentElement.dataset.theme`
+ *    which is kept in sync by ThemeProvider.
+ *
+ * Preset choice also drives the legacy theme object's `accent` field, so
+ * older components re-tint when the user picks a preset — without a bulk
+ * rewrite of inline styles.
+ *
+ * To bias "Default" toward the spec's cyan (#00c8ff) instead of the repo's
+ * blue (#3b82f6), flip --accent below and the `default` entry in
+ * contexts.js PRESET_ACCENTS.
+ * ===================================================================== */
+
+:root {
+  /* === SURFACES === */
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  --glass-blur: blur(12px);
+
+  /* === BASE — Default preset (blue to preserve the current look) === */
+  --bg-app: #080b12;
+  --bg-surface: #0d1117;
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --bg-card-hover: rgba(255, 255, 255, 0.055);
+  --bg-input: rgba(255, 255, 255, 0.05);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-active: rgba(255, 255, 255, 0.15);
+
+  /* === ACCENT (swaps per preset) === */
+  --accent: #3b82f6;
+  --accent-dim: rgba(59, 130, 246, 0.1);
+  --accent-border: rgba(59, 130, 246, 0.25);
+  --accent-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+
+  /* === TEXT === */
+  --text-1: rgba(255, 255, 255, 0.92);
+  --text-2: rgba(255, 255, 255, 0.5);
+  --text-3: rgba(255, 255, 255, 0.25);
+
+  /* === STATUS === */
+  --green: #00d26a;
+  --red: #ff4d4d;
+  --amber: #ffb800;
+  --purple: #8b5cf6;
+
+  /* === MOTION === */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 350ms;
+}
+
+/* === PRESETS ========================================================
+ * Selected via `document.documentElement.dataset.theme = "<name>"`.
+ * ThemeProvider also stamps accent onto the legacy inline-style theme
+ * object so older components retint.
+ * =================================================================== */
+
+[data-theme="midnight"] {
+  --accent: #6366f1;
+  --accent-dim: rgba(99, 102, 241, 0.1);
+  --accent-border: rgba(99, 102, 241, 0.25);
+  --accent-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+  --bg-app: #05050f;
+  --bg-surface: #0a0a1a;
+}
+
+[data-theme="steel"] {
+  --accent: #94a3b8;
+  --accent-dim: rgba(148, 163, 184, 0.1);
+  --accent-border: rgba(148, 163, 184, 0.2);
+  --accent-glow: 0 0 20px rgba(148, 163, 184, 0.1);
+  --bg-app: #09090b;
+  --bg-surface: #0f1117;
+}
+
+[data-theme="carbon"] {
+  --accent: #a3a3a3;
+  --accent-dim: rgba(163, 163, 163, 0.08);
+  --accent-border: rgba(163, 163, 163, 0.15);
+  --accent-glow: 0 0 16px rgba(163, 163, 163, 0.1);
+  --bg-app: #060606;
+  --bg-surface: #0c0c0c;
+}
+
+[data-theme="ember"] {
+  --accent: #f97316;
+  --accent-dim: rgba(249, 115, 22, 0.1);
+  --accent-border: rgba(249, 115, 22, 0.2);
+  --accent-glow: 0 0 20px rgba(249, 115, 22, 0.15);
+  --bg-app: #080503;
+  --bg-surface: #0f0a05;
+}
+
+[data-theme="ironclaw"] {
+  --accent: #ef4444;
+  --accent-dim: rgba(239, 68, 68, 0.1);
+  --accent-border: rgba(239, 68, 68, 0.2);
+  --accent-glow: 0 0 20px rgba(239, 68, 68, 0.15);
+  --bg-app: #080303;
+  --bg-surface: #0f0505;
+}
+
+/* === MICRO-INTERACTIONS ============================================
+ * Applied globally so new components pick them up for free. Legacy
+ * components that already set their own transitions win via specificity.
+ * =================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  .card {
+    transition: transform var(--duration-normal) var(--ease-out),
+                box-shadow var(--duration-normal) var(--ease-out);
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--accent-glow);
+  }
+
+  .sidebar-item {
+    transition: all var(--duration-normal) var(--ease-out);
+    position: relative;
+  }
+  .sidebar-item.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent);
+    box-shadow: var(--accent-glow);
+    animation: glowPulse 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes glowPulse {
+    from { opacity: 0.7; box-shadow: 0 0 8px var(--accent); }
+    to   { opacity: 1;   box-shadow: 0 0 16px var(--accent); }
+  }
+
+  .feed-item-enter {
+    animation: feedItemIn var(--duration-slow) var(--ease-out) both;
+  }
+  @keyframes feedItemIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .page-enter {
+    animation: pageIn 250ms var(--ease-out) both;
+  }
+  @keyframes pageIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* Scan-line overlay for IronClaw scan reveals. Parent must be
+ * position: relative + overflow: hidden. */
+.scan-reveal {
+  position: relative;
+  overflow: hidden;
+}
+.scan-reveal::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: var(--accent-glow);
+  animation: scanLine 300ms var(--ease-out) both;
+  pointer-events: none;
+}
+@keyframes scanLine {
+  from { top: 0; }
+  to   { top: 100%; }
+}
+
+/* Reduced-motion: kill all decorative animations. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-item.active::before,
+  .feed-item-enter,
+  .page-enter,
+  .scan-reveal::after {
+    animation: none;
+  }
+}

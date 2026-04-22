@@ -1,5 +1,9 @@
 import { ThemeProvider, WalletProvider, ProposalsProvider } from "@/lib/contexts";
 import { Outfit, JetBrains_Mono } from "next/font/google";
+// tokens.css ships CSS variables for the 6 theme presets. It's imported
+// before globals.css so per-element overrides in globals take precedence —
+// theme tokens are a base layer, not a reset.
+import "../styles/tokens.css";
 import "./globals.css";
 
 // Self-host the fonts at build time. Eliminates the render-blocking
