@@ -257,29 +257,99 @@ export default function AgentPage({ openWallet }) {
   }, [decorated]);
 
   return (
-    <Section style={{ paddingTop: 100 }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 32 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-            <div style={{ background: `${t.accent}22`, borderRadius: 12, padding: 10 }}>
-              <Bot size={26} color={t.accent} />
-            </div>
-            <h1 style={{ fontSize: 32, fontWeight: 800, color: t.white, margin: 0 }}>
-              IronClaw <span style={{ color: t.accent }}>Agent</span>
-            </h1>
-            <Badge color="#22c55e" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Activity size={10} /> LIVE
-            </Badge>
+    <div style={{ maxWidth: 920, margin: "0 auto", padding: "16px 16px 60px" }}>
+      {/* Header — slim line so the page has a clear entry point. */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: t.accent, fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" }}>
+          <Bot size={12} /> AI Agent
+        </div>
+        <h1 style={{ margin: "4px 0 4px", fontSize: 20, fontWeight: 800, color: t.white, letterSpacing: -0.2 }}>
+          Manage your AI agents and automate Web3 tasks.
+        </h1>
+      </div>
+
+      {/* Hero "Your AI Agents" banner — gradient card with the live
+          agent count + a robot mark on the right so the page has a
+          visual anchor before the role grid. */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 16,
+        padding: "18px 20px", borderRadius: 16,
+        background: "linear-gradient(135deg, rgba(168,85,247,0.16), rgba(59,130,246,0.10) 60%, transparent), var(--bg-card)",
+        border: "1px solid rgba(168,85,247,0.35)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 28px 60px rgba(168,85,247,0.1)",
+        marginBottom: 14,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: t.textDim, fontWeight: 600, letterSpacing: 0.4 }}>
+            Your AI Agents
           </div>
-          <div style={{ fontSize: 14, color: t.textMuted, maxWidth: 720, lineHeight: 1.6 }}>
-            Six autonomous roles powered by NEAR AI, filing Mission proposals on-chain for $CLAW holders to vote on.
-            Capped at 5 proposals per day. Every output is hash-committed to <span style={{ color: t.accent }}>{STAKING_CONTRACT}</span>.
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 4 }}>
+            <span style={{ fontSize: 36, fontWeight: 800, color: t.white, letterSpacing: -0.6 }}>
+              {decorated.length}
+            </span>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              fontSize: 11, color: "#10b981", fontWeight: 700, letterSpacing: 0.5,
+              padding: "3px 8px", borderRadius: 999,
+              background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.35)",
+            }}>
+              <Activity size={10} /> ACTIVE
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6, lineHeight: 1.5, maxWidth: 520 }}>
+            Six autonomous roles file Mission proposals on-chain. $CLAW holders vote to approve.
+            Every output hash-committed to <span style={{ color: t.accent, fontFamily: "var(--font-jetbrains-mono), monospace", fontSize: 11 }}>{STAKING_CONTRACT}</span>.
           </div>
         </div>
-        <Btn onClick={refresh} style={{ padding: "9px 18px" }}>
-          {loading ? <Loader size={14} className="spin" /> : <RefreshCw size={14} />} Refresh
-        </Btn>
+        {/* Robot glyph — gradient tile, plus a pulsing dot to signal "agents are running". */}
+        <div style={{
+          position: "relative",
+          width: 86, height: 86, borderRadius: 20,
+          background: "linear-gradient(135deg, #a855f7, #3b82f6)",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          color: "#fff", flexShrink: 0,
+          boxShadow: "0 20px 40px rgba(168,85,247,0.35)",
+        }}>
+          <Bot size={38} />
+          <span style={{
+            position: "absolute", top: 8, right: 8,
+            width: 10, height: 10, borderRadius: "50%",
+            background: "#10b981",
+            boxShadow: "0 0 10px #10b981",
+            animation: "pulse 2s infinite",
+          }} />
+        </div>
+      </div>
+
+      {/* Action row — refresh + create. Create New Agent is gradient
+          primary; refresh is secondary outlined. */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => alert("Agent builder — coming next build.")}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "9px 14px", borderRadius: 10, border: "none",
+            background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+            color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+            boxShadow: "0 10px 24px rgba(168,85,247,0.35)",
+          }}
+        >
+          <Zap size={13} /> Create New Agent
+        </button>
+        <button
+          type="button"
+          onClick={refresh}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "9px 14px", borderRadius: 10,
+            border: `1px solid ${t.border}`, background: "var(--bg-surface)",
+            color: t.text, fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}
+        >
+          {loading ? <Loader size={13} className="spin" /> : <RefreshCw size={13} />}
+          Refresh
+        </button>
       </div>
 
       {/* Role tiles */}
@@ -374,7 +444,8 @@ export default function AgentPage({ openWallet }) {
       <style jsx>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         .spin { animation: spin 1s linear infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
       `}</style>
-    </Section>
+    </div>
   );
 }

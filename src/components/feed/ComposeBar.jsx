@@ -50,6 +50,54 @@ export default function ComposeBar({ onPosted }) {
   const [mediaUrls, setMediaUrls] = useState([]);
   const [uploadBusy, setUploadBusy] = useState(false);
 
+  // Detect mobile once on mount + on resize. When `open && isMobile`
+  // we render the whole composer inside a full-screen portal (reference
+  // panel #6) instead of inline. Gives phones a proper native-feel
+  // post surface without stealing layout from the inline version on
+  // desktop.
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.matchMedia("(max-width: 899px)").matches; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 899px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
+  // AI Post Generator (panel #6 bottom card) — draft a short post
+  // from a prompt. The backend endpoint is optional; when absent we
+  // fall back to a cheerful "coming soon" toast instead of failing.
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiBusy, setAiBusy]     = useState(false);
+  const aiSuggest = useCallback(async () => {
+    const p = aiPrompt.trim();
+    if (!p) return;
+    setAiBusy(true);
+    try {
+      const r = await fetch(`${API}/api/ai/compose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-wallet": address || "" },
+        body: JSON.stringify({ prompt: p, maxChars: MAX }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (j?.text) setText(j.text.slice(0, MAX));
+      } else if (r.status === 404) {
+        setErr("AI compose endpoint isn't enabled on this backend yet.");
+      } else {
+        setErr(`AI suggest failed (${r.status})`);
+      }
+    } catch (e) {
+      setErr(e.message || "AI suggest failed");
+    } finally {
+      setAiBusy(false);
+    }
+  }, [aiPrompt, address]);
+
   const aud = AUDIENCES.find((a) => a.key === audience) || AUDIENCES[0];
   const AudIcon = aud.Icon;
 
@@ -138,8 +186,291 @@ export default function ComposeBar({ onPosted }) {
     transition: "background 120ms ease, color 120ms ease",
   };
 
+  // ─── Full-screen mobile sheet (reference panel #6) ───────────────
+  // Rendered as a portal to <body> so it escapes the feed's scroll
+  // container and any ancestor transforms. Shares state with the
+  // inline composer so switching between viewports doesn't lose
+  // drafted text or media.
+  const mobileSheet = isMobile && open && typeof document !== "undefined"
+    ? createPortal(
+        <div
+          role="dialog"
+          aria-label="Create post"
+          style={{
+            position: "fixed", inset: 0, zIndex: 400,
+            background: "var(--bg-app)",
+            display: "flex", flexDirection: "column",
+            animation: "ix-sheet-in 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+        >
+          {/* Sheet header */}
+          <header style={{
+            height: 52, flexShrink: 0,
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "0 12px", borderBottom: `1px solid ${t.border}`,
+            background: "var(--bg-surface)",
+          }}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              style={{
+                width: 34, height: 34, borderRadius: 8,
+                border: `1px solid ${t.border}`, background: "transparent",
+                color: t.textMuted, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <X size={16} />
+            </button>
+            <div style={{ flex: 1, textAlign: "center", fontSize: 14, fontWeight: 700, color: t.white }}>
+              Create Post
+            </div>
+            <button
+              type="button"
+              disabled={busy || (!text.trim() && mediaUrls.length === 0)}
+              onClick={submit}
+              style={{
+                padding: "7px 16px", borderRadius: 999, border: "none",
+                background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+                color: "#fff", fontSize: 13, fontWeight: 700,
+                cursor: busy ? "wait" : "pointer",
+                opacity: (busy || (!text.trim() && mediaUrls.length === 0)) ? 0.5 : 1,
+                boxShadow: "0 6px 16px rgba(168,85,247,0.35)",
+              }}
+            >
+              {busy ? "…" : "Post"}
+            </button>
+          </header>
+
+          {/* Body — scrollable */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 20px" }}>
+            {/* Author strip */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: "50%",
+                background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 16, fontWeight: 800, flexShrink: 0,
+              }}>
+                {(address?.[0]?.toUpperCase()) || <Plus size={16} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: t.white }}>
+                  {address ? "Shield Holder" : "Guest"}
+                </div>
+                <div style={{ fontSize: 12, color: t.textDim }}>
+                  @{address ? (address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address) : "signin"}
+                </div>
+              </div>
+
+              {/* Audience pill */}
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  onClick={() => setAudOpen((v) => !v)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "5px 10px", borderRadius: 999,
+                    border: `1px solid ${t.border}`, background: "var(--bg-surface)",
+                    color: t.text, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  <AudIcon size={12} />
+                  {aud.label}
+                  <ChevronDown size={11} />
+                </button>
+                {audOpen && (
+                  <div
+                    onMouseLeave={() => setAudOpen(false)}
+                    style={{
+                      position: "absolute", right: 0, top: "calc(100% + 4px)",
+                      minWidth: 160, padding: 4, borderRadius: 8,
+                      border: `1px solid ${t.border}`, background: "var(--bg-card)",
+                      boxShadow: "0 14px 28px rgba(0,0,0,0.4)", zIndex: 50,
+                    }}
+                  >
+                    {AUDIENCES.map((a) => {
+                      const AIcon2 = a.Icon;
+                      const sel = a.key === audience;
+                      return (
+                        <button
+                          key={a.key}
+                          type="button"
+                          onClick={() => { setAud(a.key); setAudOpen(false); }}
+                          style={{
+                            width: "100%", textAlign: "left",
+                            display: "flex", alignItems: "center", gap: 8,
+                            padding: "8px 10px", borderRadius: 6,
+                            background: sel ? "var(--accent-dim)" : "transparent",
+                            color: sel ? t.accent : t.text,
+                            border: "none", cursor: "pointer", fontSize: 13,
+                          }}
+                        >
+                          <AIcon2 size={12} />
+                          {a.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Big textarea */}
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value.slice(0, MAX))}
+              placeholder={voice ? "Voice post — your quick take…" : "What's on your mind?"}
+              autoFocus
+              style={{
+                width: "100%", minHeight: 160, maxHeight: "40vh",
+                resize: "none", padding: 0, border: "none", outline: "none",
+                background: "transparent",
+                color: t.text, fontSize: 17, lineHeight: 1.5, fontFamily: "inherit",
+              }}
+            />
+
+            {/* Media previews */}
+            {mediaUrls.length > 0 && (
+              <div style={{ display: "grid", gap: 6, gridTemplateColumns: mediaUrls.length === 1 ? "1fr" : "1fr 1fr", marginTop: 10 }}>
+                {mediaUrls.map((u, i) => (
+                  <div key={i} style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                    {/\.(mp4|webm|mov)(\?|#|$)/i.test(u)
+                      ? <video src={u} controls playsInline style={{ width: "100%", maxHeight: 260, display: "block" }} />
+                      : <img src={u} alt="" style={{ width: "100%", maxHeight: 260, objectFit: "cover", display: "block" }} />}
+                    <button
+                      type="button"
+                      onClick={() => setMediaUrls((m) => m.filter((_, idx) => idx !== i))}
+                      style={{
+                        position: "absolute", top: 6, right: 6,
+                        width: 28, height: 28, borderRadius: "50%",
+                        background: "rgba(0,0,0,0.6)", border: `1px solid rgba(255,255,255,0.2)`,
+                        color: "#fff", cursor: "pointer",
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Counter + Voice status */}
+            <div style={{
+              marginTop: 12, display: "flex", alignItems: "center", gap: 8,
+              fontSize: 12, color: t.textDim,
+            }}>
+              <span>{text.length}/{MAX}</span>
+              {voice && <span style={{ color: "#c084fc", fontWeight: 700 }}>· Voice post</span>}
+              {uploadBusy && <span>· Uploading…</span>}
+            </div>
+
+            {err && (
+              <div style={{
+                marginTop: 10, padding: "8px 10px", borderRadius: 8,
+                background: "rgba(239,68,68,0.08)", border: "1px solid var(--red)",
+                color: "var(--red)", fontSize: 12,
+              }}>
+                {err}
+              </div>
+            )}
+
+            {/* AI Post Generator card */}
+            <div style={{
+              marginTop: 18, padding: 14, borderRadius: 14,
+              border: `1px solid ${t.border}`,
+              background: "linear-gradient(180deg, rgba(168,85,247,0.08), rgba(59,130,246,0.04) 70%, transparent), var(--bg-card)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <Sparkles size={13} color="#c084fc" />
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.white }}>
+                  AI Post Generator
+                </div>
+                <span style={{
+                  fontSize: 9, padding: "2px 6px", borderRadius: 4,
+                  background: "rgba(168,85,247,0.18)", color: "#c084fc",
+                  letterSpacing: 0.5, fontWeight: 800,
+                }}>BETA</span>
+              </div>
+              <div style={{ fontSize: 12, color: t.textDim, marginBottom: 10 }}>
+                Generate a post with AI
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value.slice(0, 300))}
+                  placeholder="Describe what you want to post about…"
+                  rows={2}
+                  style={{
+                    flex: 1, minHeight: 54, resize: "vertical",
+                    padding: 10, borderRadius: 10,
+                    border: `1px solid ${t.border}`, background: "var(--bg-input)",
+                    color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none",
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={aiBusy || !aiPrompt.trim()}
+                  onClick={aiSuggest}
+                  aria-label="Generate"
+                  style={{
+                    width: 44, height: 44, borderRadius: 12, border: "none",
+                    background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+                    color: "#fff", cursor: aiBusy ? "wait" : "pointer",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    opacity: aiBusy || !aiPrompt.trim() ? 0.5 : 1,
+                    boxShadow: "0 8px 20px rgba(168,85,247,0.35)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Send size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Sticky action row — same icons as the inline version so
+              muscle memory carries over. */}
+          <div style={{
+            height: 56, flexShrink: 0,
+            display: "flex", alignItems: "center", gap: 2,
+            padding: "0 10px",
+            borderTop: `1px solid ${t.border}`,
+            background: "var(--bg-surface)",
+          }}>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => upload(Array.from(e.target.files || []))}
+            />
+            <IconAction Icon={ImageIcon} label="Image" onClick={() => fileRef.current?.click()} disabled={uploadBusy || mediaUrls.length >= 4} style={iconBtn} t={t} />
+            <IconAction Icon={Film}      label="Video" onClick={() => fileRef.current?.click()} disabled={uploadBusy || mediaUrls.length >= 4} style={iconBtn} t={t} />
+            <IconAction Icon={BarChart3} label="Poll — soon" disabled style={iconBtn} t={t} />
+            <IconAction Icon={Smile}     label="Emoji — soon" disabled style={iconBtn} t={t} />
+            <IconAction Icon={Link2}     label="Link — soon" disabled style={iconBtn} t={t} />
+            <IconAction Icon={Megaphone} label="Tag as Voice" onClick={() => setVoice((v) => !v)} active={voice} style={iconBtn} t={t} />
+          </div>
+
+          <style jsx global>{`
+            @keyframes ix-sheet-in {
+              from { opacity: 0; transform: translateY(18px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
     <>
+      {mobileSheet}
+
       {/* Composer — glass card. Avatar left, single-line input, then
           an action row with media buttons, audience dropdown, and the
           Post CTA. Expands on focus to grow the textarea. */}
