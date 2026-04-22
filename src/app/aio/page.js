@@ -5,9 +5,10 @@
 // generates realistic events so the UI still has something to render.
 // Card components land in Phase 4; today each event is a raw JSON row.
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useTheme } from "@/lib/contexts";
 import { useFeed } from "@/lib/stores/feedStore";
+import { useSettings } from "@/lib/stores/settingsStore";
 import AppShell from "@/components/shell/AppShell";
 import * as wsClient from "@/lib/ws/wsClient";
 import * as seeder from "@/lib/ws/seeder";
@@ -67,15 +68,34 @@ function FeedEmpty() {
 export default function AioPage() {
   const t = useTheme();
   const items = useFeed((s) => s.items);
+  const aioTrackers = useSettings((s) => s.aioTrackers);
+
+  // Build an enabled-set from settings so toggles in /settings#trackers
+  // immediately re-filter the visible feed. Empty-when-all-on keeps
+  // the rendering path fast (no filter step when the user wants
+  // everything).
+  const enabledTypes = useMemo(() => {
+    const on = Object.entries(aioTrackers || {}).filter(([, v]) => v).map(([k]) => k);
+    // "all tracker types enabled" → no filter step needed.
+    return on.length === Object.keys(aioTrackers || {}).length ? null : new Set(on);
+  }, [aioTrackers]);
+  const visible = useMemo(
+    () => enabledTypes ? items.filter((ev) => enabledTypes.has(ev.type)) : items,
+    [items, enabledTypes]
+  );
 
   useEffect(() => {
-    // Connect the singleton WS (public subscription — every tracker).
-    // If the backend is unreachable, the wsClient will keep retrying
-    // with exponential backoff while the seeder keeps the UI alive
-    // in development. The seeder is a no-op in production builds.
+    // Connect the singleton WS. Only subscribe to the tracker types
+    // the user has enabled — saves server-side fan-out for disabled
+    // types. Re-subscribing on toggle change hits the WS handler's
+    // replace-semantics (set.subs = new Set(...)).
+    const trackersList = Object.entries(aioTrackers || {})
+      .filter(([, v]) => v).map(([k]) => k);
     wsClient.connect({
-      trackers: ["ca", "x", "dex", "near", "telegram", "news",
-                 "ironclaw", "newpair", "wallet", "trade"],
+      trackers: trackersList.length > 0
+        ? trackersList
+        : ["ca", "x", "dex", "near", "telegram", "news",
+           "ironclaw", "newpair", "wallet", "trade"],
     });
     seeder.start();
     return () => {
@@ -83,7 +103,7 @@ export default function AioPage() {
       // Leave the socket open — another page in the same tab might
       // want it. wsClient.disconnect() is only for explicit sign-out.
     };
-  }, []);
+  }, [aioTrackers]);
 
   return (
     <AppShell rightPanel={<YourDeploysPanel />}>
@@ -113,9 +133,9 @@ export default function AioPage() {
             Live
           </span>
         </div>
-        {items.length === 0 ? <FeedEmpty /> : (
+        {visible.length === 0 ? <FeedEmpty /> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {items.map((ev, i) => (
+            {visible.map((ev, i) => (
               <div
                 key={ev.id}
                 className="feed-item-enter"

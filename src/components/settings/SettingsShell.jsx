@@ -10,6 +10,7 @@ import { useTheme } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import AppearanceTab from "./AppearanceTab";
 import SecurityTab  from "./SecurityTab";
+import TrackersTab  from "./TrackersTab";
 
 const GROUPS = [
   {
@@ -23,7 +24,7 @@ const GROUPS = [
   {
     label: "Platform",
     items: [
-      { key: "trackers",    label: "Trackers",     disabled: true },
+      { key: "trackers",    label: "Trackers" },
       { key: "feed",        label: "Feed Accounts", disabled: true },
       { key: "notifications", label: "Notifications", disabled: true },
       { key: "keywords",    label: "Keywords",     disabled: true },
@@ -163,6 +164,7 @@ function SettingsNav({ groups, activeTab, onPick, t }) {
 function TabContent({ tab }) {
   if (tab === "appearance") return <AppearanceTab />;
   if (tab === "security")   return <SecurityTab />;
+  if (tab === "trackers")   return <TrackersTab />;
   // Fallback — shouldn't be reachable since disabled items don't mutate tab.
   return null;
 }

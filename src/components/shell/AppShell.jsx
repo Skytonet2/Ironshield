@@ -31,6 +31,8 @@ import AmbientBackground from "./AmbientBackground";
 import UserMenu from "@/components/auth/UserMenu";
 import LaunchpadSelector from "@/components/create/LaunchpadSelector";
 import BridgeModal from "@/components/bridge/BridgeModal";
+import SearchOverlay from "@/components/search/SearchOverlay";
+import useKeyboardShortcuts from "@/lib/hooks/useKeyboardShortcuts";
 
 // lucide-react has no Bridge glyph; ArrowLeftRight is the closest
 // semantic fit for a cross-chain swap action.
@@ -396,6 +398,9 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefill, setCreatePrefill] = useState(null);
   const [bridgeOpen, setBridgeOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const setPaused = useFeed((s) => s.setPaused);
+  const pausedNow = useFeed((s) => s.paused);
 
   // AppShell routes CREATE / bridge / scan / search centrally so every
   // route gets these modals without plumbing props. Callers can still
@@ -404,7 +409,16 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   const handleAction = onAction || ((kind) => {
     if (kind === "create") { setCreateOpen(true); setCreatePrefill(null); return; }
     if (kind === "bridge") { setBridgeOpen(true); return; }
+    if (kind === "search") { setSearchOpen(true); return; }
     setNote(`${kind} (wires up in a later phase)`);
+  });
+
+  // Global keybinds: / opens search, p pauses/unpauses feed.
+  // Escape close is handled by each modal locally — when multiple are
+  // stacked, only the topmost should close. We pass a no-op here.
+  useKeyboardShortcuts({
+    onSearch:      () => setSearchOpen(true),
+    onPauseToggle: () => setPaused(!pausedNow),
   });
 
   return (
@@ -448,6 +462,11 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
       {bridgeOpen && (
         <BridgeModal onClose={() => setBridgeOpen(false)} />
       )}
+      <SearchOverlay
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onAction={handleAction}
+      />
       {note && (
         <div
           onClick={() => setNote(null)}
