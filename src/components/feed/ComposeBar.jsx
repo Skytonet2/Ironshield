@@ -11,6 +11,7 @@
 // Posts go to POST /api/posts.
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X, Megaphone, Send } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 
@@ -185,8 +186,13 @@ export default function ComposeBar({ onPosted }) {
         )}
       </div>
 
-      {/* Floating + FAB — mobile affordance that scrolls with the page. */}
-      {!open && (
+      {/* Floating + FAB — pinned to the viewport. Rendered via a portal
+          to <body> because any ancestor with a non-"none" transform
+          turns position:fixed into position:relative-to-that-ancestor,
+          and <main> has a page-enter animation whose transform lingered
+          in the computed style. Portal sidesteps that class of bug for
+          good. */}
+      {!open && typeof document !== "undefined" && createPortal(
         <button
           type="button"
           onClick={() => { setOpen(true); setTimeout(() => taRef.current?.focus(), 40); }}
@@ -202,7 +208,8 @@ export default function ComposeBar({ onPosted }) {
           }}
         >
           <Plus size={22} />
-        </button>
+        </button>,
+        document.body
       )}
     </>
   );

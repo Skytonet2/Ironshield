@@ -24,12 +24,9 @@ const BACKEND_BASE = (() => {
 })();
 
 const TABS = [
-  { key: "foryou",          label: "For You",         endpoint: "/api/feed/foryou"          },
-  { key: "following",       label: "Following",       endpoint: "/api/feed/following"       },
-  { key: "voices",          label: "Voices",          endpoint: "/api/feed/voices"          },
-  { key: "alpha",           label: "Alpha",           endpoint: "/api/feed/alpha"           },
-  { key: "news",            label: "News",            endpoint: "/api/feed/news"            },
-  { key: "ironclaw-alerts", label: "IronClaw Alerts", endpoint: "/api/feed/ironclaw-alerts" },
+  { key: "foryou",    label: "For You",   endpoint: "/api/feed/foryou"    },
+  { key: "following", label: "Following", endpoint: "/api/feed/following" },
+  { key: "voices",    label: "Voices",    endpoint: "/api/feed/voices"    },
 ];
 
 function useMutedSet(wallet) {
@@ -145,20 +142,23 @@ export default function FeedPage() {
     }
   }, [wallet, patchPost, walletCtx]);
 
-  const onReply = useCallback((post) => {
-    // Prompt a top-level compose prefilled with the reply text; the
-    // backend links the reply on submit via the replyTo field. Full
-    // inline comment UI lands with the profile page in the next cut.
-    const reply = typeof window !== "undefined" ? window.prompt(`Reply to @${post.author?.username || "user"}:`) : "";
-    if (!reply || !wallet) return;
-    fetch(`${BACKEND_BASE}/api/social/comment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-wallet": wallet },
-      body: JSON.stringify({ postId: post.id, content: reply.slice(0, 500) }),
-    }).then(() => {
+  const onReply = useCallback(async (post, text) => {
+    // Called by FeedCard's inline Reddit-style reply composer with the
+    // text already entered. If we ever need to open a standalone
+    // "reply to this" composer from outside the card, we can re-add a
+    // prompt() fallback.
+    if (!wallet) { walletCtx?.showModal?.(); return; }
+    const content = String(text || "").trim().slice(0, 500);
+    if (!content) return;
+    try {
+      await fetch(`${BACKEND_BASE}/api/social/comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        body: JSON.stringify({ postId: post.id, content }),
+      });
       patchPost(post.id, { comments: (post.comments || 0) + 1 });
-    }).catch(() => {});
-  }, [wallet, patchPost]);
+    } catch { /* swallow */ }
+  }, [wallet, patchPost, walletCtx]);
 
   const onTip = useCallback((post) => {
     // Tip modal lives in the legacy IronFeedPage; for the new shell we
@@ -230,10 +230,6 @@ export default function FeedPage() {
               ? "Connect a wallet to see your Following feed."
               : tab === "voices"
               ? "No Voice posts yet. Tap the Voice toggle in the composer to add one."
-              : tab === "ironclaw-alerts"
-              ? "No active alerts."
-              : tab === "news"
-              ? "Newsbot hasn't ingested anything yet. Come back in a minute."
               : "Nothing here yet."}
           </div>
         )}
@@ -250,7 +246,7 @@ export default function FeedPage() {
               onLike={()   => onLike(p)}
               onRepost={() => onRepost(p)}
               onTip={()    => onTip(p)}
-              onReply={()  => onReply(p)}
+              onReply={(text) => onReply(p, text)}
             />
           ))}
         </div>

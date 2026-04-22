@@ -160,9 +160,13 @@
   .page-enter {
     animation: pageIn 250ms var(--ease-out) both;
   }
+  /* Intentionally opacity-only: a `transform` left in the computed
+   * style of <main> (even translateY(0)) creates a containing block
+   * for position:fixed children, which makes the feed's FAB scroll
+   * with the page instead of staying pinned to the viewport. */
   @keyframes pageIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
 }
 

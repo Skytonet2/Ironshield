@@ -12,8 +12,8 @@
 // Also wires useImpression so counting lives wherever cards live —
 // no separate plumbing from each consumer.
 
-import { useMemo } from "react";
-import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckCircle2 } from "lucide-react";
+import { useMemo, useState, useCallback } from "react";
+import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckCircle2, Send, ChevronDown, ChevronUp } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 import useImpression from "@/lib/hooks/useImpression";
 import CoinItButton from "./CoinItButton";
@@ -63,6 +63,12 @@ function renderContentWithHighlights(content, accent) {
   return parts.length ? parts : content;
 }
 
+// Extension sniff — sidesteps needing a `kind` field in the post
+// schema. Known video MIMEs map to <video>, everything else stays as
+// <img>. Empty/unknown → <img> with onError hiding, so bad URLs never
+// leave an ugly broken icon.
+const VIDEO_RE = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i;
+
 function MediaGrid({ urls, t }) {
   if (!urls?.length) return null;
   const cols = urls.length === 1 ? "1fr" : "1fr 1fr";
@@ -73,22 +79,40 @@ function MediaGrid({ urls, t }) {
       gridTemplateColumns: cols,
       gap: 4,
     }}>
-      {urls.slice(0, 4).map((u, i) => (
-        <img
-          key={i}
-          src={u}
-          alt=""
-          loading="lazy"
-          style={{
-            width: "100%",
-            maxHeight: urls.length === 1 ? 420 : 220,
-            objectFit: "cover",
-            borderRadius: 10,
-            border: `1px solid ${t.border}`,
-          }}
-          onError={(e) => { e.currentTarget.style.display = "none"; }}
-        />
-      ))}
+      {urls.slice(0, 4).map((u, i) => {
+        const isVideo = VIDEO_RE.test(String(u));
+        const sharedStyle = {
+          width: "100%",
+          maxHeight: urls.length === 1 ? 420 : 220,
+          objectFit: "cover",
+          borderRadius: 10,
+          border: `1px solid ${t.border}`,
+          background: "#0b0f17",
+        };
+        if (isVideo) {
+          return (
+            <video
+              key={i}
+              src={u}
+              controls
+              playsInline
+              preload="metadata"
+              style={sharedStyle}
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
+            />
+          );
+        }
+        return (
+          <img
+            key={i}
+            src={u}
+            alt=""
+            loading="lazy"
+            style={sharedStyle}
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -129,6 +153,26 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
     isOwn: !!isOwn,
     viewerWallet: viewer?.wallet_address || null,
   });
+
+  // Reddit-style inline reply. Click the Reply metric → textarea slides
+  // open below the post; Enter (or the send button) fires onReply(text)
+  // back to the feed which posts to /api/social/comment and bumps the
+  // local counter.
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [replyBusy, setReplyBusy] = useState(false);
+  const submitReply = useCallback(async () => {
+    const text = replyText.trim();
+    if (!text || !onReply) return;
+    setReplyBusy(true);
+    try {
+      await Promise.resolve(onReply(text));
+      setReplyText("");
+      setReplyOpen(false);
+    } finally {
+      setReplyBusy(false);
+    }
+  }, [replyText, onReply]);
 
   const author = post?.author || {};
   const isAgent    = author?.account_type === "AGENT";
@@ -210,11 +254,18 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Header row */}
+        {/* Header row — display name, handle, and timestamp are all
+            wrapped in links to the author's profile so tapping anywhere
+            in the identity cluster routes there, like Twitter. */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span style={{ color: t.white, fontWeight: 700, fontSize: 13 }}>
+          <a
+            href={author?.wallet_address
+              ? `/profile?address=${encodeURIComponent(author.wallet_address)}`
+              : `/profile?username=${encodeURIComponent(author?.username || "")}`}
+            style={{ color: t.white, fontWeight: 700, fontSize: 13, textDecoration: "none" }}
+          >
             {author?.display_name || author?.username || "anon"}
-          </span>
+          </a>
           {isVerified && (
             <CheckCircle2
               size={13}
@@ -242,9 +293,14 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
               VOICE
             </span>
           )}
-          <span style={{ color: t.textMuted, fontSize: 12 }}>
+          <a
+            href={author?.wallet_address
+              ? `/profile?address=${encodeURIComponent(author.wallet_address)}`
+              : `/profile?username=${encodeURIComponent(author?.username || "")}`}
+            style={{ color: t.textMuted, fontSize: 12, textDecoration: "none" }}
+          >
             @{author?.username || "unknown"}
-          </span>
+          </a>
           <span style={{ color: t.textDim, fontSize: 12 }}>· {timeAgo(post?.createdAt)}</span>
 
           <span style={{ flex: 1 }} />
@@ -309,12 +365,75 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
           marginLeft: -8,
         }}>
           <Metric Icon={Eye}          label="Impressions" count={post?.impressions} t={t} />
-          <Metric Icon={MessageCircle} label="Replies"     count={post?.comments}    onClick={onReply}  t={t} />
+          <Metric Icon={MessageCircle} label="Reply"       count={post?.comments}    onClick={() => setReplyOpen((v) => !v)} active={replyOpen} color={t.accent} t={t} />
           <Metric Icon={Repeat2}      label="Reposts"     count={post?.reposts}     onClick={onRepost} active={post?.repostedByMe} color="var(--green)" t={t} />
           <Metric Icon={Heart}        label="Likes"       count={post?.likes}       onClick={onLike}   active={post?.likedByMe}    color="var(--red)"   t={t} />
           <Metric Icon={DollarSign}   label={`Tips${post?.tipTotalUsd ? ` · $${post.tipTotalUsd.toFixed(2)}` : ""}`}
                   count={post?.tipCount}    onClick={onTip}   color={t.accent} t={t} />
         </div>
+
+        {/* Reddit-style inline reply — shows below the post when the
+            Reply metric is tapped. Enter submits (Shift+Enter for
+            newlines). Counter on the post bumps via onReply.*/}
+        {replyOpen && (
+          <div style={{
+            marginTop: 8,
+            padding: 10,
+            borderRadius: 10,
+            border: `1px solid ${t.border}`,
+            background: "var(--bg-surface)",
+          }}>
+            <textarea
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value.slice(0, 500))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitReply(); }
+                if (e.key === "Escape") { setReplyOpen(false); setReplyText(""); }
+              }}
+              placeholder={`Reply to @${author?.username || "user"}…`}
+              rows={2}
+              autoFocus
+              style={{
+                width: "100%", resize: "vertical", minHeight: 52,
+                padding: 8, borderRadius: 8,
+                border: `1px solid ${t.border}`, background: "var(--bg-input)",
+                color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none",
+              }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <span style={{ fontSize: 11, color: t.textDim }}>
+                {replyText.length}/500 · Enter to send · Shift+Enter for newline
+              </span>
+              <div style={{ flex: 1 }} />
+              <button
+                type="button"
+                onClick={() => { setReplyOpen(false); setReplyText(""); }}
+                style={{
+                  padding: "6px 10px", borderRadius: 6,
+                  border: `1px solid ${t.border}`, background: "transparent",
+                  color: t.textMuted, fontSize: 12, cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={replyBusy || !replyText.trim()}
+                onClick={submitReply}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "6px 12px", borderRadius: 6, border: "none",
+                  background: t.accent, color: "#fff",
+                  fontSize: 12, fontWeight: 700, cursor: replyBusy ? "wait" : "pointer",
+                  opacity: (replyBusy || !replyText.trim()) ? 0.5 : 1,
+                }}
+              >
+                <Send size={11} />
+                {replyBusy ? "Posting…" : "Reply"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <style jsx>{`
