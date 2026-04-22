@@ -28,6 +28,7 @@ import { useSettings } from "@/lib/stores/settingsStore";
 import { useFeed } from "@/lib/stores/feedStore";
 import { usePrices } from "@/lib/hooks/usePrices";
 import AmbientBackground from "./AmbientBackground";
+import UserMenu from "@/components/auth/UserMenu";
 
 // lucide-react has no Bridge glyph; ArrowLeftRight is the closest
 // semantic fit for a cross-chain swap action.
@@ -289,16 +290,7 @@ function TopNav({ pathname, onAction }) {
       </button>
       <button type="button" style={iconBtn} title="Bookmarks"><Bookmark size={14} /></button>
       <button type="button" style={iconBtn} title="Notifications"><Bell size={14} /></button>
-      <div
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: "50%",
-          border: `1px solid ${t.border}`,
-          background: "var(--bg-input)",
-        }}
-        title="Profile"
-      />
+      <UserMenu />
     </header>
   );
 }

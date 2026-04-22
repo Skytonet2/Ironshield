@@ -1,4 +1,5 @@
 import { ThemeProvider, WalletProvider, ProposalsProvider } from "@/lib/contexts";
+import PrivyWrapper from "@/components/auth/PrivyWrapper";
 import { Outfit, JetBrains_Mono } from "next/font/google";
 // tokens.css ships CSS variables for the 6 theme presets. It's imported
 // before globals.css so per-element overrides in globals take precedence —
@@ -165,13 +166,19 @@ export default function RootLayout({ children }) {
             obs.observe(document.body, { childList: true, subtree: true });
           })();
         ` }} />
-        <ThemeProvider>
-          <WalletProvider>
-            <ProposalsProvider>
-              {children}
-            </ProposalsProvider>
-          </WalletProvider>
-        </ThemeProvider>
+        {/* Privy outermost so its hooks are available to ThemeProvider's
+         * settings store AND to the NEAR wallet selector. The wrapper
+         * no-ops when NEXT_PUBLIC_PRIVY_APP_ID is unset, so the app
+         * still boots in dev without credentials. */}
+        <PrivyWrapper>
+          <ThemeProvider>
+            <WalletProvider>
+              <ProposalsProvider>
+                {children}
+              </ProposalsProvider>
+            </WalletProvider>
+          </ThemeProvider>
+        </PrivyWrapper>
       </body>
     </html>
   );
