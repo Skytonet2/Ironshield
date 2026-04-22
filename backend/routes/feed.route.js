@@ -7,6 +7,37 @@ const { rankForYou, rankFollowing } = require("../services/feedRanker");
 const {
   VOICES_PRESET_HANDLES, categoryOf,
 } = require("../data/voicesPreset");
+const trendingAgent = require("../services/trendingAgent");
+
+// GET /api/feed/trending?limit=5
+//
+// Served from the agent-managed in-memory cache; falls back to the
+// agent_trending_topics table when cold. Shape mirrors the Feed
+// right-rail's expected schema: { topics: [{ tag, count, dir }] }
+router.get("/trending", async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+  try {
+    const topics = await trendingAgent.getTopics(limit);
+    res.json({
+      topics: topics.map((t) => ({
+        tag:   t.tag,
+        count: compactCount(t.count),
+        dir:   t.direction || "up",
+        kind:  t.kind || "hash",
+        summary: t.summary || null,
+      })),
+    });
+  } catch (e) {
+    res.json({ topics: [], error: e.message });
+  }
+});
+
+function compactCount(n) {
+  const v = Number(n || 0);
+  if (v < 1000) return String(v);
+  if (v < 1_000_000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}K`;
+  return `${(v / 1_000_000).toFixed(1)}M`;
+}
 
 // GET /api/feed/foryou?cursor=&limit=20
 router.get("/foryou", async (req, res, next) => {

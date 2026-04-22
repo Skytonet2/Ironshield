@@ -19,6 +19,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
+  LazyMotion, domAnimation, m, AnimatePresence, pageVariants,
+} from "@/lib/motion";
+import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
   Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
@@ -767,6 +770,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   }, [rightWidth]);
 
   return (
+    <LazyMotion features={domAnimation}>
     <div data-app-shell="ready" style={{
       display: "flex",
       flexDirection: "column",
@@ -789,7 +793,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
           drawerOpen={drawerOpen}
           onClose={() => setDrawerOpen(false)}
         />
-        <main className="page-enter" style={{
+        <main style={{
           flex: 1,
           minWidth: 0,
           overflowY: "auto",
@@ -797,7 +801,24 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
           padding: "0",
           WebkitOverflowScrolling: "touch",
         }}>
-          {children}
+          {/* Framer-driven page transition — fades + nudges the child
+              tree on every route change. AnimatePresence with the
+              pathname as key re-runs on navigation. The LazyMotion
+              provider wraps the whole shell so motion components inside
+              nested components (FeedCard stagger, composer expand) can
+              reuse the already-loaded animation features. */}
+          <AnimatePresence mode="wait">
+            <m.div
+              key={pathname || "_"}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ minHeight: "100%" }}
+            >
+              {children}
+            </m.div>
+          </AnimatePresence>
         </main>
         {rightPanel && !isNarrow && (
           <>
@@ -871,5 +892,6 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
         </div>
       )}
     </div>
+    </LazyMotion>
   );
 }

@@ -13,6 +13,7 @@ import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
 import ComposeBar from "@/components/feed/ComposeBar";
 import FeedRightRail from "@/components/feed/FeedRightRail";
+import { m, feedContainerVariants, feedCardVariants } from "@/lib/motion";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -266,22 +267,31 @@ export default function FeedPage() {
           </div>
         )}
 
-        {/* Feed */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* Feed — framer staggered enter so cards cascade in. The
+            container key includes the tab so switching tabs re-runs
+            the stagger (instant tab switch would feel dead). */}
+        <m.div
+          key={tab}
+          variants={feedContainerVariants}
+          initial="initial"
+          animate="animate"
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        >
           {visible.map((p) => (
-            <FeedCard
-              key={p.id}
-              post={p}
-              viewer={walletCtx}
-              isOwn={wallet && p.author?.wallet_address?.toLowerCase() === wallet.toLowerCase()}
-              onMute={mute}
-              onLike={()   => onLike(p)}
-              onRepost={() => onRepost(p)}
-              onTip={()    => onTip(p)}
-              onReply={(text) => onReply(p, text)}
-            />
+            <m.div key={p.id} variants={feedCardVariants}>
+              <FeedCard
+                post={p}
+                viewer={walletCtx}
+                isOwn={wallet && p?.author?.wallet_address && wallet.toLowerCase() === p.author.wallet_address.toLowerCase()}
+                onMute={mute}
+                onLike={()   => onLike(p)}
+                onRepost={() => onRepost(p)}
+                onTip={()    => onTip(p)}
+                onReply={(text) => onReply(p, text)}
+              />
+            </m.div>
           ))}
-        </div>
+        </m.div>
       </div>
     </AppShell>
   );

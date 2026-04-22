@@ -26,13 +26,19 @@ async function getReadAccount() {
 }
 export { getReadAccount, getNearInstance };
 
+// Dark palette — kept in sync with tokens.css's CSS variables so
+// legacy inline-style components (useTheme) and new CSS-variable
+// components (AppShell, FeedRightRail) render on the same visual
+// surface. Values nudged toward the premium design: deeper navy
+// base, slightly brighter text for contrast on the darker bg,
+// subtly purple-tinted glow so mixing gradients is cheap.
 export const DARK = {
-  bg: "#080b12", bgCard: "#0d1117", bgCardHover: "#111827", bgSurface: "#161b22",
-  border: "#1e293b", borderHover: "#334155", accent: "#3b82f6",
-  accentGlow: "rgba(59,130,246,0.15)", green: "#10b981", greenGlow: "rgba(16,185,129,0.15)",
+  bg: "#080b16", bgCard: "#0e1324", bgCardHover: "#141a2e", bgSurface: "#0d1220",
+  border: "#1d2540", borderHover: "#2a3458", accent: "#3b82f6",
+  accentGlow: "rgba(168,85,247,0.18)", green: "#10b981", greenGlow: "rgba(16,185,129,0.15)",
   red: "#ef4444", redGlow: "rgba(239,68,68,0.15)", amber: "#f59e0b",
-  text: "#e2e8f0", textMuted: "#94a3b8", textDim: "#64748b", white: "#ffffff",
-  navBg: "#080b12", watermarkOpacity: 0.06,
+  text: "#e5ebf7", textMuted: "#9aa4bd", textDim: "#6c7692", white: "#ffffff",
+  navBg: "#080b16", watermarkOpacity: 0.06,
 };
 
 export const LIGHT = {

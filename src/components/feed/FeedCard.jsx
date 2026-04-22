@@ -147,12 +147,18 @@ function Metric({ Icon, label, count, active, color, onClick, t }) {
 }
 
 export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip, onReply, onMute }) {
-  const t = useTheme();
+  const t = useTheme() || {};
   const nodeRef = useImpression({
     postId: post?.id,
     isOwn: !!isOwn,
     viewerWallet: viewer?.wallet_address || null,
   });
+  // Defensive: if the backend returns `null` as a post row (very
+  // occasionally happens on cursor-boundary hydration), render
+  // nothing instead of crashing on post.author. Same for viewer
+  // with no wallet — profile links still work, just route to the
+  // username instead of address.
+  if (!post) return null;
 
   // Reddit-style inline reply. Click the Reply metric → textarea slides
   // open below the post; Enter (or the send button) fires onReply(text)

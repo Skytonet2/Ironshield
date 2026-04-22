@@ -99,6 +99,7 @@ async function start() {
   server.listen(PORT, () => console.log(`IronClaw backend running on port ${PORT} (HTTP + WS /ws/feed)`));
   try { require("./services/batchWorker").start(); } catch (e) { console.warn("[batch] not started:", e.message); }
   try { require("./jobs/newsBot.job").start(); } catch (e) { console.warn("[newsbot] not started:", e.message); }
+  try { require("./services/trendingAgent").start(); } catch (e) { console.warn("[trendingAgent] not started:", e.message); }
 }
 
 start();
