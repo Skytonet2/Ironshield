@@ -47,6 +47,148 @@ router.post("/engagement", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/feed/news?cursor=&limit=20
+//
+// Posts authored by the IronNews bot (feed_users.wallet_address =
+// 'sys:ironnews'). Ordered newest-first. Paginates by id so a backfill
+// after mute toggles doesn't mess with cursor stability.
+router.get("/news", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    const viewer = wallet ? await getOrCreateUser(wallet) : null;
+    const limit  = Math.min(parseInt(req.query.limit) || 20, 50);
+    const cursor = req.query.cursor ? parseInt(req.query.cursor) : null;
+    const params = [];
+    let sql = `
+      SELECT p.* FROM feed_posts p
+      JOIN feed_users u ON u.id = p.author_id
+      WHERE u.wallet_address = 'sys:ironnews'
+        AND p.deleted_at IS NULL`;
+    if (cursor) { params.push(cursor); sql += ` AND p.id < $${params.length}`; }
+    params.push(limit + 1);
+    sql += ` ORDER BY p.id DESC LIMIT $${params.length}`;
+    const r = await db.query(sql, params);
+    const rows = r.rows;
+    const nextCursor = rows.length > limit ? rows[limit - 1].id : null;
+    const hydrated = await hydratePosts(rows.slice(0, limit), viewer?.id);
+    res.json({ posts: hydrated, nextCursor });
+  } catch (e) { next(e); }
+});
+
+// GET /api/feed/alpha?cursor=&limit=20
+//
+// Posts whose content mentions a $TICKER (2-10 uppercase) or a NEAR /
+// SOL contract address pattern. ~ (regex match) is Postgres-native and
+// fast enough at feed scale; we're not trying to rank here, just
+// filter. The frontend's Alpha tab reads this.
+router.get("/alpha", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    const viewer = wallet ? await getOrCreateUser(wallet) : null;
+    const limit  = Math.min(parseInt(req.query.limit) || 20, 50);
+    const cursor = req.query.cursor ? parseInt(req.query.cursor) : null;
+    // $TICKER: dollar sign + 2-10 uppercase letters.
+    // CA: 32-50 char base58/hex-ish — covers both SOL mints and NEAR
+    //     implicit IDs. Loose by design; a second pass in the renderer
+    //     highlights the specific token.
+    const alphaRe = "(\\$[A-Z]{2,10}\\b|\\b[A-Za-z0-9]{32,50}\\b|\\b[a-z0-9_-]+\\.(near|tkn\\.near)\\b)";
+    const params = [alphaRe];
+    let sql = `
+      SELECT p.* FROM feed_posts p
+      WHERE p.deleted_at IS NULL AND p.content ~ $1`;
+    if (cursor) { params.push(cursor); sql += ` AND p.id < $${params.length}`; }
+    params.push(limit + 1);
+    sql += ` ORDER BY p.id DESC LIMIT $${params.length}`;
+    const r = await db.query(sql, params);
+    const rows = r.rows;
+    const nextCursor = rows.length > limit ? rows[limit - 1].id : null;
+    const hydrated = await hydratePosts(rows.slice(0, limit), viewer?.id);
+    res.json({ posts: hydrated, nextCursor });
+  } catch (e) { next(e); }
+});
+
+// GET /api/feed/ironclaw-alerts?cursor=&limit=20
+//
+// Placeholder: no dedicated bot account yet, so this returns posts
+// whose content starts with an [IRONCLAW] marker. The governance bot
+// in src/services/governanceListener.js will start posting alerts as
+// a new sys:ironclaw feed_user once that's wired — same pattern as
+// sys:ironnews. For now the tab has a "no alerts" empty state.
+router.get("/ironclaw-alerts", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    const viewer = wallet ? await getOrCreateUser(wallet) : null;
+    const limit  = Math.min(parseInt(req.query.limit) || 20, 50);
+    const r = await db.query(
+      `SELECT p.* FROM feed_posts p
+       JOIN feed_users u ON u.id = p.author_id
+       WHERE (u.wallet_address = 'sys:ironclaw' OR p.content ILIKE '[ironclaw]%')
+         AND p.deleted_at IS NULL
+       ORDER BY p.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+    const hydrated = await hydratePosts(r.rows, viewer?.id);
+    res.json({ posts: hydrated, nextCursor: null });
+  } catch (e) { next(e); }
+});
+
+// POST /api/feed/mute       body: { targetUsername }
+// DELETE /api/feed/mute     body: { targetUsername }
+// GET /api/feed/muted
+router.post("/mute", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "wallet required" });
+    const viewer = await getOrCreateUser(wallet);
+    const target = (req.body?.targetUsername || "").trim().toLowerCase();
+    if (!target) return res.status(400).json({ error: "targetUsername required" });
+    const u = await db.query(
+      "SELECT id FROM feed_users WHERE LOWER(username) = $1 LIMIT 1", [target]
+    );
+    if (!u.rows[0]) return res.status(404).json({ error: "user not found" });
+    await db.query(
+      `INSERT INTO feed_muted_accounts (user_id, muted_user_id)
+         VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [viewer.id, u.rows[0].id]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+router.delete("/mute", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "wallet required" });
+    const viewer = await getOrCreateUser(wallet);
+    const target = (req.body?.targetUsername || req.query.targetUsername || "").trim().toLowerCase();
+    if (!target) return res.status(400).json({ error: "targetUsername required" });
+    await db.query(
+      `DELETE FROM feed_muted_accounts
+         WHERE user_id = $1
+           AND muted_user_id = (SELECT id FROM feed_users WHERE LOWER(username) = $2)`,
+      [viewer.id, target]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+router.get("/muted", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ muted: [] });
+    const viewer = await getOrCreateUser(wallet);
+    const r = await db.query(
+      `SELECT u.username, u.display_name
+         FROM feed_muted_accounts m
+         JOIN feed_users u ON u.id = m.muted_user_id
+        WHERE m.user_id = $1
+        ORDER BY m.created_at DESC`,
+      [viewer.id]
+    );
+    res.json({ muted: r.rows });
+  } catch (e) { next(e); }
+});
+
 // POST /api/feed/impression  body: { postId, viewerWallet? }
 //
 // Matches spec §8D: "impressions = the card crossed the viewport and

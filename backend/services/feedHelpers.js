@@ -88,6 +88,10 @@ async function hydratePosts(rows, viewerId) {
       repostedByMe: vR.has(p.id),
       tipCount:    tipAgg.count,
       tipTotalUsd: tipAgg.usd,
+      // Cached counter from the /impression path. The real-time view
+      // count uses this — the dedupe table (feed_post_impressions) is
+      // only consulted for the increment-gate on each fire.
+      impressions: p.impressions || 0,
       gate,
       validated:   !!p.validated,
       kind:        p.kind || "post",
