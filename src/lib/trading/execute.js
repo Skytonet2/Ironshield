@@ -10,6 +10,7 @@
 // a chain branch.
 
 import { getQuote, buildSwapTx, signAndSendSwap } from "./jupiter";
+import { swapOnRef } from "./ref";
 import { FEE_BPS, getFeeWallet, splitFeeBaseUnits } from "./fees";
 
 const BACKEND_BASE = (() => {
@@ -114,13 +115,75 @@ async function swapSolana({ side, token, amount, slippageBps, privySolWallet, pr
   return { signature, feeBaseStr, afterFee, source: "jupiter" };
 }
 
-/* ── NEAR via Ref Finance (Phase 3B-2) ──────────────────────────── */
+/* ── NEAR via Ref Finance ───────────────────────────────────────── */
 
-async function swapNear() {
-  throw new Error(
-    "NEAR swap via Ref Finance lands in the next session. Use the existing " +
-    "Ref Finance frontend for now: app.ref.finance."
-  );
+async function swapNear({ side, token, amount, slippageBps, nearSelector, signerAccountId, priceUsd }) {
+  if (!nearSelector || !signerAccountId) {
+    throw new Error("Connect a NEAR wallet");
+  }
+  if (!token?.baseMint || !token?.quoteMint) {
+    throw new Error("Token missing contract metadata. Pick the pair again from search.");
+  }
+
+  const feeWallet = getFeeWallet("near");
+
+  // buy = quote→base (spend USDC/NEAR for base); sell = base→quote.
+  // On NEAR the "mint" field holds the NEP-141 contract address.
+  const tokenIn = side === "buy"
+    ? { address: token.quoteMint, decimals: token.quoteDecimals, symbol: token.quoteSymbol }
+    : { address: token.baseMint,  decimals: token.baseDecimals,  symbol: token.baseSymbol };
+  const tokenOut = side === "buy"
+    ? { address: token.baseMint,  decimals: token.baseDecimals,  symbol: token.baseSymbol }
+    : { address: token.quoteMint, decimals: token.quoteDecimals, symbol: token.quoteSymbol };
+
+  if (!Number.isFinite(tokenIn.decimals)) {
+    throw new Error(`Missing decimals for ${tokenIn.symbol} — re-pick the pair.`);
+  }
+
+  // BigInt scaling: whole * 10^decimals + floor(frac * 10^decimals).
+  const factor = 10n ** BigInt(tokenIn.decimals);
+  const whole = BigInt(Math.floor(Number(amount)));
+  const frac  = Math.floor((Number(amount) - Math.floor(Number(amount))) * Number(factor));
+  const amountBase = (whole * factor + BigInt(frac)).toString();
+  if (amountBase === "0") throw new Error("Amount too small");
+
+  const res = await swapOnRef({
+    selector: nearSelector,
+    signerAccountId,
+    tokenIn, tokenOut,
+    amountBase,
+    slippageBps,
+    feeWallet,
+  });
+
+  const { fee: feeBaseStr } = splitFeeBaseUnits(amountBase);
+  const feeUsd = priceUsd ? (Number(feeBaseStr) / 10 ** tokenIn.decimals) * priceUsd : 0;
+
+  logPosition({
+    chain: "near",
+    wallet: signerAccountId,
+    token_address: tokenOut.address,
+    token_symbol: tokenOut.symbol,
+    token_decimals: tokenOut.decimals || 0,
+    amount_base: res.estimateOut || "0",
+    entry_price_usd: priceUsd || 0,
+    cost_basis_usd: priceUsd ? Number(amount) * priceUsd : 0,
+    entry_tx_hash: res.swapTxHash,
+  });
+  logFee({
+    chain: "near",
+    wallet: signerAccountId,
+    token_in:  tokenIn.address,
+    token_out: tokenOut.address,
+    amount_in_base:  amountBase,
+    fee_amount_base: feeBaseStr,
+    fee_amount_usd:  feeUsd,
+    swap_tx_hash: res.swapTxHash,
+    fee_tx_hash:  res.feeTxHash,
+    platform_wallet: feeWallet,
+  });
+
+  return { signature: res.swapTxHash, source: "ref" };
 }
 
 /* ── Dispatch ───────────────────────────────────────────────────── */

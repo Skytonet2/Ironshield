@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useWallets as usePrivySolanaWallets } from "@privy-io/react-auth/solana";
-import { useTheme } from "@/lib/contexts";
+import { useTheme, useWallet as useNearWalletCtx } from "@/lib/contexts";
 import { useWallet } from "@/lib/stores/walletStore";
 import { executeSwap } from "@/lib/trading/execute";
 import { FEE_BPS } from "@/lib/trading/fees";
@@ -220,15 +220,25 @@ function ExecuteButton({ chain, token, side, amount, slippagePct, priceUsd, canT
   const { wallets } = usePrivySolanaWallets();
   const solWallet = wallets?.[0] || null;
 
-  const solReady = chain === "sol" && !!solWallet;
-  const buttonEnabled = canTrade && !busy && (chain !== "sol" || solReady);
+  // NEAR selector + signer come from the legacy WalletProvider that's
+  // already wired into the root layout (contexts.js). `selector` is
+  // the @near-wallet-selector instance; `address` is the connected
+  // NEAR account id that signs transactions.
+  const nearCtx = useNearWalletCtx();
+
+  const solReady  = chain === "sol"  && !!solWallet;
+  const nearReady = chain === "near" && !!(nearCtx?.selector && nearCtx?.address);
+  const buttonEnabled = canTrade && !busy && (
+    (chain === "sol"  && solReady) ||
+    (chain === "near" && nearReady)
+  );
 
   const reason = !canTrade
     ? (disabledReason || "—")
     : chain === "sol" && !solReady
     ? "Sign in to mint a Solana wallet"
-    : chain === "near"
-    ? "NEAR swaps land next session"
+    : chain === "near" && !nearReady
+    ? "Connect a NEAR wallet to trade"
     : null;
 
   async function handleSwap() {
@@ -242,7 +252,9 @@ function ExecuteButton({ chain, token, side, amount, slippagePct, priceUsd, canT
         amount,
         slippageBps: Math.round(slippagePct * 100),
         priceUsd,
-        privySolWallet: chain === "sol" ? solWallet : null,
+        privySolWallet: chain === "sol"  ? solWallet          : null,
+        nearSelector:   chain === "near" ? nearCtx?.selector  : null,
+        signerAccountId: chain === "near" ? nearCtx?.address   : null,
       });
       setStatus(`✓ Sent: ${signature.slice(0, 10)}…`);
     } catch (e) {

@@ -6,10 +6,11 @@
 // row; deferred to avoid stacking another GeckoTerminal burst onto
 // the same chart polling loop).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "@/lib/contexts";
 import { useWallet } from "@/lib/stores/walletStore";
 import { useSettings } from "@/lib/stores/settingsStore";
+import { useJupiterPrices } from "@/lib/api/jupiterPrice";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -57,6 +58,7 @@ export default function PositionsTable() {
   const t = useTheme();
   const activeChain = useSettings((s) => s.activeChain);
   const wallet = useWallet((s) => s[activeChain]);
+  const [tab, setTab] = useState("open");      // open | history
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
@@ -71,7 +73,7 @@ export default function PositionsTable() {
         const url =
           `${BACKEND_BASE}/api/trading/positions` +
           `?wallet=${encodeURIComponent(wallet.address)}` +
-          `&chain=${activeChain}&open=1&limit=50`;
+          `&chain=${activeChain}&open=${tab === "open" ? "1" : "0"}&limit=50`;
         const res = await fetch(url, { signal: ctl.signal, cache: "no-store" });
         if (!res.ok) throw new Error(`positions ${res.status}`);
         const j = await res.json();
@@ -87,7 +89,17 @@ export default function PositionsTable() {
     // fresh positions that just landed via swap.
     const id = setInterval(load, 30_000);
     return () => { ctl.abort(); clearInterval(id); };
-  }, [wallet?.address, activeChain]);
+  }, [wallet?.address, activeChain, tab]);
+
+  // Live P&L via Jupiter batched price poll. Only meaningful on SOL
+  // and only for open rows — closed rows already have realized_pnl_usd.
+  const openSolMints = useMemo(() => {
+    if (tab !== "open") return [];
+    return rows
+      .filter((r) => r.chain === "sol" && r.token_address && r.closed_at == null)
+      .map((r) => r.token_address);
+  }, [rows, tab]);
+  const prices = useJupiterPrices(openSolMints);
 
   const th = {
     fontSize: 10,
@@ -122,7 +134,29 @@ export default function PositionsTable() {
         alignItems: "center",
         gap: 10,
       }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: t.text }}>Open positions</span>
+        {["open", "history"].map((k) => {
+          const active = k === tab;
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setTab(k)}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: "4px 2px",
+                fontSize: 12,
+                fontWeight: active ? 600 : 500,
+                color: active ? t.text : t.textDim,
+                borderBottom: `2px solid ${active ? t.accent : "transparent"}`,
+                cursor: "pointer",
+                textTransform: "capitalize",
+              }}
+            >
+              {k === "open" ? "Open positions" : "History"}
+            </button>
+          );
+        })}
         <span style={{
           fontSize: 11,
           padding: "1px 6px",
@@ -150,7 +184,9 @@ export default function PositionsTable() {
       )}
       {wallet?.address && rows.length === 0 && !loading && (
         <div style={{ padding: 16, fontSize: 12, color: t.textDim, textAlign: "center" }}>
-          No open positions yet. Your next trade will land here.
+          {tab === "open"
+            ? "No open positions yet. Your next trade will land here."
+            : "No closed trades yet."}
         </div>
       )}
       {rows.length > 0 && (
@@ -160,37 +196,81 @@ export default function PositionsTable() {
               <th style={th}>Token</th>
               <th style={th}>Amount</th>
               <th style={{ ...th, textAlign: "right" }}>Entry</th>
-              <th style={{ ...th, textAlign: "right" }}>Cost basis</th>
-              <th style={{ ...th, textAlign: "right" }}>Opened</th>
+              <th style={{ ...th, textAlign: "right" }}>
+                {tab === "open" ? "Now" : "Close"}
+              </th>
+              <th style={{ ...th, textAlign: "right" }}>P&amp;L</th>
+              <th style={{ ...th, textAlign: "right" }}>{tab === "open" ? "Opened" : "Closed"}</th>
               <th style={{ ...th, textAlign: "right" }}>Tx</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td style={td}>
-                  <span style={{ color: t.white, fontWeight: 600 }}>{r.token_symbol || "?"}</span>
-                </td>
-                <td style={td}>{fmtAmount(r.amount_base, r.token_decimals)}</td>
-                <td style={{ ...td, textAlign: "right" }}>{fmtUsd(r.entry_price_usd)}</td>
-                <td style={{ ...td, textAlign: "right" }}>{fmtUsd(r.cost_basis_usd)}</td>
-                <td style={{ ...td, textAlign: "right", color: t.textDim }}>{timeAgo(r.created_at)}</td>
-                <td style={{ ...td, textAlign: "right" }}>
-                  {r.entry_tx_hash && r.chain === "sol" ? (
-                    <a
-                      href={`https://solscan.io/tx/${r.entry_tx_hash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: t.accent, textDecoration: "none" }}
-                    >
-                      {r.entry_tx_hash.slice(0, 6)}…
-                    </a>
-                  ) : r.entry_tx_hash ? (
-                    <span style={{ color: t.textDim }}>{r.entry_tx_hash.slice(0, 6)}…</span>
-                  ) : "—"}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              // Unrealized P&L (open SOL rows) OR realized (closed).
+              let livePrice = null;
+              let pnlUsd = null;
+              let pnlPct = null;
+              if (tab === "open" && r.chain === "sol") {
+                livePrice = prices[r.token_address] ?? null;
+                if (livePrice && r.amount_base && r.token_decimals != null) {
+                  try {
+                    const amt = Number(r.amount_base) / 10 ** r.token_decimals;
+                    const currentUsd = amt * livePrice;
+                    const cost = Number(r.cost_basis_usd) || 0;
+                    pnlUsd = currentUsd - cost;
+                    pnlPct = cost > 0 ? (pnlUsd / cost) * 100 : null;
+                  } catch { /* ignore math blow-ups */ }
+                }
+              } else if (r.realized_pnl_usd != null) {
+                pnlUsd = Number(r.realized_pnl_usd);
+                const cost = Number(r.cost_basis_usd) || 0;
+                pnlPct = cost > 0 ? (pnlUsd / cost) * 100 : null;
+                livePrice = Number(r.close_price_usd) || null;
+              }
+              const pnlColor = pnlUsd == null
+                ? t.textDim
+                : pnlUsd >= 0 ? "var(--green)" : "var(--red)";
+
+              return (
+                <tr key={r.id}>
+                  <td style={td}>
+                    <span style={{ color: t.white, fontWeight: 600 }}>{r.token_symbol || "?"}</span>
+                  </td>
+                  <td style={td}>{fmtAmount(r.amount_base, r.token_decimals)}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{fmtUsd(r.entry_price_usd)}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{fmtUsd(livePrice)}</td>
+                  <td style={{ ...td, textAlign: "right", color: pnlColor }}>
+                    {pnlUsd == null ? "—" : (
+                      <>
+                        {pnlUsd >= 0 ? "+" : ""}{fmtUsd(pnlUsd)}
+                        {pnlPct != null && (
+                          <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.8 }}>
+                            ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </td>
+                  <td style={{ ...td, textAlign: "right", color: t.textDim }}>
+                    {timeAgo(tab === "open" ? r.created_at : (r.closed_at || r.created_at))}
+                  </td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    {r.entry_tx_hash && r.chain === "sol" ? (
+                      <a
+                        href={`https://solscan.io/tx/${r.entry_tx_hash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: t.accent, textDecoration: "none" }}
+                      >
+                        {r.entry_tx_hash.slice(0, 6)}…
+                      </a>
+                    ) : r.entry_tx_hash ? (
+                      <span style={{ color: t.textDim }}>{r.entry_tx_hash.slice(0, 6)}…</span>
+                    ) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
