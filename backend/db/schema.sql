@@ -606,3 +606,131 @@ CREATE TABLE IF NOT EXISTS feed_xfeed_follows (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_xfeed_follows_unique ON feed_xfeed_follows(wallet, LOWER(handle));
 CREATE INDEX IF NOT EXISTS idx_xfeed_follows_wallet ON feed_xfeed_follows(wallet);
+
+-- ============================================================
+-- Platform build Phase 0 — additive schema for trading terminal,
+-- Coin It, impression tracking, and per-user mute list.
+--
+-- feed_users.account_type='AGENT' + verified cover the news bot's
+-- is_bot/is_verified flags (no new columns). The bot is seeded in
+-- the news-bot cron as an AGENT feed_user row with verified=true.
+-- ============================================================
+
+-- Cached impression count on each post (denormalized for fast reads).
+-- Source of truth is feed_post_impressions; this counter is bumped in
+-- the same transaction when a new (user, post, session) row is
+-- inserted — never from feed_engagement, which is the dwell-time
+-- ledger and records multiple rows per session.
+ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS impressions INTEGER DEFAULT 0;
+
+-- One row per (user, post, session_date). INSERT ... ON CONFLICT DO
+-- NOTHING gives the spec's "one impression per user per post per
+-- session" dedupe without any application-side bookkeeping. Authors
+-- are filtered in the route — never in SQL — so an author's own
+-- views short-circuit before we hit the DB.
+CREATE TABLE IF NOT EXISTS feed_post_impressions (
+  id           BIGSERIAL PRIMARY KEY,
+  user_id      INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  post_id      INTEGER REFERENCES feed_posts(id) ON DELETE CASCADE,
+  session_date DATE DEFAULT CURRENT_DATE,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_post_impressions_uniq
+  ON feed_post_impressions(user_id, post_id, session_date);
+CREATE INDEX IF NOT EXISTS idx_feed_post_impressions_post
+  ON feed_post_impressions(post_id);
+
+-- Per-user mute list. Target can be any feed_user (including the
+-- IronNews agent) — UI filters these out before render. Separate
+-- from feed_follows so unfollowing and muting are independent.
+CREATE TABLE IF NOT EXISTS feed_muted_accounts (
+  id            SERIAL PRIMARY KEY,
+  user_id       INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  muted_user_id INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, muted_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_feed_muted_user ON feed_muted_accounts(user_id);
+
+-- Open + historical positions from the multi-chain trading terminal.
+-- `wallet` holds whichever chain-appropriate address the trade was
+-- signed from (NEAR implicit, SOL base58, EVM hex). Not tied to a
+-- feed_users row because Privy-only users trade without creating
+-- a feed_users entry until they post. One row per position; closed
+-- trades set closed_at + realized_pnl_usd rather than deleting so
+-- trade_history can replay.
+CREATE TABLE IF NOT EXISTS trade_positions (
+  id                BIGSERIAL PRIMARY KEY,
+  user_id           INTEGER REFERENCES feed_users(id) ON DELETE SET NULL,
+  wallet            TEXT NOT NULL,
+  chain             TEXT NOT NULL CHECK (chain IN ('near','sol','bnb')),
+  token_address     TEXT NOT NULL,       -- pair / mint / contract
+  token_symbol      TEXT NOT NULL,
+  token_decimals    INTEGER NOT NULL,
+  -- Entry side. `amount_base` is the token balance the position was
+  -- opened with; `cost_basis_usd` freezes the USD at fill time.
+  amount_base       NUMERIC(40,0) NOT NULL,
+  entry_price_usd   NUMERIC(30,12) NOT NULL,
+  cost_basis_usd    NUMERIC(20,6)  NOT NULL,
+  entry_tx_hash     TEXT,
+  -- Close side. Null on open positions; the UI reads `realized_pnl_usd`
+  -- for closed rows and computes unrealized from live price for open.
+  closed_at         TIMESTAMPTZ,
+  close_price_usd   NUMERIC(30,12),
+  realized_pnl_usd  NUMERIC(20,6),
+  close_tx_hash     TEXT,
+  created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_trade_positions_wallet_open
+  ON trade_positions(wallet, chain) WHERE closed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_trade_positions_user
+  ON trade_positions(user_id, created_at DESC);
+
+-- 0.2% platform fee audit log. One row per collected fee, written in
+-- the same unit of work as the swap — if the swap fails, no row. The
+-- route reconciles `fee_tx_hash` when the atomic/adjacent fee transfer
+-- confirms, so a row with NULL fee_tx_hash == in-flight; ops can query
+-- these to catch stuck transfers. Platform wallet addresses live in
+-- env (PLATFORM_WALLET_{NEAR,SOL,BNB}) — we never hardcode them here.
+CREATE TABLE IF NOT EXISTS trade_fees (
+  id                BIGSERIAL PRIMARY KEY,
+  position_id       BIGINT REFERENCES trade_positions(id) ON DELETE SET NULL,
+  user_id           INTEGER REFERENCES feed_users(id) ON DELETE SET NULL,
+  wallet            TEXT NOT NULL,
+  chain             TEXT NOT NULL CHECK (chain IN ('near','sol','bnb')),
+  token_in          TEXT NOT NULL,
+  token_out         TEXT NOT NULL,
+  amount_in_base    NUMERIC(40,0) NOT NULL,
+  fee_amount_base   NUMERIC(40,0) NOT NULL,
+  fee_amount_usd    NUMERIC(20,6)  NOT NULL,
+  swap_tx_hash      TEXT,
+  fee_tx_hash       TEXT,                  -- null until fee transfer confirms
+  platform_wallet   TEXT NOT NULL,         -- destination (echoed for audit)
+  created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_trade_fees_pending
+  ON trade_fees(created_at DESC) WHERE fee_tx_hash IS NULL;
+CREATE INDEX IF NOT EXISTS idx_trade_fees_user
+  ON trade_fees(user_id, created_at DESC);
+
+-- "Coin It" conversion log: which source (feed post or news article)
+-- produced which token. One row per successful launch. External
+-- launchpad flows (Pump.fun, meme.cooking, four.meme, …) record
+-- platform='pump.fun' etc. with a null coin_address since those live
+-- outside our on-chain index. Analytics reads this to rank sources
+-- by launch success rate.
+CREATE TABLE IF NOT EXISTS coin_it_events (
+  id                 BIGSERIAL PRIMARY KEY,
+  user_id            INTEGER REFERENCES feed_users(id) ON DELETE SET NULL,
+  source_type        TEXT NOT NULL CHECK (source_type IN ('post','news','external')),
+  source_post_id     INTEGER REFERENCES feed_posts(id) ON DELETE SET NULL,
+  source_url         TEXT,
+  chain              TEXT NOT NULL CHECK (chain IN ('near','sol','bnb')),
+  platform           TEXT NOT NULL,         -- 'ironshield' | 'pump.fun' | 'meme.cooking' | …
+  name               TEXT NOT NULL,
+  ticker             TEXT NOT NULL,
+  coin_address       TEXT,                  -- null for external redirects
+  created_at         TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_coin_it_events_user ON coin_it_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_coin_it_events_source ON coin_it_events(source_post_id);

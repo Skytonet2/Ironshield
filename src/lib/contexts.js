@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useSettings } from "@/lib/stores/settingsStore";
 
 // Cache a single near-api-js Near instance across the whole app. We build it
 // lazily and reuse it for both viewMethod reads (anonymous account) and per-
@@ -76,20 +77,15 @@ export const ThemeCtx = createContext({
 export const useThemeInfo = () => useContext(ThemeCtx);
 export const useTheme = () => useContext(ThemeCtx).theme;
 
-const PRESET_STORAGE_KEY = "ironshield-theme-preset";
-
 export function ThemeProvider({ children }) {
   const [isDark, setIsDark] = useState(true);
-  const [preset, setPresetState] = useState("default");
 
-  // Hydrate preset from localStorage on mount. We can't read localStorage
-  // during SSR/initial render so we accept a single client-side repaint.
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(PRESET_STORAGE_KEY);
-      if (stored && PRESET_ACCENTS[stored]) setPresetState(stored);
-    } catch { /* private browsing / storage disabled — fine, use default */ }
-  }, []);
+  // Theme preset lives in the settings store (single source of truth
+  // so the /settings/appearance page and this provider can't drift).
+  // Zustand's persist middleware handles localStorage; no manual
+  // hydrate step here.
+  const preset = useSettings((s) => s.theme);
+  const setPresetInStore = useSettings((s) => s.setTheme);
 
   // Keep <html data-theme="..."> in sync so new CSS-var components retint.
   useEffect(() => {
@@ -103,17 +99,16 @@ export function ThemeProvider({ children }) {
 
   const setPreset = useCallback((next) => {
     if (!PRESET_ACCENTS[next]) return;
-    setPresetState(next);
-    try { window.localStorage.setItem(PRESET_STORAGE_KEY, next); } catch {}
-  }, []);
+    setPresetInStore(next);
+  }, [setPresetInStore]);
 
   // Stamp the preset's accent onto the legacy inline-style theme so
   // existing components (which read t.accent) retint without a rewrite.
-  // Memoized so that equal presets don't invalidate every child's
-  // useTheme() consumer on unrelated renders.
+  // Memoized so equal presets don't invalidate useTheme() consumers on
+  // unrelated renders.
   const theme = useMemo(() => {
     const base = isDark ? DARK : LIGHT;
-    const accent = PRESET_ACCENTS[preset];
+    const accent = PRESET_ACCENTS[preset] || PRESET_ACCENTS.default;
     return { ...base, accent, accentGlow: accentGlowFor(accent) };
   }, [isDark, preset]);
 
