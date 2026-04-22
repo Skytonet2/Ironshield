@@ -13,6 +13,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["backend/server.js"],
       "port": 3001
+    },
+    {
+      "name": "ironshield-prod",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-s", "out", "-l", "3002", "--no-clipboard"],
+      "port": 3002
     }
   ]
 }

@@ -1,5 +1,8 @@
 // IronShield Service Worker — PWA offline shell + push notifications
-const CACHE_NAME = "ironshield-v1";
+// Bumped to v2: some mobile clients were stuck loading because v1 held
+// onto broken chunk responses. Activate clears every non-current cache,
+// so bumping the name is the kill-switch.
+const CACHE_NAME = "ironshield-v2";
 const SHELL_URLS = ["/", "/icon.svg", "/mascot.png"];
 
 // ─── Install: cache the app shell ──────────────────────────────────
@@ -26,6 +29,13 @@ self.addEventListener("fetch", (e) => {
 
   // Never cache API or LiveKit calls
   if (url.pathname.startsWith("/api/") || url.hostname.includes("livekit")) return;
+
+  // Next.js hashed chunks under /_next/static/ are already content-addressed
+  // and handled by the browser's HTTP cache. Putting them through our
+  // stale-while-revalidate layer risks holding onto a bad response across
+  // deploys (e.g. an abort mid-download) with no way for us to invalidate
+  // short of a CACHE_NAME bump. Just let the network handle them.
+  if (url.pathname.startsWith("/_next/static/")) return;
 
   // For navigation requests (HTML pages), serve cache fallback for offline
   if (e.request.mode === "navigate") {

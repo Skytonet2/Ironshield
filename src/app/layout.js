@@ -128,7 +128,10 @@ export default function RootLayout({ children }) {
           </div>
         </div>
         {/* Tiny inline script: hides the loader once React renders <nav>.
-            That's it. No timers, no auto-reload, no chunk detection. */}
+            Also: if <nav> hasn't appeared after 12 seconds, we assume a stale
+            service-worker cache or a failed chunk is keeping React from
+            mounting — kill the SW, purge caches, and hard-reload once with
+            ?fresh=1. The query param is a guard so we never loop. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
             // Strip stale ?_r= cache-busters that may have been added by old loader versions
@@ -164,6 +167,33 @@ export default function RootLayout({ children }) {
               if (document.querySelector('nav')) { obs.disconnect(); hide(); }
             });
             obs.observe(document.body, { childList: true, subtree: true });
+
+            // Auto-recover: if nothing rendered after 12s, assume a stale SW /
+            // chunk is the culprit and nuke + reload. Guard with ?fresh=1 so a
+            // genuinely broken build doesn't infinite-loop the user.
+            var alreadyFreshed = /[?&]fresh=1/.test(location.search);
+            setTimeout(function(){
+              if (done || document.querySelector('nav')) return;
+              if (alreadyFreshed) return;
+              try {
+                var statusEl = el && el.querySelector('.ic-status');
+                if (statusEl) statusEl.textContent = 'Recovering…';
+              } catch(e) {}
+              var clearSW = (navigator.serviceWorker && navigator.serviceWorker.getRegistrations)
+                ? navigator.serviceWorker.getRegistrations().then(function(regs){
+                    return Promise.all(regs.map(function(r){ return r.unregister(); }));
+                  }).catch(function(){})
+                : Promise.resolve();
+              var clearCaches = (window.caches && caches.keys)
+                ? caches.keys().then(function(keys){
+                    return Promise.all(keys.map(function(k){ return caches.delete(k); }));
+                  }).catch(function(){})
+                : Promise.resolve();
+              Promise.all([clearSW, clearCaches]).then(function(){
+                var sep = location.search ? '&' : '?';
+                location.replace(location.origin + location.pathname + location.search + sep + 'fresh=1' + location.hash);
+              });
+            }, 12000);
           })();
         ` }} />
         {/* Privy outermost so its hooks are available to ThemeProvider's
