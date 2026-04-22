@@ -561,7 +561,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
   return (
-    <div style={{
+    <div data-app-shell="ready" style={{
       display: "flex",
       flexDirection: "column",
       height: "100dvh",

@@ -127,11 +127,15 @@ export default function RootLayout({ children }) {
             <div className="ic-hint">If this hangs, click reload.</div>
           </div>
         </div>
-        {/* Tiny inline script: hides the loader once React renders <nav>.
-            Also: if <nav> hasn't appeared after 12 seconds, we assume a stale
-            service-worker cache or a failed chunk is keeping React from
-            mounting — kill the SW, purge caches, and hard-reload once with
-            ?fresh=1. The query param is a guard so we never loop. */}
+        {/* Tiny inline script: hides the loader once React renders the
+            AppShell (detected via [data-app-shell="ready"]). Two dismissal
+            paths: an upfront check for the SSR case where the marker is
+            already in the DOM, and a MutationObserver for the hydration
+            case where it appears later. If neither fires within 12 seconds,
+            we assume a stale service-worker cache or a failed chunk is
+            keeping React from mounting — kill the SW, purge caches, and
+            hard-reload once with ?fresh=1. The query param is a guard so
+            we never loop. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
             // Strip stale ?_r= cache-busters that may have been added by old loader versions
@@ -152,19 +156,36 @@ export default function RootLayout({ children }) {
               });
             }
 
-            // When React renders the real app (it has <nav>), remove the loader.
-            var el = document.getElementById('ic-pre-loader');
-            if (!el) return;
+            // When React renders the AppShell, remove the loader. We re-
+            // query by ID inside hide() because React's hydration can replace
+            // the SSR'd loader node with a freshly-mounted one — any element
+            // reference captured at script-boot time may be detached by then.
             var done = false;
             function hide(){
-              if (done || !el) return;
+              if (done) return;
               done = true;
+              var el = document.getElementById('ic-pre-loader');
+              if (!el) return;
               el.style.transition = 'opacity .25s ease';
               el.style.opacity = '0';
-              setTimeout(function(){ if (el && el.parentNode) el.parentNode.removeChild(el); }, 260);
+              setTimeout(function(){
+                var live = document.getElementById('ic-pre-loader');
+                if (live && live.parentNode) live.parentNode.removeChild(live);
+              }, 260);
             }
+            // Dismiss paths, in priority order:
+            //   1. Upfront check — the SSR'd AppShell marker is already in DOM
+            //      (static-export case).
+            //   2. DOMContentLoaded — covers the case where the inline script
+            //      runs before the rest of the body is parsed.
+            //   3. MutationObserver — dev/dynamic mounts where the shell
+            //      appears after hydration.
+            function check(){ if (document.querySelector('[data-app-shell="ready"]')) { hide(); return true; } return false; }
+            if (check()) return;
+            document.addEventListener('DOMContentLoaded', check, { once: true });
+            window.addEventListener('load', check, { once: true });
             var obs = new MutationObserver(function(){
-              if (document.querySelector('nav')) { obs.disconnect(); hide(); }
+              if (check()) obs.disconnect();
             });
             obs.observe(document.body, { childList: true, subtree: true });
 
@@ -173,10 +194,11 @@ export default function RootLayout({ children }) {
             // genuinely broken build doesn't infinite-loop the user.
             var alreadyFreshed = /[?&]fresh=1/.test(location.search);
             setTimeout(function(){
-              if (done || document.querySelector('nav')) return;
+              if (done || document.querySelector('[data-app-shell="ready"]')) return;
               if (alreadyFreshed) return;
               try {
-                var statusEl = el && el.querySelector('.ic-status');
+                var live = document.getElementById('ic-pre-loader');
+                var statusEl = live && live.querySelector('.ic-status');
                 if (statusEl) statusEl.textContent = 'Recovering…';
               } catch(e) {}
               var clearSW = (navigator.serviceWorker && navigator.serviceWorker.getRegistrations)
