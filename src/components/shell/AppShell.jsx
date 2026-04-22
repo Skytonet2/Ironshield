@@ -30,6 +30,7 @@ import { usePrices } from "@/lib/hooks/usePrices";
 import AmbientBackground from "./AmbientBackground";
 import UserMenu from "@/components/auth/UserMenu";
 import LaunchpadSelector from "@/components/create/LaunchpadSelector";
+import BridgeModal from "@/components/bridge/BridgeModal";
 
 // lucide-react has no Bridge glyph; ArrowLeftRight is the closest
 // semantic fit for a cross-chain swap action.
@@ -394,13 +395,15 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   const [note, setNote] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefill, setCreatePrefill] = useState(null);
+  const [bridgeOpen, setBridgeOpen] = useState(false);
 
-  // AppShell routes CREATE/scan/etc. centrally so every route gets
-  // the launch modal without plumbing props. Callers can still pass
-  // onAction for route-specific overrides (e.g. /trading's "open the
-  // order book" in a later phase).
+  // AppShell routes CREATE / bridge / scan / search centrally so every
+  // route gets these modals without plumbing props. Callers can still
+  // pass onAction for route-specific overrides (e.g. /trading's "open
+  // the order book" later).
   const handleAction = onAction || ((kind) => {
     if (kind === "create") { setCreateOpen(true); setCreatePrefill(null); return; }
+    if (kind === "bridge") { setBridgeOpen(true); return; }
     setNote(`${kind} (wires up in a later phase)`);
   });
 
@@ -441,6 +444,9 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
           prefill={createPrefill}
           onClose={() => { setCreateOpen(false); setCreatePrefill(null); }}
         />
+      )}
+      {bridgeOpen && (
+        <BridgeModal onClose={() => setBridgeOpen(false)} />
       )}
       {note && (
         <div

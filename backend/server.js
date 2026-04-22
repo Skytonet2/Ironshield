@@ -44,6 +44,7 @@ app.use("/api/newscoin",      require("./routes/newscoin.route"));
 app.use("/api/tg",            require("./routes/tg.route"));
 app.use("/api/xfeed",         require("./routes/xfeed.route"));
 app.use("/api/trading",       require("./routes/trading.route"));
+app.use("/api/bridge",        require("./routes/bridge.route"));
 
 // Root
 app.get("/", (req, res) => {
