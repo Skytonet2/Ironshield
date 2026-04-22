@@ -145,4 +145,58 @@ router.get("/search", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/social/who-to-follow?limit=3
+//
+// Suggests users the viewer could follow. Strategy:
+//   1. Prefer accounts the viewer does NOT already follow.
+//   2. Rank by follower count (popular first), then by whether
+//      the account is verified or has an agent/org badge.
+//   3. Skip the viewer themself + any system account
+//      (sys:ironnews, etc).
+//
+// Low-stakes endpoint — returns an empty list on any DB error so
+// the right-rail fallback seeds kick in.
+router.get("/who-to-follow", async (req, res) => {
+  try {
+    const limit = Math.min(10, Number(req.query.limit) || 3);
+    const wallet = req.header("x-wallet");
+    let viewerId = null;
+    if (wallet) {
+      const r = await db.query(
+        "SELECT id FROM feed_users WHERE LOWER(wallet_address) = LOWER($1) LIMIT 1",
+        [wallet]
+      );
+      viewerId = r.rows[0]?.id || null;
+    }
+
+    // Ranked query — followers DESC as the primary signal, with a
+    // tiny verified bonus so early badged accounts surface over
+    // noise.
+    const params = [limit];
+    let exclude = "AND u.wallet_address NOT LIKE 'sys:%'";
+    if (viewerId) {
+      params.unshift(viewerId);
+      exclude += ` AND u.id <> $1
+                   AND u.id NOT IN (SELECT following_id FROM feed_follows WHERE follower_id = $1)`;
+    }
+    const sql = `
+      SELECT u.id, u.wallet_address, u.username, u.display_name,
+             u.pfp_url, u.account_type, u.verified,
+             COALESCE(f.cnt, 0) AS followers
+        FROM feed_users u
+   LEFT JOIN (SELECT following_id AS id, COUNT(*)::int AS cnt
+                FROM feed_follows GROUP BY following_id) f
+          ON f.id = u.id
+       WHERE u.username IS NOT NULL ${exclude}
+    ORDER BY COALESCE(f.cnt, 0) DESC,
+             (u.verified IS TRUE) DESC,
+             u.id DESC
+       LIMIT $${params.length}`;
+    const r = await db.query(sql, params);
+    res.json({ users: r.rows });
+  } catch {
+    res.json({ users: [] });
+  }
+});
+
 module.exports = router;

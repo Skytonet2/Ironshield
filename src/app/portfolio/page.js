@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet, getReadAccount } from "@/lib/contexts";
 import { useIronclawPrice } from "@/lib/ironclaw";
 import { usePrices } from "@/lib/hooks/usePrices";
+import { useWallet as useMultiChainWallet } from "@/lib/stores/walletStore";
 import AppShell from "@/components/shell/AppShell";
 import {
   Wallet, ArrowDownToLine, ArrowUpFromLine, Clock, ArrowUpRight,
@@ -46,6 +47,60 @@ export default function PortfolioPage() {
   const ironPrice = useIronclawPrice();
   const [ironBal, setIronBal] = useState(null);
   const [tab, setTab] = useState("holdings");
+
+  // Multi-chain wallet slots from the Privy mirror. sol holds the
+  // Solana embedded wallet address; bnb holds whatever Privy reports
+  // as the user's EVM wallet (which we use for ETH balance display).
+  const solWallet = useMultiChainWallet((s) => s.sol);
+  const evmWallet = useMultiChainWallet((s) => s.bnb);
+  const [solBal, setSolBal] = useState(null);
+  const [ethBal, setEthBal] = useState(null);
+
+  // Solana balance — public Ankr/public RPC. Lazy-imports
+  // @solana/web3.js so the SPA doesn't pay for it on feed-only
+  // sessions.
+  useEffect(() => {
+    let cancelled = false;
+    const addr = solWallet?.address;
+    if (!addr) { setSolBal(null); return; }
+    (async () => {
+      try {
+        const { Connection, PublicKey } = await import("@solana/web3.js");
+        const conn = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+        const lamports = await conn.getBalance(new PublicKey(addr));
+        if (!cancelled) setSolBal(lamports / 1e9);
+      } catch { if (!cancelled) setSolBal(0); }
+    })();
+    return () => { cancelled = true; };
+  }, [solWallet?.address]);
+
+  // ETH balance — eth_getBalance via a public RPC. Formats wei to
+  // ether with BigInt to avoid precision loss.
+  useEffect(() => {
+    let cancelled = false;
+    const addr = evmWallet?.address;
+    if (!addr) { setEthBal(null); return; }
+    (async () => {
+      try {
+        const r = await fetch("https://ethereum-rpc.publicnode.com", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1, method: "eth_getBalance",
+            params: [addr, "latest"],
+          }),
+        });
+        const j = await r.json();
+        const hex = j?.result;
+        if (!hex) { if (!cancelled) setEthBal(0); return; }
+        const wei = BigInt(hex);
+        // Keep 6 decimals of precision as a Number for the UI.
+        const ether = Number(wei / 10n ** 12n) / 1e6;
+        if (!cancelled) setEthBal(ether);
+      } catch { if (!cancelled) setEthBal(0); }
+    })();
+    return () => { cancelled = true; };
+  }, [evmWallet?.address]);
 
   // IRONCLAW balance — read from the NEP-141 contract. Only runs
   // when the user has a NEAR wallet connected.
@@ -91,14 +146,36 @@ export default function PortfolioPage() {
       change: null,
       ...ASSET_META.ironclaw,
     });
-    // Aspirational rows (matches reference) — show placeholder with
-    // a "Connect" badge so the layout fills out; wire-up lands when
-    // the Privy multi-chain balances hook exports their amounts.
-    rows.push({ key: "eth", balance: null, price: null, usd: null, change: null, ...ASSET_META.eth });
-    rows.push({ key: "btc", balance: null, price: null, usd: null, change: null, ...ASSET_META.btc });
-    rows.push({ key: "sol", balance: null, price: prices.sol, usd: null, change: null, ...ASSET_META.sol });
+    // EVM (ETH) from Privy embedded wallet.
+    rows.push({
+      key: "eth",
+      balance: ethBal,
+      price: prices.eth,
+      usd: ethBal != null && prices.eth != null ? ethBal * prices.eth : null,
+      change: null,
+      ...ASSET_META.eth,
+    });
+    // BTC isn't custodially held in Privy — keep it aspirational
+    // until a user can link an external BTC wallet.
+    rows.push({
+      key: "btc",
+      balance: null,
+      price: prices.btc,
+      usd: null,
+      change: null,
+      ...ASSET_META.btc,
+    });
+    // Solana from the Privy embedded wallet.
+    rows.push({
+      key: "sol",
+      balance: solBal,
+      price: prices.sol,
+      usd: solBal != null && prices.sol != null ? solBal * prices.sol : null,
+      change: null,
+      ...ASSET_META.sol,
+    });
     return rows;
-  }, [prices, nearBal, ironBal, ironPrice]);
+  }, [prices, nearBal, ironBal, ironPrice, ethBal, solBal]);
 
   const totalUsd = holdings.reduce((a, r) => a + (r.usd || 0), 0);
   const totalDelta24h = 0; // TODO: wire once we track per-asset 24h change

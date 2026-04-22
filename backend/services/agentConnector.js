@@ -495,6 +495,28 @@ Respond in natural plain text. No JSON. No markdown fences around the whole repl
   expectJson: false,
 }).then((reply) => reply || "I'm here. Tell me what you want to work on — draft a post, research a token, check a link, anything.");
 
+// One-shot post drafter for the AI Post Generator in the mobile
+// full-screen composer. Takes a short user prompt, returns a plain
+// post draft clamped to maxChars.
+exports.composePost = async (payload) => {
+  const maxChars = Math.min(Math.max(parseInt(payload?.maxChars) || 500, 80), 500);
+  const prompt = String(payload?.prompt || "").slice(0, 400);
+  const result = await complete({
+    systemPrompt: `You are IronClaw, helping a user draft a short social post for the IronShield feed.
+
+RULES:
+- Return the post body ONLY — no title, no JSON, no markdown fences.
+- Hard limit ${maxChars} characters. Prefer concise; 180-260 chars is a sweet spot.
+- Match the user's apparent tone (serious, playful, analytical) — do not hallucinate a voice.
+- No hashtag spam. Up to 2 hashtags is fine if organic.
+- No em dashes (—). Use commas or periods.`,
+    userPrompt: `Draft a post about: ${prompt}`,
+    maxTokens: 220,
+  });
+  const text = String(result?.text || result || "").trim().slice(0, maxChars);
+  return { text };
+};
+
 exports.suggestPostFormats = (payload) => complete({
   systemPrompt: `You are IronClaw, helping a user reshape a social post draft into stronger publishing formats.
 

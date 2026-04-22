@@ -12,11 +12,11 @@
 import { useEffect, useState } from "react";
 
 const ENDPOINT =
-  "https://api.coingecko.com/api/v3/simple/price?ids=solana,near,binancecoin&vs_currencies=usd";
+  "https://api.coingecko.com/api/v3/simple/price?ids=solana,near,binancecoin,ethereum,bitcoin&vs_currencies=usd";
 
 const POLL_MS = 30_000;
 
-let cache = { sol: null, near: null, bnb: null };
+let cache = { sol: null, near: null, bnb: null, eth: null, btc: null };
 let lastFetch = 0;
 let inflight = null;
 const listeners = new Set();
@@ -34,6 +34,8 @@ async function refresh() {
         sol:  j.solana?.usd       ?? null,
         near: j.near?.usd         ?? null,
         bnb:  j.binancecoin?.usd  ?? null,
+        eth:  j.ethereum?.usd     ?? null,
+        btc:  j.bitcoin?.usd      ?? null,
       };
       lastFetch = Date.now();
       listeners.forEach((fn) => fn(cache));

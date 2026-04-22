@@ -48,6 +48,8 @@ app.use("/api/tg",            require("./routes/tg.route"));
 app.use("/api/xfeed",         require("./routes/xfeed.route"));
 app.use("/api/trading",       require("./routes/trading.route"));
 app.use("/api/bridge",        require("./routes/bridge.route"));
+app.use("/api/ai",            require("./routes/ai.route"));
+app.use("/api/market",        require("./routes/market.route"));
 
 // Root
 app.get("/", (req, res) => {
