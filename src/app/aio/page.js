@@ -11,6 +11,7 @@ import { useFeed } from "@/lib/stores/feedStore";
 import AppShell from "@/components/shell/AppShell";
 import * as wsClient from "@/lib/ws/wsClient";
 import * as seeder from "@/lib/ws/seeder";
+import CoinItButton from "@/components/feed/CoinItButton";
 
 function YourDeploysPanel() {
   const t = useTheme();
@@ -146,6 +147,24 @@ export default function AioPage() {
                     {ev.type}
                   </span>
                   {ev.source && <span>{ev.source}</span>}
+                  <span style={{ flex: 1 }} />
+                  {/* Coin It is offered on anything we have enough
+                   * context to name — CA detections, news headlines,
+                   * X posts. DEX pairs already exist as tokens; skip. */}
+                  {["ca", "news", "x", "newpair"].includes(ev.type) && (
+                    <CoinItButton
+                      sourceType={ev.type === "news" ? "news" : "external"}
+                      sourceUrl={ev.data?.url || null}
+                      sourceText={
+                        ev.data?.headline ||
+                        ev.data?.text ||
+                        ev.data?.ticker ||
+                        ""
+                      }
+                      suggestedName={ev.data?.headline || ev.data?.ticker || ""}
+                      suggestedTicker={ev.data?.ticker || ""}
+                    />
+                  )}
                 </div>
                 <div style={{ color: t.text }}>
                   {JSON.stringify(ev.data).slice(0, 200)}
