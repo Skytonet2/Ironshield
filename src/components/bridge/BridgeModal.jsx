@@ -13,7 +13,7 @@
 // surfaces a clear "coming next session" status today.
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownUp, X as XIcon } from "lucide-react";
+import { ArrowDownUp, X as XIcon, CheckCircle2, Loader2, AlertTriangle } from "lucide-react";
 import { useTheme, useWallet as useNearWalletCtx } from "@/lib/contexts";
 
 const BACKEND_BASE = (() => {
@@ -84,6 +84,7 @@ function fmtAmount(baseStr, decimals) {
   } catch { return baseStr; }
 }
 
+// Stages: idle → quoting (dry) → ready → submitting → signing → deposited → polling → complete | refunded | failed
 export default function BridgeModal({ onClose }) {
   const t = useTheme();
   const nearCtx = useNearWalletCtx();
@@ -95,6 +96,9 @@ export default function BridgeModal({ onClose }) {
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [err, setErr]       = useState(null);
   const [status, setStatus] = useState(null);
+  // Execution state-machine. `exec.stage` drives the Bridge-button label
+  // and the progress strip; details hold depositAddress + txHash.
+  const [exec, setExec]     = useState({ stage: "idle" });
 
   // Load the token registry once per mount (backend caches upstream).
   useEffect(() => {
@@ -186,6 +190,120 @@ export default function BridgeModal({ onClose }) {
   }, [amountBase, fromToken, toToken, nearCtx?.address]);
 
   const swap = () => { setFromId(toId); setToId(fromId); setQuote(null); };
+
+  // Execute the bridge. Only supports NEAR-origin today because we
+  // already have a NEAR wallet selector wired; other-origin chains
+  // need their respective wallets (Phase 2 has Privy SOL/EVM but
+  // those don't handle arbitrary NEP-141 deposits to NEAR). We
+  // surface a clear "NEAR origin only" error when someone tries.
+  async function bridge() {
+    if (!quote || !fromToken || !toToken) return;
+    if (fromToken.blockchain !== "near") {
+      setErr("This build supports NEAR-origin bridges only. Change the From token to a NEAR asset, or use app.ref.finance / Rhea for other sources.");
+      return;
+    }
+    if (!nearCtx?.selector || !nearCtx?.address) {
+      setErr("Connect a NEAR wallet to bridge.");
+      return;
+    }
+    const recipient = toToken.blockchain === "near"
+      ? nearCtx.address
+      : (PLACEHOLDER_RECIPIENT[toToken.blockchain] || nearCtx.address);
+
+    setErr(null);
+    setExec({ stage: "submitting" });
+    try {
+      // 1. Non-dry quote → deposit address from 1click.
+      const res = await fetch(`${BACKEND_BASE}/api/bridge/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          originAsset:      fromToken.assetId,
+          destinationAsset: toToken.assetId,
+          amount:           amountBase,
+          slippageBps:      100,
+          refundTo: nearCtx.address,
+          recipient,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `submit ${res.status}`);
+      const depositAddress = j?.quote?.depositAddress;
+      if (!depositAddress) throw new Error("No depositAddress in quote response");
+
+      // 2. ft_transfer amountBase from fromToken.contractAddress (or
+      //    the NEP-141 inferred from assetId) to depositAddress. For
+      //    wrap.near the contract IS wrap.near.
+      setExec({ stage: "signing", depositAddress });
+      const ftContract = fromToken.contractAddress ||
+        (fromToken.assetId.startsWith("nep141:") ? fromToken.assetId.slice("nep141:".length) : null);
+      if (!ftContract) throw new Error(`Can't resolve NEP-141 contract for ${fromToken.symbol}`);
+
+      const wallet = await nearCtx.selector.wallet();
+      const result = await wallet.signAndSendTransaction({
+        signerId: nearCtx.address,
+        receiverId: ftContract,
+        actions: [{
+          type: "FunctionCall",
+          params: {
+            methodName: "ft_transfer",
+            args: {
+              receiver_id: depositAddress,
+              amount: amountBase,
+              memo: `ironshield bridge ${fromToken.symbol}→${toToken.symbol}`,
+            },
+            gas: "30000000000000",
+            deposit: "1", // NEP-141 requires 1 yocto attached.
+          },
+        }],
+      });
+      const depositTx = result?.transaction?.hash
+        || result?.transaction_outcome?.id
+        || null;
+
+      // 3. Poll status until COMPLETE or REFUNDED.
+      setExec({ stage: "polling", depositAddress, depositTx });
+      const pollStart = Date.now();
+      const deadlineMs = 5 * 60_000; // 5 minutes — most complete in <30s
+      while (Date.now() - pollStart < deadlineMs) {
+        await new Promise((r) => setTimeout(r, 5000));
+        try {
+          const s = await fetch(`${BACKEND_BASE}/api/bridge/status?depositAddress=${encodeURIComponent(depositAddress)}`);
+          const js = await s.json();
+          const status = js?.status || js?.state || "PENDING";
+          if (status === "COMPLETE" || status === "SUCCESS") {
+            // Fire-and-forget position + fee log so portfolio picks
+            // up the bridge alongside swap trades.
+            fetch(`${BACKEND_BASE}/api/trading/positions`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chain: "near",
+                wallet: nearCtx.address,
+                token_address: toToken.assetId,
+                token_symbol: toToken.symbol,
+                token_decimals: toToken.decimals || 0,
+                amount_base: quote.amountOut,
+                entry_price_usd: Number(toToken.price) || 0,
+                cost_basis_usd: Number(quote.amountInUsd) || 0,
+                entry_tx_hash: depositTx,
+              }),
+            }).catch(() => {});
+            setExec({ stage: "complete", depositAddress, depositTx });
+            return;
+          }
+          if (status === "REFUNDED" || status === "FAILED") {
+            setExec({ stage: "refunded", depositAddress, depositTx });
+            return;
+          }
+        } catch { /* transient; next tick retries */ }
+      }
+      setExec({ stage: "timeout", depositAddress, depositTx });
+    } catch (e) {
+      setErr(e.message || String(e));
+      setExec({ stage: "failed" });
+    }
+  }
 
   return (
     <div
@@ -324,35 +442,21 @@ export default function BridgeModal({ onClose }) {
             {err}
           </div>
         )}
-        {status && (
-          <div style={{
-            marginTop: 10,
-            padding: "8px 10px",
-            borderRadius: 8,
-            background: "var(--bg-input)",
-            color: t.textMuted,
-            fontSize: 11,
-            lineHeight: 1.5,
-          }}>
-            {status}
-          </div>
-        )}
+
+        <ProgressStrip exec={exec} t={t} toToken={toToken} />
 
         <button
           type="button"
-          disabled={!quote || loadingQuote}
-          onClick={() => setStatus(
-            "Signed-intent submission lands in Phase 5-3 — we're wiring " +
-            "NEP-413 signMessage across all wallets in the selector. " +
-            "Quote + 0.2% fee routing is live today."
-          )}
+          disabled={!quote || loadingQuote || ["submitting","signing","polling"].includes(exec.stage)}
+          onClick={bridge}
           style={{
             width: "100%",
             marginTop: 14,
             padding: "12px 16px",
             borderRadius: 10,
             border: "none",
-            background: quote && !loadingQuote ? t.accent : "var(--bg-input)",
+            background: quote && !loadingQuote && exec.stage !== "complete"
+              ? t.accent : "var(--bg-input)",
             color: quote && !loadingQuote ? "#fff" : t.textDim,
             fontSize: 13,
             fontWeight: 700,
@@ -361,9 +465,65 @@ export default function BridgeModal({ onClose }) {
             cursor: quote && !loadingQuote ? "pointer" : "not-allowed",
           }}
         >
-          {loadingQuote ? "Quoting…" : "Bridge"}
+          {loadingQuote ? "Quoting…"
+            : exec.stage === "submitting" ? "Getting deposit address…"
+            : exec.stage === "signing"    ? "Sign in your wallet…"
+            : exec.stage === "polling"    ? "Bridging…"
+            : exec.stage === "complete"   ? "Done"
+            : exec.stage === "refunded"   ? "Refunded — try again"
+            : exec.stage === "timeout"    ? "Timed out — check status"
+            : exec.stage === "failed"     ? "Failed — try again"
+            : "Bridge"}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** ProgressStrip — step indicator for the exec state machine.
+ *  Shows at most one row at a time; idle state renders nothing so
+ *  the modal isn't cluttered before the user clicks Bridge. */
+function ProgressStrip({ exec, t, toToken }) {
+  if (exec.stage === "idle") return null;
+  const cfg = {
+    submitting: { label: "Requesting deposit address from 1click…", spin: true, color: t.accent },
+    signing:    { label: "Sign the ft_transfer in your wallet.",    spin: true, color: t.accent },
+    polling:    { label: "Solver fulfilling cross-chain…",           spin: true, color: t.accent },
+    complete:   { label: "Bridge complete!",                          spin: false, color: "var(--green)", icon: "✓" },
+    refunded:   { label: "Refunded — your origin tokens are back.",  spin: false, color: "var(--amber)", icon: "⚠" },
+    timeout:    { label: "Still processing — check back soon.",       spin: false, color: "var(--amber)", icon: "⏱" },
+    failed:     { label: "Bridge failed.",                            spin: false, color: "var(--red)",   icon: "×" },
+  }[exec.stage] || null;
+  if (!cfg) return null;
+  return (
+    <div style={{
+      marginTop: 10,
+      padding: "8px 10px",
+      borderRadius: 8,
+      background: "var(--bg-input)",
+      color: cfg.color,
+      fontSize: 12,
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      lineHeight: 1.5,
+    }}>
+      {cfg.spin
+        ? <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} />
+        : cfg.stage === "complete"
+          ? <CheckCircle2 size={13} />
+          : <AlertTriangle size={13} />}
+      <span style={{ flex: 1 }}>{cfg.label}</span>
+      {exec.depositTx && (
+        <a
+          href={`https://nearblocks.io/txns/${exec.depositTx}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: t.accent, fontSize: 11, textDecoration: "none" }}
+        >
+          View tx ↗
+        </a>
+      )}
     </div>
   );
 }

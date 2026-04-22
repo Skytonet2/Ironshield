@@ -105,4 +105,63 @@ router.post("/quote", async (req, res) => {
   }
 });
 
+// POST /api/bridge/submit
+// body: same shape as /quote, but forces dry=false — returns the
+// commit-able quote with depositAddress the user sends their origin
+// tokens to. Thin wrapper over /quote so callers can make intent
+// explicit ("I am about to execute") and we can in the future log
+// commit attempts without cluttering the dry-quote path.
+router.post("/submit", async (req, res) => {
+  // Delegate to the /quote handler with dry forced off. Express doesn't
+  // expose a public forward primitive, so inline the path — it's short.
+  try {
+    const b = req.body || {};
+    if (!b.originAsset || !b.destinationAsset || !b.amount || !b.recipient) {
+      return res.status(400).json({ error: "originAsset, destinationAsset, amount, recipient required" });
+    }
+    const payload = {
+      dry: false,
+      depositMode: "SIMPLE",
+      swapType: "EXACT_INPUT",
+      slippageTolerance: Number(b.slippageBps) || 100,
+      originAsset:      b.originAsset,
+      destinationAsset: b.destinationAsset,
+      amount: String(b.amount),
+      depositType: "ORIGIN_CHAIN",
+      refundTo:   b.refundTo || b.recipient,
+      refundType: "ORIGIN_CHAIN",
+      recipient:  b.recipient,
+      recipientType: "DESTINATION_CHAIN",
+      deadline: new Date(Date.now() + 10 * 60_000).toISOString(),
+      appFees: [{ recipient: feeRecipient(), fee: FEE_BPS }],
+    };
+    const r = await fetch(`${BASE}/quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json().catch(() => ({ error: "non-json upstream" }));
+    if (!r.ok) return res.status(r.status).json({ error: j.message || `upstream ${r.status}`, upstream: j });
+    res.json(j);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "submit failed" });
+  }
+});
+
+// GET /api/bridge/status?depositAddress=X
+// Proxies 1click's deposit status. Client polls this every 5s until
+// status is COMPLETE or REFUNDED.
+router.get("/status", async (req, res) => {
+  try {
+    const addr = String(req.query.depositAddress || "").trim();
+    if (!addr) return res.status(400).json({ error: "depositAddress required" });
+    const r = await fetch(`${BASE}/status?depositAddress=${encodeURIComponent(addr)}`);
+    const j = await r.json().catch(() => ({ error: "non-json upstream" }));
+    if (!r.ok) return res.status(r.status).json({ error: j.message || `upstream ${r.status}` });
+    res.json(j);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "status failed" });
+  }
+});
+
 module.exports = router;
