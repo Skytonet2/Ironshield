@@ -154,6 +154,11 @@ async function swapNear({ side, token, amount, slippageBps, nearSelector, signer
     amountBase,
     slippageBps,
     feeWallet,
+    // token.poolAddress for NEAR is Ref's numeric pool ID (GeckoTerminal's
+    // NETWORK_SLUG=near-protocol uses the same numeric convention Ref
+    // assigns on pool creation). Required by swapOnRef for the
+    // get_return view + swap-action payload.
+    poolId: token.poolAddress,
   });
 
   const { fee: feeBaseStr } = splitFeeBaseUnits(amountBase);
