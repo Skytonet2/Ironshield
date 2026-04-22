@@ -286,11 +286,24 @@ export default function GovernancePage({ openWallet }) {
     const hasVoted = myVote !== undefined;
 
     return (
-      <div style={{ background: t.bgCard, border: `1px solid ${isHistory ? t.border : cfg.color + "33"}`, borderRadius: 14, overflow: "hidden", marginBottom: 12 }}>
-        {/* Color bar */}
-        <div style={{ height: 3, background: `linear-gradient(90deg, ${cfg.color}, transparent)` }} />
+      <div
+        className="card-lift"
+        style={{
+          background: isHistory
+            ? "var(--bg-card)"
+            : `linear-gradient(180deg, ${cfg.color}08, transparent 60%), var(--bg-card)`,
+          border: `1px solid ${isHistory ? t.border : cfg.color + "44"}`,
+          borderRadius: 14,
+          overflow: "hidden",
+          marginBottom: 12,
+          boxShadow: isHistory ? "none" : `inset 0 1px 0 rgba(255,255,255,0.03), 0 20px 40px ${cfg.color}12`,
+        }}
+      >
+        {/* Top gradient edge — full width, fades out so it feels like
+            the card is lit from above by the proposal's theme colour. */}
+        <div style={{ height: 2, background: `linear-gradient(90deg, ${cfg.color}, ${cfg.color}00 80%)` }} />
 
-        <div style={{ padding: "20px 24px" }}>
+        <div style={{ padding: "18px 22px" }}>
           {/* Top row */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -342,29 +355,74 @@ export default function GovernancePage({ openWallet }) {
             </div>
           </div>
 
-          {/* Action buttons */}
+          {/* Action buttons — gradient fills for primary intents so
+              the vote CTA reads as definitive, not optional. */}
           {!isHistory && !exp && !hasVoted && connected && (
             <div style={{ display: "flex", gap: 10 }}>
-              <Btn primary onClick={() => handleVote(p.id, true)} disabled={txLoading}
-                style={{ flex: 1, justifyContent: "center", background: t.green }}>
+              <button
+                type="button"
+                onClick={() => handleVote(p.id, true)}
+                disabled={txLoading}
+                style={{
+                  flex: 1, padding: "10px 14px", borderRadius: 10, border: "none",
+                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  color: "#fff", fontSize: 13, fontWeight: 700,
+                  cursor: txLoading ? "wait" : "pointer", opacity: txLoading ? 0.7 : 1,
+                  boxShadow: "0 10px 24px rgba(16,185,129,0.28)",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}
+              >
                 {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "Vote FOR"}
-              </Btn>
-              <Btn onClick={() => handleVote(p.id, false)} disabled={txLoading}
-                style={{ flex: 1, justifyContent: "center", background: `${t.red}22`, color: t.red, border: `1px solid ${t.red}44` }}>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleVote(p.id, false)}
+                disabled={txLoading}
+                style={{
+                  flex: 1, padding: "10px 14px", borderRadius: 10,
+                  border: "1px solid rgba(239,68,68,0.45)",
+                  background: "rgba(239,68,68,0.12)",
+                  color: "#fca5a5", fontSize: 13, fontWeight: 700,
+                  cursor: txLoading ? "wait" : "pointer", opacity: txLoading ? 0.7 : 1,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}
+              >
                 {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "Vote AGAINST"}
-              </Btn>
+              </button>
             </div>
           )}
 
           {!isHistory && !exp && !connected && (
-            <Btn primary onClick={openWallet} style={{ width: "100%", justifyContent: "center" }}>Connect wallet to vote</Btn>
+            <button
+              type="button"
+              onClick={openWallet}
+              style={{
+                width: "100%", padding: "10px 14px", borderRadius: 10, border: "none",
+                background: "linear-gradient(135deg, #3b82f6, #a855f7)",
+                color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                boxShadow: "0 10px 24px rgba(168,85,247,0.3)",
+              }}
+            >
+              Connect wallet to vote
+            </button>
           )}
 
           {!isHistory && exp && !p.executed && (
-            <Btn primary onClick={() => handleExecute(p.id)} disabled={txLoading}
-              style={{ width: "100%", justifyContent: "center", background: cfg.color }}>
+            <button
+              type="button"
+              onClick={() => handleExecute(p.id)}
+              disabled={txLoading}
+              style={{
+                width: "100%", padding: "10px 14px", borderRadius: 10, border: "none",
+                background: `linear-gradient(135deg, ${cfg.color}, ${cfg.color}bb)`,
+                color: "#fff", fontSize: 13, fontWeight: 700,
+                cursor: txLoading ? "wait" : "pointer", opacity: txLoading ? 0.7 : 1,
+                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                boxShadow: `0 10px 24px ${cfg.color}30`,
+              }}
+            >
               {txLoading ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : "Execute Proposal"}
-            </Btn>
+            </button>
           )}
         </div>
       </div>
@@ -372,22 +430,28 @@ export default function GovernancePage({ openWallet }) {
   };
 
   return (
-    <Section style={{ paddingTop: 100 }}>
-      {/* Autonomous mode status bar */}
+    <div style={{
+      maxWidth: 920, margin: "0 auto",
+      padding: "24px 20px 48px",
+    }}>
+      {/* Autonomous mode status bar — glass card with a gradient edge
+          glow. The pulsing dot keeps a subtle heartbeat so the panel
+          reads as "live", not static. */}
       <div style={{
-        background: "linear-gradient(135deg, rgba(255,107,0,0.08), rgba(155,93,229,0.08))",
-        border: "1px solid rgba(255,107,0,0.25)",
-        borderRadius: 14, padding: "16px 24px", marginBottom: 24,
+        background: "linear-gradient(135deg, rgba(168,85,247,0.12), rgba(59,130,246,0.08) 60%, transparent)",
+        border: "1px solid rgba(168,85,247,0.35)",
+        borderRadius: 14, padding: "16px 24px", marginBottom: 18,
         display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 20px 50px rgba(168,85,247,0.08)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ff6b00", boxShadow: "0 0 12px #ff6b00", animation: "pulse 2s infinite" }} />
+          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#a855f7", boxShadow: "0 0 14px rgba(168,85,247,0.9)", animation: "pulse 2s infinite" }} />
           <div>
-            <div style={{ fontSize: 11, color: "#ff6b00", fontWeight: 700, letterSpacing: "0.16em" }}>IRONCLAW AUTONOMOUS MODE: ACTIVE</div>
-            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3 }}>Current mission: {activeMission}</div>
+            <div style={{ fontSize: 11, color: "#c084fc", fontWeight: 700, letterSpacing: "0.16em" }}>IRONCLAW AUTONOMOUS MODE · LIVE</div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3, lineHeight: 1.5 }}>{activeMission}</div>
           </div>
         </div>
-        <Badge color={pretokenMode ? "#9b5de5" : "#ff6b00"}>
+        <Badge color={pretokenMode ? "#a855f7" : "#3b82f6"}>
           {pretokenMode ? "Pre-token: Contributors + Vanguards" : "Governed by $IRONCLAW holders"}
         </Badge>
       </div>
@@ -505,28 +569,55 @@ export default function GovernancePage({ openWallet }) {
         </div>
       )}
 
-      {/* Header */}
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
-        <Badge color="#9b5de5">GOVERNANCE</Badge>
-        <h1 style={{ fontSize: 36, fontWeight: 700, color: t.white, marginTop: 12 }}>IronClaw Governance</h1>
-        <p style={{ fontSize: 15, color: t.textMuted, marginTop: 8, maxWidth: 520, margin: "8px auto 0" }}>
+      {/* Header — tighter, left-aligned. Premium pages don't need
+          centered hero copy; the feed layout is the centerline. */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#c084fc", fontSize: 11, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase" }}>
+          <Shield size={12} /> Governance
+        </div>
+        <h1 style={{ fontSize: 30, fontWeight: 800, color: t.white, margin: "6px 0 4px", letterSpacing: -0.4 }}>
+          IronClaw Governance
+        </h1>
+        <p style={{ fontSize: 14, color: t.textMuted, margin: 0, lineHeight: 1.5, maxWidth: 620 }}>
           Staked $IRONCLAW holders control IronClaw's missions, AI prompts, and capabilities. Vote to shape the autonomous agent.
         </p>
       </div>
 
-      {/* How it works */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 48 }}>
+      {/* How it works — glass cards with a gradient left accent. */}
+      <div className="ix-gov-how" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 28 }}>
         {[
-          { icon: Shield,    color: "#ff6b00", title: "Missions",      desc: "Vote on what threats IronClaw monitors and which communities it prioritizes." },
-          { icon: FileText, color: "#9b5de5", title: "Prompt Updates", desc: "Upgrade IronClaw's AI brain. New system prompts take effect immediately after passing." },
-          { icon: ToggleLeft,color: "#00c2ff",title: "Rule Changes",   desc: "Enable or disable specific IronClaw capabilities. Community decides autonomy levels." },
+          { icon: Shield,    color: "#f97316", title: "Missions",       desc: "Vote on what threats IronClaw monitors and which communities it prioritizes." },
+          { icon: FileText,  color: "#a855f7", title: "Prompt Updates", desc: "Upgrade IronClaw's AI brain. New system prompts take effect immediately after passing." },
+          { icon: ToggleLeft,color: "#3b82f6", title: "Rule Changes",   desc: "Enable or disable specific IronClaw capabilities. Community decides autonomy levels." },
         ].map((item, i) => {
           const Icon = item.icon;
           return (
-            <div key={i} style={{ background: t.bgCard, border: `1px solid ${item.color}22`, borderLeft: `3px solid ${item.color}`, borderRadius: 12, padding: 20 }}>
-              <Icon size={20} color={item.color} style={{ marginBottom: 10 }} />
+            <div
+              key={i}
+              className="card-lift"
+              style={{
+                background: `linear-gradient(180deg, ${item.color}0d, transparent 70%), var(--bg-card)`,
+                border: `1px solid ${item.color}2a`,
+                borderRadius: 14, padding: 18,
+                position: "relative",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+              }}
+            >
+              <span style={{
+                position: "absolute", left: 0, top: 14, bottom: 14,
+                width: 3, borderRadius: 2,
+                background: `linear-gradient(180deg, ${item.color}, transparent)`,
+              }} />
+              <div style={{
+                width: 34, height: 34, borderRadius: 10,
+                background: `${item.color}1c`, color: item.color,
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                marginBottom: 10,
+              }}>
+                <Icon size={16} />
+              </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: t.white, marginBottom: 6 }}>{item.title}</div>
-              <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6 }}>{item.desc}</div>
+              <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55 }}>{item.desc}</div>
             </div>
           );
         })}
@@ -641,6 +732,6 @@ export default function GovernancePage({ openWallet }) {
         @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
       `}</style>
-    </Section>
+    </div>
   );
 }

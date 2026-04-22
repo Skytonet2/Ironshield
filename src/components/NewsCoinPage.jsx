@@ -1096,18 +1096,36 @@ function CoinRow({ coin, onClick }) {
   const change = Number(coin.change_24h || 0);
   const isUp = change >= 0;
   const lc = lifecycleFor(coin);
+  const tickerAccent = isUp ? "#10b981" : "#ef4444";
 
   return (
     <div
+      className="card-lift"
       onClick={() => onClick(coin)}
       style={{
         display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-        ...cardStyle(t), marginBottom: 6, cursor: "pointer",
+        background: `linear-gradient(90deg, ${tickerAccent}08, transparent 40%), var(--bg-card)`,
+        border: `1px solid ${t.border}`,
+        borderRadius: 12,
+        marginBottom: 6,
+        cursor: "pointer",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.02)",
       }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = `${ORANGE}66`; e.currentTarget.style.background = t.bgCardHover || t.bgSurface; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.background = t.bgCard; }}
     >
-      {/* Left: headline + ticker */}
+      {/* Ticker chip — bold accent block on the left so the row
+          scans like an order-book line. */}
+      <div style={{
+        width: 44, height: 44, borderRadius: 10,
+        background: `linear-gradient(135deg, ${tickerAccent}22, ${ORANGE}22)`,
+        border: `1px solid ${tickerAccent}33`,
+        color: t.white, fontWeight: 800, fontSize: 11,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0, letterSpacing: 0.4,
+      }}>
+        {(coin.ticker || "?").slice(0, 4).toUpperCase()}
+      </div>
+
+      {/* Left: headline + ticker + lifecycle */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: 13, color: t.white, fontWeight: 600, overflow: "hidden",
@@ -1126,15 +1144,23 @@ function CoinRow({ coin, onClick }) {
         </div>
       </div>
 
-      {/* MCap badge */}
-      <div style={{ textAlign: "right", minWidth: 55 }}>
-        <Badge color={ORANGE} style={{ fontSize: 10 }}>{fmtUsd(coin.mcap_usd)}</Badge>
+      {/* MCap pill */}
+      <div style={{ textAlign: "right", minWidth: 64 }}>
+        <span style={{
+          display: "inline-flex", alignItems: "center",
+          padding: "2px 8px", borderRadius: 6,
+          background: `${ORANGE}18`, color: ORANGE,
+          border: `1px solid ${ORANGE}44`,
+          fontSize: 11, fontWeight: 700, fontFamily: "var(--font-jetbrains-mono), monospace",
+        }}>
+          {fmtUsd(coin.mcap_usd)}
+        </span>
       </div>
 
       {/* 24h change */}
       <div style={{
-        fontSize: 12, fontWeight: 700, minWidth: 55, textAlign: "right",
-        color: isUp ? t.green : t.red,
+        fontSize: 12, fontWeight: 700, minWidth: 58, textAlign: "right",
+        color: isUp ? "#10b981" : "#ef4444",
         display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2,
       }}>
         {isUp ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
@@ -1142,13 +1168,13 @@ function CoinRow({ coin, onClick }) {
       </div>
 
       {/* Volume */}
-      <div style={{ textAlign: "right", minWidth: 50, fontSize: 11, color: t.textDim }}>
+      <div style={{ textAlign: "right", minWidth: 54, fontSize: 11, color: t.textDim }}>
         <div style={{ fontWeight: 600, color: t.textMuted }}>{fmtNear(coin.volume_24h)}</div>
-        <div style={{ fontSize: 9 }}>VOL</div>
+        <div style={{ fontSize: 9, letterSpacing: 0.4 }}>VOL 24h</div>
       </div>
 
       {/* Sparkline */}
-      <Sparkline data={coin.sparkline || []} width={50} height={20} color={isUp ? t.green : t.red} />
+      <Sparkline data={coin.sparkline || []} width={56} height={22} color={isUp ? "#10b981" : "#ef4444"} />
     </div>
   );
 }
