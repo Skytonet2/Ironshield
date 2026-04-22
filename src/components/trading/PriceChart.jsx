@@ -33,7 +33,11 @@ export default function PriceChart({ chain, pool, timeframe = "1h", height = 360
     if (!containerRef.current) return;
     let disposed = false;
     (async () => {
-      const { createChart } = await import("lightweight-charts");
+      // lightweight-charts v5 moved series types to top-level imports
+      // and added them via chart.addSeries(type, options) instead of
+      // chart.addCandlestickSeries()/addHistogramSeries().
+      const { createChart, CandlestickSeries, HistogramSeries } =
+        await import("lightweight-charts");
       if (disposed) return;
       const chart = createChart(containerRef.current, {
         autoSize: true,
@@ -53,7 +57,7 @@ export default function PriceChart({ chain, pool, timeframe = "1h", height = 360
       chartRef.current = chart;
       // Candles on the main scale; volume pinned to its own scale with
       // 75% bottom margin so it hugs the lower quarter of the pane.
-      candleRef.current = chart.addCandlestickSeries({
+      candleRef.current = chart.addSeries(CandlestickSeries, {
         upColor:     t.accent,
         borderUpColor: t.accent,
         wickUpColor:  t.accent,
@@ -61,7 +65,7 @@ export default function PriceChart({ chain, pool, timeframe = "1h", height = 360
         borderDownColor: t.red,
         wickDownColor:   t.red,
       });
-      volumeRef.current = chart.addHistogramSeries({
+      volumeRef.current = chart.addSeries(HistogramSeries, {
         priceFormat: { type: "volume" },
         priceScaleId: "volume",
         color: t.textDim,

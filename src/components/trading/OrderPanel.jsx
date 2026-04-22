@@ -6,11 +6,14 @@
 // Button state reads the wallet store — no wallet = "Connect to trade".
 
 import { useState } from "react";
+import { useWallets as usePrivySolanaWallets } from "@privy-io/react-auth/solana";
 import { useTheme } from "@/lib/contexts";
 import { useWallet } from "@/lib/stores/walletStore";
+import { executeSwap } from "@/lib/trading/execute";
+import { FEE_BPS } from "@/lib/trading/fees";
+import { isPrivyConfigured } from "@/components/auth/PrivyWrapper";
 
 const SLIPPAGE_PRESETS = [0.5, 1.0, 3.0];
-const FEE_BPS = 20; // 0.2% — matches lib/fees.ts constant (Phase 3B)
 
 function fmtUsd(n) {
   if (n == null || !isFinite(n)) return "—";
@@ -157,36 +160,140 @@ export default function OrderPanel({ chain, token, priceUsd }) {
         </span>
       </div>
 
+      {/* ExecuteButton isolates the Privy hooks so OrderPanel itself
+       * stays renderable when NEXT_PUBLIC_PRIVY_APP_ID is unset. The
+       * fallback button is statically rendered below. */}
+      {isPrivyConfigured ? (
+        <ExecuteButton
+          chain={chain}
+          token={token}
+          side={side}
+          amount={amountNum}
+          slippagePct={slippage}
+          priceUsd={priceUsd}
+          canTrade={canTrade}
+          disabledReason={disabledReason}
+          t={t}
+        />
+      ) : (
+        <button
+          type="button"
+          disabled
+          title="Set NEXT_PUBLIC_PRIVY_APP_ID to enable trading"
+          style={{
+            width: "100%",
+            marginTop: 14,
+            padding: "12px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: "var(--bg-input)",
+            color: t.textDim,
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: 0.6,
+            textTransform: "uppercase",
+            cursor: "not-allowed",
+          }}
+        >
+          Sign in to trade
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── ExecuteButton ──────────────────────────────────────────────────
+ *
+ * Calls Privy's Solana wallet hooks + kicks off the swap pipeline.
+ * Kept separate so the hooks only load (and throw if PrivyProvider is
+ * absent) inside a branch that's only rendered when Privy is
+ * configured.
+ */
+function ExecuteButton({ chain, token, side, amount, slippagePct, priceUsd, canTrade, disabledReason, t }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  // Privy's Solana-subpath useWallets returns only the Solana-scoped
+  // wallets (embedded + external). First entry is the default — the
+  // embedded wallet Privy provisions on login. Hooks only fire inside
+  // ExecuteButton, which the parent guards behind isPrivyConfigured.
+  const { wallets } = usePrivySolanaWallets();
+  const solWallet = wallets?.[0] || null;
+
+  const solReady = chain === "sol" && !!solWallet;
+  const buttonEnabled = canTrade && !busy && (chain !== "sol" || solReady);
+
+  const reason = !canTrade
+    ? (disabledReason || "—")
+    : chain === "sol" && !solReady
+    ? "Sign in to mint a Solana wallet"
+    : chain === "near"
+    ? "NEAR swaps land next session"
+    : null;
+
+  async function handleSwap() {
+    setBusy(true);
+    setStatus("Requesting quote…");
+    try {
+      const { signature } = await executeSwap({
+        chain,
+        side,
+        token,
+        amount,
+        slippageBps: Math.round(slippagePct * 100),
+        priceUsd,
+        privySolWallet: chain === "sol" ? solWallet : null,
+      });
+      setStatus(`✓ Sent: ${signature.slice(0, 10)}…`);
+    } catch (e) {
+      setStatus(`× ${e.message || "Swap failed"}`);
+    } finally {
+      setBusy(false);
+      setTimeout(() => setStatus(null), 6000);
+    }
+  }
+
+  return (
+    <>
       <button
         type="button"
-        disabled={!canTrade}
-        onClick={() => {
-          // Phase 3B wires the actual swap here. Until then, a toast.
-          window.alert(
-            `Trade dispatch lands in Phase 3B:\n` +
-            `${side.toUpperCase()} ${amountNum} on ${chain.toUpperCase()} via ` +
-            `${chain === "sol" ? "Jupiter" : "Ref"}, slippage ${slippage}%`
-          );
-        }}
+        disabled={!buttonEnabled}
+        onClick={handleSwap}
         style={{
           width: "100%",
           marginTop: 14,
           padding: "12px 16px",
           borderRadius: 8,
           border: "none",
-          background: canTrade
+          background: buttonEnabled
             ? (side === "buy" ? "var(--green)" : "var(--red)")
             : "var(--bg-input)",
-          color: canTrade ? "#fff" : t.textDim,
+          color: buttonEnabled ? "#fff" : t.textDim,
           fontSize: 13,
           fontWeight: 700,
           letterSpacing: 0.6,
           textTransform: "uppercase",
-          cursor: canTrade ? "pointer" : "not-allowed",
+          cursor: buttonEnabled ? "pointer" : "not-allowed",
         }}
       >
-        {canTrade ? `${side} ${token?.baseSymbol || ""}` : (disabledReason || "—")}
+        {busy ? "Signing…" : buttonEnabled ? `${side} ${token?.baseSymbol || ""}` : (reason || "—")}
       </button>
-    </div>
+      {status && (
+        <div style={{
+          marginTop: 8,
+          padding: "6px 10px",
+          borderRadius: 6,
+          fontSize: 11,
+          color: status.startsWith("×") ? "var(--red)" : t.textMuted,
+          background: "var(--bg-input)",
+          fontFamily: "var(--font-jetbrains-mono), monospace",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}>
+          {status}
+        </div>
+      )}
+    </>
   );
 }
