@@ -126,7 +126,71 @@ router.post("/claim", async (req, res) => {
         [tgId, tgChatId, tgUsername || null, userId, wallets, wallets[0] || null, code || null]
       );
     }
+    // Provision (or fetch) the custodial bot-trading account so
+    // /deposit, /balance, /swap etc. have somewhere to point. Fire-
+    // and-forget — a blown DB call here shouldn't fail the /claim.
+    try {
+      const custodial = require("../services/custodialBotWallet");
+      const acct = await custodial.getOrCreateForTgId(tgId);
+      res.json({ ok: true, linkedWallet, wallets, custodialAccount: acct.accountId });
+      return;
+    } catch (custErr) {
+      // Missing CUSTODIAL_ENCRYPT_KEY etc. — still surface the link
+      // success so the TG flow completes. /deposit will ask the user
+      // to re-run when config lands.
+      console.warn("[tg/claim] custodial provision skipped:", custErr.message);
+    }
     res.json({ ok: true, linkedWallet, wallets });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/tg/custodial/:tgId — fetch the custodial bot account for
+// a TG user. Never returns key material, only the public address.
+router.get("/custodial/:tgId", async (req, res) => {
+  try {
+    const custodial = require("../services/custodialBotWallet");
+    const acct = await custodial.getOrCreateForTgId(req.params.tgId);
+    res.json({
+      accountId: acct.accountId,
+      publicKey: acct.publicKey,
+      existing: acct.existing,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/tg/custodial/:tgId/balance — native NEAR balance on the
+// custodial account. Zero-balance implicit accounts look "not exist"
+// to the RPC; treat that as 0 rather than erroring.
+router.get("/custodial/:tgId/balance", async (req, res) => {
+  try {
+    const custodial = require("../services/custodialBotWallet");
+    const acct = await custodial.getOrCreateForTgId(req.params.tgId);
+    // Lazy-load near-api-js + provider to avoid startup cost when
+    // nobody calls this endpoint.
+    const { connect, keyStores } = require("near-api-js");
+    const near = await connect({
+      networkId: "mainnet",
+      nodeUrl: process.env.NEAR_RPC_URL || "https://rpc.fastnear.com",
+      keyStore: new keyStores.InMemoryKeyStore(),
+    });
+    let yocto = "0";
+    try {
+      const a = await near.account(acct.accountId);
+      const s = await a.state();
+      yocto = s.amount;
+    } catch {
+      // Implicit account with no balance isn't on-chain yet.
+    }
+    res.json({
+      accountId: acct.accountId,
+      balanceYocto: yocto,
+      // Convert to NEAR with 4 decimal precision for display.
+      balanceNear: (Number(BigInt(yocto) / 10n ** 20n) / 10_000).toFixed(4),
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

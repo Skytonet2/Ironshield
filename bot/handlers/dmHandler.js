@@ -9,6 +9,7 @@ const alert     = require("../commands/alert");
 const report    = require("../commands/report");
 const trending  = require("../commands/trending");
 const link      = require("../commands/link");
+const custodial = require("../commands/custodial");
 const { tg }    = require("../services/backend");
 
 const BACKEND = process.env.BACKEND_URL || "http://localhost:3001";
@@ -40,6 +41,14 @@ async function handleDM(bot, msg) {
 
   // 2) Wallet-first onboarding: a plain address links the wallet.
   if (await link.tryLinkFromMessage(bot, msg)) return;
+
+  // 3) Trading intent parser — "swap $10 sol to near", "send $2 to
+  //    alice.near". Runs BEFORE the loose keyword matcher because
+  //    phrasings like "swap my ETH" would otherwise fall into
+  //    portfolio's "my wallet" pattern.
+  const intent = custodial.parseIntent(msg.text || "");
+  if (intent?.kind === "swap") { await custodial.handleSwap(bot, msg, intent); return; }
+  if (intent?.kind === "send") { await custodial.handleSend(bot, msg, intent); return; }
 
   const text  = (msg.text || "").toLowerCase();
   const match = INTENTS.find(i => i.patterns.some(p => text.includes(p)));

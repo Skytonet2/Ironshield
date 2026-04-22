@@ -1,4 +1,7 @@
+// Load .env first, then .env.local on top (matches Next.js precedence so
+// a single value set only in .env.local flows to both frontend + backend).
 require("dotenv").config();
+require("dotenv").config({ path: require("path").resolve(__dirname, "..", ".env.local"), override: true });
 const http = require("http");
 const express = require("express");
 const app = express();

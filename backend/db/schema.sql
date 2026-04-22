@@ -734,3 +734,39 @@ CREATE TABLE IF NOT EXISTS coin_it_events (
 );
 CREATE INDEX IF NOT EXISTS idx_coin_it_events_user ON coin_it_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_coin_it_events_source ON coin_it_events(source_post_id);
+
+-- ============================================================
+-- Telegram notifications — additional toggles + custodial bot
+-- account columns (Phase 7).
+--
+-- Settings JSONB extended with room_start, group_msg, voice_post,
+-- recruit_post. Existing rows keep working; the missing keys are
+-- treated as "true" in tgNotify's check (opt-out model).
+--
+-- Custodial bot account columns let the TG bot execute /swap, /send,
+-- /withdraw on behalf of the user without requiring a per-tx wallet
+-- popup. Private key is AES-256-GCM encrypted at rest using
+-- process.env.CUSTODIAL_ENCRYPT_KEY (generated once, stored in
+-- /secrets/platform-wallets.json). On-chain account is a NEAR
+-- implicit account (64-char hex of the ed25519 public key) — costs
+-- zero NEAR to "create" since implicit accounts materialize on
+-- first deposit.
+-- ============================================================
+
+-- Additional setting keys added to the default JSONB. Existing rows
+-- keep whatever settings they had; new rows get the expanded defaults.
+ALTER TABLE feed_tg_links
+  ALTER COLUMN settings SET DEFAULT
+    '{"likes":true,"reposts":true,"comments":true,"follows":true,"tips":true,"dms":true,"coin_created":true,"pump":true,"alpha":true,"downtime":true,"room_start":true,"group_msg":true,"voice_post":true,"recruit_post":true}'::jsonb;
+
+-- Custodial bot-account columns. Null until the user first /starts
+-- the bot, then minted once and reused forever. bot_key_encrypted is
+-- a base64-encoded {iv,tag,ciphertext} payload — format documented
+-- in backend/services/custodialBotWallet.js. Never expose these in
+-- any API response.
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS bot_account_id    TEXT;
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS bot_public_key    TEXT;
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS bot_key_encrypted TEXT;
+ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS bot_created_at    TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_links_bot_account
+  ON feed_tg_links(bot_account_id) WHERE bot_account_id IS NOT NULL;

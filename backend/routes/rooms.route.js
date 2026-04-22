@@ -203,6 +203,31 @@ router.post("/", requireWallet, async (req, res, next) => {
       [host.id]
     );
     const counts = await countLive(room.id);
+
+    // Fan out a TG notification to every follower of the host. Fire
+    // and forget — never block room creation on notification side
+    // effects. Followers without TG linked get nothing; those with
+    // room_start=false in their settings skip silently.
+    (async () => {
+      try {
+        const tg = require("../services/tgNotify");
+        const followers = await db.query(
+          "SELECT follower_id FROM feed_follows WHERE following_id = $1",
+          [host.id]
+        );
+        const hostName = hostRow.rows[0]?.display_name || hostRow.rows[0]?.username || "someone";
+        const text =
+          `🎙 *${hostName}* started a room\n` +
+          `_${(room.title || "untitled").slice(0, 120)}_\n` +
+          `[Join →](https://ironshield.pages.dev/rooms/view?id=${room.id})`;
+        for (const { follower_id } of followers.rows) {
+          tg.notifyFeedUser(follower_id, "room_start", text).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("[rooms] tg fanout failed:", e.message);
+      }
+    })();
+
     res.json({ room: hydrateRoom(room, counts, hostRow.rows[0]) });
   } catch (e) { next(e); }
 });

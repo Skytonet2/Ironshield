@@ -36,6 +36,9 @@ const tg = {
   listAlerts: (tgId) => req(`/api/tg/price-alerts/${tgId}`),
   addAlert: (payload) => req("/api/tg/price-alerts/add", { method: "POST", body: payload }),
   removeAlert: (id) => req("/api/tg/price-alerts/remove", { method: "POST", body: { id } }),
+  // Custodial trading account endpoints (Phase 7).
+  custodial: (tgId) => req(`/api/tg/custodial/${tgId}`),
+  custodialBalance: (tgId) => req(`/api/tg/custodial/${tgId}/balance`),
 };
 
 module.exports = { req, tg, BACKEND };

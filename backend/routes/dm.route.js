@@ -370,6 +370,35 @@ router.post("/groups/:groupId/send", requireWallet, async (req, res, next) => {
       [gid, me.id, content.slice(0, 4000)]
     );
     await db.query("UPDATE feed_group_chats SET last_message_at=NOW() WHERE id=$1", [gid]);
+
+    // TG fanout to every group member except the author. `group_msg`
+    // setting defaults ON per the 2026-04-22 migration; existing
+    // users without the key opt in by default (we treat missing as
+    // true server-side on the tgNotify check).
+    (async () => {
+      try {
+        const tg = require("../services/tgNotify");
+        const chat = await db.query(
+          "SELECT name FROM feed_group_chats WHERE id = $1", [gid]
+        );
+        const groupName = chat.rows[0]?.name || "group";
+        const senderName = me.display_name || me.username || "someone";
+        const preview = content.slice(0, 160).replace(/\s+/g, " ");
+        const text =
+          `💬 *${senderName}* in _${groupName.slice(0, 60)}_\n` +
+          `${preview}${content.length > 160 ? "…" : ""}`;
+        const members = await db.query(
+          "SELECT user_id FROM feed_group_chat_members WHERE group_id = $1 AND user_id <> $2",
+          [gid, me.id]
+        );
+        for (const { user_id } of members.rows) {
+          tg.notifyFeedUser(user_id, "group_msg", text).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("[dm] group-msg tg fanout failed:", e.message);
+      }
+    })();
+
     res.json({
       message: {
         ...r.rows[0],

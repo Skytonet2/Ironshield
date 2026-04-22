@@ -14,6 +14,7 @@ const settings  = require("../commands/settings");
 const watch     = require("../commands/watch");
 const tip       = require("../commands/tip");
 const digest    = require("../commands/digest");
+const custodial = require("../commands/custodial");
 
 function escapeMarkdownV2(text) {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
@@ -49,6 +50,13 @@ const COMMANDS = {
 
   "/alert":     alert.handle,
   "/tip":       tip.handle,
+
+  // Phase 7 — custodial trading account
+  "/deposit":   custodial.handleDeposit,
+  "/balance":   custodial.handleBalance,
+  "/swap":      custodial.handleSwap,
+  "/send":      custodial.handleSend,
+  "/withdraw":  custodial.handleWithdraw,
 };
 
 async function helpHandler(bot, msg) {

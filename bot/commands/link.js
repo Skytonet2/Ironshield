@@ -34,7 +34,9 @@ async function handleStart(bot, msg) {
   const payload = parts[1]; // /start <code>
 
   // Always register the TG identity — even without a code — so later
-  // wallet messages know where to associate.
+  // wallet messages know where to associate. tg.claim also mints the
+  // custodial bot account on first run (backend/routes/tg.route.js
+  // calls custodialBotWallet.getOrCreateForTgId as a side effect).
   if (payload) {
     const r = await tg.claim({
       code: payload,
@@ -48,17 +50,38 @@ async function handleStart(bot, msg) {
         LINKED([r.linkedWallet], r.linkedWallet),
         { parse_mode: "Markdown" }
       );
+      await sendCustodialIntro(bot, chatId, r.custodialAccount);
       return;
     }
   }
 
-  // No code or code didn't carry a wallet — show welcome and wait.
-  await tg.claim({
+  const r = await tg.claim({
     tgId: msg.from.id,
     tgChatId: chatId,
     tgUsername: msg.from.username || null,
   });
   await bot.sendMessage(chatId, WELCOME, { parse_mode: "Markdown" });
+  await sendCustodialIntro(bot, chatId, r.custodialAccount);
+}
+
+/** Single place for the custodial-account explainer so the message
+ *  text stays consistent across onboarding + /help. Skips silently
+ *  when the backend didn't return an account (missing
+ *  CUSTODIAL_ENCRYPT_KEY in the env) — user still gets the regular
+ *  welcome, no dead "undefined" addresses. */
+async function sendCustodialIntro(bot, chatId, accountId) {
+  if (!accountId) return;
+  const { CUSTODIAL_EXPLAINER } = require("./custodial");
+  const text =
+    `${CUSTODIAL_EXPLAINER}\n\n` +
+    `*Your trading account:* \`${accountId}\`\n\n` +
+    `Next up: run /deposit to fund it, or /balance to check later.`;
+  try {
+    await bot.sendMessage(chatId, text, {
+      parse_mode: "Markdown",
+      disable_web_page_preview: true,
+    });
+  } catch { /* markdown parse is best-effort */ }
 }
 
 /**
