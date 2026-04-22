@@ -45,39 +45,54 @@ async function logFee(row) {
 
 async function swapSolana({ side, token, amount, slippageBps, privySolWallet, priceUsd }) {
   if (!privySolWallet) throw new Error("Connect a Solana wallet");
-  if (!token?.inputMint || !token?.outputMint) {
-    throw new Error("Token missing mint metadata (inputMint/outputMint)");
+  if (!token?.baseMint || !token?.quoteMint) {
+    throw new Error(
+      "Token missing mint metadata. Pick it from search again — the " +
+      "selector enriches automatically on click."
+    );
   }
   const userPublicKey = privySolWallet.address;
   const feeAccount = getFeeWallet("sol");
 
-  // Amount is passed in token units (e.g. "0.5"). Scale to base
-  // units using inputDecimals. For Phase 3B-1 we trust the caller
-  // to pass a sane amount; a decimal-by-mint helper lands next turn.
-  const inputDecimals = token.inputDecimals ?? (side === "buy" ? 9 : token.baseDecimals);
-  const amountBase = Math.floor(Number(amount) * 10 ** inputDecimals).toString();
-  if (!amountBase || amountBase === "0") throw new Error("Amount too small");
+  // Direction — buy = quote→base (you're paying USDC/SOL for the base
+  // token); sell = base→quote (you're unloading). Base/quote convention
+  // is GeckoTerminal's and matches how the chart is priced.
+  const inputMint       = side === "buy" ? token.quoteMint      : token.baseMint;
+  const outputMint      = side === "buy" ? token.baseMint       : token.quoteMint;
+  const inputDecimals   = side === "buy" ? token.quoteDecimals  : token.baseDecimals;
+  const inputSymbol     = side === "buy" ? token.quoteSymbol    : token.baseSymbol;
+  const outputSymbol    = side === "buy" ? token.baseSymbol     : token.quoteSymbol;
+  const outputDecimals  = side === "buy" ? token.baseDecimals   : token.quoteDecimals;
+
+  if (!Number.isFinite(inputDecimals)) {
+    throw new Error(`Missing decimals for ${inputSymbol} — pick the pair again from search.`);
+  }
+
+  // Scale UI amount → base units. BigInt keeps us safe from the
+  // float-precision cliff at 10^15+ (SPL tokens can hit it for
+  // 9-decimal tokens above ~1M units).
+  const factor = 10n ** BigInt(inputDecimals);
+  const whole = BigInt(Math.floor(Number(amount)));
+  const frac = Math.floor((Number(amount) - Math.floor(Number(amount))) * Number(factor));
+  const amountBase = (whole * factor + BigInt(frac)).toString();
+  if (amountBase === "0") throw new Error("Amount too small");
 
   const quote = await getQuote({
-    inputMint:  token.inputMint,
-    outputMint: token.outputMint,
-    amountBase,
-    slippageBps,
-    feeAccount,
+    inputMint, outputMint, amountBase, slippageBps, feeAccount,
   });
   const base64Tx = await buildSwapTx({ quote, userPublicKey, feeAccount });
   const { signature } = await signAndSendSwap({ base64Tx, privySolWallet });
 
   const { fee: feeBaseStr, afterFee } = splitFeeBaseUnits(amountBase);
-  const feeUsd = priceUsd ? (Number(feeBaseStr) / 10 ** inputDecimals) * priceUsd : 0;
+  const feeUsd = priceUsd ? (Number(feeBaseStr) / Number(factor)) * priceUsd : 0;
 
   // Fire-and-forget backend writes so the UI settles immediately.
   logPosition({
     chain: "sol",
     wallet: userPublicKey,
-    token_address: token.poolAddress || token.outputMint,
-    token_symbol: side === "buy" ? token.baseSymbol : token.quoteSymbol,
-    token_decimals: token.baseDecimals || 6,
+    token_address: outputMint,
+    token_symbol: outputSymbol,
+    token_decimals: outputDecimals || 0,
     amount_base: quote.outAmount,
     entry_price_usd: priceUsd || 0,
     cost_basis_usd: priceUsd ? Number(amount) * priceUsd : 0,
@@ -86,8 +101,8 @@ async function swapSolana({ side, token, amount, slippageBps, privySolWallet, pr
   logFee({
     chain: "sol",
     wallet: userPublicKey,
-    token_in:  token.inputMint,
-    token_out: token.outputMint,
+    token_in:  inputMint,
+    token_out: outputMint,
     amount_in_base:  amountBase,
     fee_amount_base: feeBaseStr,
     fee_amount_usd:  feeUsd,

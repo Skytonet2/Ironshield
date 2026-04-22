@@ -93,6 +93,56 @@ export async function findPools({ chain, tokenAddress, signal }) {
   return pools;
 }
 
+/** Fetch a single pool's full detail — relationships expose the base
+ *  and quote token IDs (prefixed with the network slug). We strip the
+ *  prefix to get the raw mint / contract address and fold in decimals
+ *  via Jupiter's token API for Solana pools.
+ *
+ *  Returns: {
+ *    poolAddress, dex,
+ *    base:  { address, symbol, name, decimals, priceUsd },
+ *    quote: { address, symbol, name, decimals },
+ *  }
+ */
+export async function fetchPoolDetails({ chain, pool, signal }) {
+  const slug = NETWORK_SLUG[chain];
+  if (!slug) throw new Error(`Unsupported chain: ${chain}`);
+  const url = `${BASE}/networks/${slug}/pools/${pool}?include=base_token,quote_token`;
+  const res = await fetch(url, { signal, cache: "no-store" });
+  if (!res.ok) throw new Error(`geckoterminal pool ${res.status}`);
+  const j = await res.json();
+  const a = j?.data?.attributes || {};
+  const rels = j?.data?.relationships || {};
+  const included = j?.included || [];
+
+  // `included` carries expanded token objects keyed by relationship id.
+  const byId = new Map(included.map((t) => [t.id, t]));
+
+  const stripSlug = (id) => (typeof id === "string" ? id.replace(new RegExp(`^${slug}_`), "") : id);
+  const baseId  = rels.base_token?.data?.id;
+  const quoteId = rels.quote_token?.data?.id;
+  const baseTok  = byId.get(baseId);
+  const quoteTok = byId.get(quoteId);
+
+  return {
+    poolAddress: a.address || pool,
+    dex: a.dex_id || rels.dex?.data?.id || null,
+    base: {
+      address: stripSlug(baseId),
+      symbol:  baseTok?.attributes?.symbol  || a.base_token_symbol  || "",
+      name:    baseTok?.attributes?.name    || "",
+      decimals: Number(baseTok?.attributes?.decimals ?? NaN),
+      priceUsd: Number(a.base_token_price_usd || 0),
+    },
+    quote: {
+      address: stripSlug(quoteId),
+      symbol:  quoteTok?.attributes?.symbol || a.quote_token_symbol || "",
+      name:    quoteTok?.attributes?.name   || "",
+      decimals: Number(quoteTok?.attributes?.decimals ?? NaN),
+    },
+  };
+}
+
 /** Search tokens by free-text (ticker, name, partial CA). GeckoTerminal's
  *  `/search/pools` endpoint accepts a `query` param; filter to our chain. */
 export async function searchTokens({ chain, query, signal }) {

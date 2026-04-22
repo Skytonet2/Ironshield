@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search as SearchIcon } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
-import { searchTokens } from "@/lib/api/geckoTerminal";
+import { searchTokens, fetchPoolDetails } from "@/lib/api/geckoTerminal";
 
 const DEBOUNCE_MS = 220;
 
@@ -17,6 +17,28 @@ function fmtUsd(n) {
   if (n >= 1) return `$${n.toFixed(2)}`;
   if (n >= 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toExponential(2)}`;
+}
+
+/** Enrich a search result with mint addresses + decimals so the swap
+ *  path can build a Jupiter quote. Search API doesn't include these;
+ *  the pool-detail endpoint does. Falls back to the raw search row
+ *  when enrichment fails so the chart still works (swap will error
+ *  clearly with "Token missing mint metadata" on Execute).
+ */
+async function enrichWithMetadata(chain, raw) {
+  try {
+    const d = await fetchPoolDetails({ chain, pool: raw.poolAddress });
+    return {
+      ...raw,
+      baseMint:     d.base.address,
+      quoteMint:    d.quote.address,
+      baseDecimals: d.base.decimals,
+      quoteDecimals: d.quote.decimals,
+      dex: d.dex,
+    };
+  } catch {
+    return raw;
+  }
 }
 
 export default function TokenSelector({ chain, value, onPick }) {
@@ -112,7 +134,12 @@ export default function TokenSelector({ chain, value, onPick }) {
             <button
               key={r.poolAddress}
               type="button"
-              onClick={() => { onPick(r); setOpen(false); setQ(""); }}
+              onClick={async () => {
+                setOpen(false);
+                setQ("");
+                const enriched = await enrichWithMetadata(chain, r);
+                onPick(enriched);
+              }}
               style={{
                 display: "flex",
                 width: "100%",

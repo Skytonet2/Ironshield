@@ -16,6 +16,7 @@ import { useSettings } from "@/lib/stores/settingsStore";
 import PriceChart from "./PriceChart";
 import OrderPanel from "./OrderPanel";
 import TokenSelector from "./TokenSelector";
+import PositionsTable from "./PositionsTable";
 import { SUPPORTED_TIMEFRAMES } from "@/lib/api/geckoTerminal";
 
 // Sensible preset token for SOL so the page has a live chart on first
@@ -23,6 +24,12 @@ import { SUPPORTED_TIMEFRAMES } from "@/lib/api/geckoTerminal";
 // GeckoTerminal's NEAR pool addresses are numeric Ref pool IDs that
 // change as pools migrate, and hardcoding a stale one 404s. The
 // TokenSelector handles discovery cleanly.
+// Canonical mints, embedded so first-load Execute doesn't need the
+// TokenSelector enrichment roundtrip. TokenSelector picks enrich
+// themselves via fetchPoolDetails before firing onPick.
+const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
+const USDC_SOL    = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
 const DEFAULT_TOKEN = {
   sol: {
     // SOL/USDC on Raydium — one of the most-traded pools on Solana.
@@ -30,6 +37,12 @@ const DEFAULT_TOKEN = {
     baseSymbol: "SOL",
     quoteSymbol: "USDC",
     name: "Solana / USD Coin",
+    // Mint metadata lets OrderPanel.Execute build a Jupiter quote
+    // without an extra API call.
+    baseMint:     WRAPPED_SOL,
+    quoteMint:    USDC_SOL,
+    baseDecimals: 9,
+    quoteDecimals: 6,
   },
   near: null,
 };
@@ -159,6 +172,8 @@ export default function TradingTerminal() {
           priceUsd={null /* live price will hang off PriceChart/GT pool info in 3B */}
         />
       </div>
+
+      <PositionsTable />
     </div>
   );
 }

@@ -33,6 +33,43 @@ router.get("/ohlcv", async (req, res) => {
   }
 });
 
+/* ── GET /positions — list positions for a wallet ────────────────
+ *
+ * Paginated DESC by created_at. `open=1` restricts to positions the
+ * user hasn't closed (closed_at IS NULL) — the UI wants that by
+ * default; the history tab passes open=0 for closed rows too. Wallet
+ * scoping is case-insensitive because Solana uses mixed-case base58
+ * and we've seen a Privy quirk return the same address in different
+ * casings on refresh.
+ */
+router.get("/positions", async (req, res) => {
+  const wallet = String(req.query.wallet || "").trim();
+  const chain  = String(req.query.chain  || "").trim();
+  const open   = req.query.open !== "0";
+  const limit  = Math.min(Number(req.query.limit) || 50, 200);
+  if (!wallet) return res.status(400).json({ error: "wallet required" });
+  try {
+    const clauses = ["LOWER(wallet) = LOWER($1)"];
+    const params = [wallet];
+    if (chain) { clauses.push(`chain = $${params.length + 1}`); params.push(chain); }
+    if (open)  { clauses.push("closed_at IS NULL"); }
+    const sql =
+      `SELECT id, wallet, chain, token_address, token_symbol, token_decimals,
+              amount_base::text AS amount_base,
+              entry_price_usd, cost_basis_usd, entry_tx_hash,
+              closed_at, close_price_usd, realized_pnl_usd, close_tx_hash,
+              created_at
+         FROM trade_positions
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY created_at DESC
+        LIMIT ${limit}`;
+    const r = await db.query(sql, params);
+    res.json({ positions: r.rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ── POST /positions — log an open trade ──────────────────────────
  *
  * Called from the client right after a swap confirms. Body is the
