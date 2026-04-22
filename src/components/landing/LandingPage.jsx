@@ -98,7 +98,10 @@ export default function LandingPage() {
         <Hero />
         <TrustRow />
         <ProductShowcase />
+        <FeatureGrid />
         <StatsAndCTA />
+        <Testimonials />
+        <EcosystemGrid />
         <EmailSubscribe />
         <Footer />
 
@@ -153,6 +156,21 @@ export default function LandingPage() {
           .ix-footer-grid { display: grid; gap: 28px; }
           @media (min-width: 760px) {
             .ix-footer-grid { grid-template-columns: 1.4fr repeat(4, 1fr); }
+          }
+
+          .ix-feat-grid, .ix-eco-grid {
+            display: grid; gap: 18px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          }
+          @media (min-width: 960px) {
+            .ix-feat-grid, .ix-eco-grid { grid-template-columns: repeat(4, 1fr); }
+          }
+          .ix-test-grid {
+            display: grid; gap: 18px;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          }
+          @media (min-width: 960px) {
+            .ix-test-grid { grid-template-columns: repeat(3, 1fr); }
           }
         `}</style>
       </div>
@@ -1401,5 +1419,356 @@ function Footer() {
         <span>All rights reserved.</span>
       </div>
     </footer>
+  );
+}
+
+/* ─────────── FEATURE GRID ─────────── */
+
+const FEATURE_CARDS = [
+  { Icon: Bot,    color: "#60a5fa", title: "AI Agents",
+    desc: "Deploy personal agents that monitor the chain, automate trades, and summarize alpha — 24/7." },
+  { Icon: Users,  color: "#a855f7", title: "Governance",
+    desc: "Vote on proposals, shape protocol direction, and earn rewards for active participation." },
+  { Icon: Star,   color: "#10b981", title: "Rewards",
+    desc: "Complete missions, climb the leaderboard, and unlock exclusive on-chain drops." },
+  { Icon: Shield, color: "#f59e0b", title: "Secure by Design",
+    desc: "Non-custodial by default. Every action is verifiable on-chain — your keys, your rules." },
+];
+
+function FeatureGrid() {
+  return (
+    <section style={{ padding: "clamp(40px, 7vh, 80px) clamp(16px, 4vw, 32px)" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <Eyebrow>What&apos;s Inside</Eyebrow>
+          <h2 style={{
+            margin: "14px auto 10px", maxWidth: 720,
+            fontSize: "clamp(30px, 4vw, 46px)", fontWeight: 800,
+            lineHeight: 1.08, color: "#fff", letterSpacing: -0.6,
+          }}>
+            Everything you need, powered by{" "}
+            <span style={{
+              background: "linear-gradient(90deg, #60a5fa, #a855f7)",
+              WebkitBackgroundClip: "text", backgroundClip: "text",
+              WebkitTextFillColor: "transparent", color: "transparent",
+            }}>Web3</span>
+          </h2>
+          <p style={{
+            fontSize: 15, color: "rgba(230,236,247,0.6)",
+            margin: "0 auto", maxWidth: 560, lineHeight: 1.55,
+          }}>
+            Four pillars that make IronShield the most complete platform for Web3 social,
+            automation, and governance.
+          </p>
+        </div>
+        <div className="ix-feat-grid">
+          {FEATURE_CARDS.map((c, i) => <FeatureCard key={c.title} card={c} index={i} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureCard({ card, index }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, amount: 0.25 });
+  const { Icon } = card;
+  return (
+    <m.div
+      ref={ref}
+      initial={{ opacity: 0, y: 16 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.5, delay: 0.06 * index, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        position: "relative",
+        padding: 22, borderRadius: 16,
+        border: "1px solid rgba(255,255,255,0.06)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
+        overflow: "hidden",
+        transition: "transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-3px)";
+        e.currentTarget.style.borderColor = `${card.color}55`;
+        e.currentTarget.style.boxShadow = `0 20px 48px ${card.color}22`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
+        e.currentTarget.style.boxShadow = "none";
+      }}
+    >
+      <div aria-hidden style={{
+        position: "absolute", top: -40, right: -40,
+        width: 140, height: 140, borderRadius: "50%",
+        background: `radial-gradient(circle, ${card.color}30, transparent 65%)`,
+        filter: "blur(24px)",
+      }} />
+      <span style={{
+        position: "relative",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 44, height: 44, borderRadius: 12,
+        background: `${card.color}1a`, color: card.color,
+        border: `1px solid ${card.color}44`,
+        marginBottom: 14,
+      }}>
+        <Icon size={20} />
+      </span>
+      <div style={{
+        position: "relative", fontSize: 17, fontWeight: 800,
+        color: "#fff", marginBottom: 6, letterSpacing: -0.2,
+      }}>
+        {card.title}
+      </div>
+      <div style={{
+        position: "relative", fontSize: 13,
+        color: "rgba(230,236,247,0.6)", lineHeight: 1.6,
+      }}>
+        {card.desc}
+      </div>
+    </m.div>
+  );
+}
+
+/* ─────────── TESTIMONIALS ─────────── */
+
+const TESTIMONIALS = [
+  { name: "0xBuilder", handle: "@0xbuilder", role: "Smart contract engineer",
+    quote: "IronShield is the first platform where I can ship, vote, and earn from one dashboard. The agent automations alone pay for themselves.",
+    rating: 5 },
+  { name: "DeFiQueen", handle: "@defiqueen", role: "DeFi strategist",
+    quote: "The community-run AI feels like actual governance, not theater. My portfolio automations caught two reversals before I even woke up.",
+    rating: 5 },
+  { name: "ChainLegend", handle: "@chainlegend", role: "L2 researcher",
+    quote: "Finally — a Web3 social app that isn't just a Twitter clone. The agent + governance combo is the right primitive for the next cycle.",
+    rating: 5 },
+];
+
+function Testimonials() {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setActive((a) => (a + 1) % TESTIMONIALS.length), 7000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <section style={{ padding: "clamp(40px, 7vh, 80px) clamp(16px, 4vw, 32px)" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <Eyebrow>Loved by Builders</Eyebrow>
+          <h2 style={{
+            margin: "14px auto 10px", maxWidth: 680,
+            fontSize: "clamp(30px, 4vw, 46px)", fontWeight: 800,
+            lineHeight: 1.08, color: "#fff", letterSpacing: -0.6,
+          }}>
+            Trusted by the Web3 community
+          </h2>
+        </div>
+        <div className="ix-test-grid">
+          {TESTIMONIALS.map((t, i) => (
+            <TestimonialCard key={t.handle} t={t} active={active === i} index={i} />
+          ))}
+        </div>
+        <div style={{
+          display: "flex", justifyContent: "center", gap: 8, marginTop: 24,
+        }}>
+          {TESTIMONIALS.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setActive(i)}
+              aria-label={`Show testimonial ${i + 1}`}
+              style={{
+                width: active === i ? 24 : 8, height: 8, borderRadius: 999,
+                border: "none", cursor: "pointer", padding: 0,
+                background: active === i
+                  ? "linear-gradient(90deg, #a855f7, #3b82f6)"
+                  : "rgba(255,255,255,0.12)",
+                transition: "width 240ms ease, background 240ms ease",
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TestimonialCard({ t, active, index }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, amount: 0.25 });
+  return (
+    <m.div
+      ref={ref}
+      initial={{ opacity: 0, y: 16 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.5, delay: 0.08 * index, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        position: "relative",
+        padding: 22, borderRadius: 16,
+        border: `1px solid ${active ? "rgba(168,85,247,0.4)" : "rgba(255,255,255,0.06)"}`,
+        background: active
+          ? "linear-gradient(180deg, rgba(168,85,247,0.08), rgba(59,130,246,0.04))"
+          : "rgba(255,255,255,0.02)",
+        boxShadow: active ? "0 20px 48px rgba(168,85,247,0.2)" : "none",
+        transform: active ? "translateY(-2px)" : "translateY(0)",
+        transition: "border-color 260ms ease, background 260ms ease, box-shadow 260ms ease, transform 260ms ease",
+      }}
+    >
+      <div style={{ display: "flex", gap: 2, marginBottom: 12 }}>
+        {Array.from({ length: t.rating }).map((_, i) => (
+          <Star key={i} size={14} color="#f59e0b" fill="#f59e0b" />
+        ))}
+      </div>
+      <p style={{
+        fontSize: 14.5, lineHeight: 1.6,
+        color: "rgba(230,236,247,0.86)", margin: "0 0 18px",
+      }}>
+        &ldquo;{t.quote}&rdquo;
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          width: 38, height: 38, borderRadius: "50%",
+          background: "linear-gradient(135deg, #a855f7, #3b82f6)",
+          flexShrink: 0,
+        }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{t.name}</div>
+          <div style={{ fontSize: 11, color: "rgba(230,236,247,0.55)" }}>
+            {t.handle} · {t.role}
+          </div>
+        </div>
+      </div>
+    </m.div>
+  );
+}
+
+/* ─────────── ECOSYSTEM GRID ─────────── */
+
+const ECOSYSTEM_TILES = [
+  { Icon: ArrowLeftRight, color: "#60a5fa", title: "Bridge", href: "/bridge",
+    stat: "6 chains",
+    desc: "Move assets across Ethereum, Solana, Base, Arbitrum, Avalanche, and NEAR." },
+  { Icon: Coins, color: "#a855f7", title: "Staking", href: "/staking",
+    stat: "12% APY",
+    desc: "Stake $IRONCLAW, secure the network, and earn a share of protocol revenue." },
+  { Icon: Activity, color: "#10b981", title: "Analytics", href: "/portfolio",
+    stat: "Real-time",
+    desc: "Live dashboards, portfolio performance, and market sentiment in one view." },
+  { Icon: Briefcase, color: "#f59e0b", title: "Marketplace", href: "/automations",
+    stat: "120+ templates",
+    desc: "Discover AI agent templates, automations, and community workflows." },
+];
+
+function EcosystemGrid() {
+  return (
+    <section id="ecosystem" style={{ padding: "clamp(40px, 7vh, 80px) clamp(16px, 4vw, 32px)" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <Eyebrow>One Platform</Eyebrow>
+          <h2 style={{
+            margin: "14px auto 10px", maxWidth: 720,
+            fontSize: "clamp(30px, 4vw, 46px)", fontWeight: 800,
+            lineHeight: 1.08, color: "#fff", letterSpacing: -0.6,
+          }}>
+            Powering the future of{" "}
+            <span style={{
+              background: "linear-gradient(90deg, #60a5fa, #a855f7)",
+              WebkitBackgroundClip: "text", backgroundClip: "text",
+              WebkitTextFillColor: "transparent", color: "transparent",
+            }}>Web3</span>
+          </h2>
+          <p style={{
+            fontSize: 15, color: "rgba(230,236,247,0.6)",
+            margin: "0 auto", maxWidth: 560, lineHeight: 1.55,
+          }}>
+            Bridge, stake, analyze, and automate — every surface you need, natively integrated.
+          </p>
+        </div>
+        <div className="ix-eco-grid">
+          {ECOSYSTEM_TILES.map((t, i) => <EcosystemTile key={t.title} tile={t} index={i} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EcosystemTile({ tile, index }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, amount: 0.25 });
+  const { Icon } = tile;
+  return (
+    <m.a
+      ref={ref}
+      href={tile.href}
+      initial={{ opacity: 0, y: 16 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.5, delay: 0.06 * index, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        position: "relative",
+        display: "flex", flexDirection: "column", gap: 10,
+        padding: 20, borderRadius: 16,
+        border: "1px solid rgba(255,255,255,0.06)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
+        textDecoration: "none", color: "inherit",
+        overflow: "hidden", minHeight: 200,
+        transition: "transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-3px)";
+        e.currentTarget.style.borderColor = `${tile.color}55`;
+        e.currentTarget.style.boxShadow = `0 20px 48px ${tile.color}22`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
+        e.currentTarget.style.boxShadow = "none";
+      }}
+    >
+      <div aria-hidden style={{
+        position: "absolute", bottom: -40, left: -40,
+        width: 140, height: 140, borderRadius: "50%",
+        background: `radial-gradient(circle, ${tile.color}30, transparent 65%)`,
+        filter: "blur(24px)",
+      }} />
+      <div style={{
+        position: "relative",
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+      }}>
+        <span style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 40, height: 40, borderRadius: 10,
+          background: `${tile.color}1a`, color: tile.color,
+          border: `1px solid ${tile.color}44`,
+        }}>
+          <Icon size={18} />
+        </span>
+        <span style={{
+          fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
+          padding: "3px 8px", borderRadius: 999,
+          background: `${tile.color}14`, color: tile.color,
+          border: `1px solid ${tile.color}33`,
+          textTransform: "uppercase",
+        }}>{tile.stat}</span>
+      </div>
+      <div style={{
+        position: "relative", fontSize: 17, fontWeight: 800,
+        color: "#fff", letterSpacing: -0.2,
+      }}>
+        {tile.title}
+      </div>
+      <div style={{
+        position: "relative", fontSize: 13,
+        color: "rgba(230,236,247,0.6)", lineHeight: 1.55, flex: 1,
+      }}>
+        {tile.desc}
+      </div>
+      <div style={{
+        position: "relative",
+        display: "inline-flex", alignItems: "center", gap: 4,
+        marginTop: 4, fontSize: 12, fontWeight: 700, color: tile.color,
+      }}>
+        Explore <ArrowUpRight size={12} />
+      </div>
+    </m.a>
   );
 }
