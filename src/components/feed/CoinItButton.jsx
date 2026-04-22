@@ -15,6 +15,7 @@
 import { useState } from "react";
 import { Zap } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
+import LaunchpadSelector from "@/components/create/LaunchpadSelector";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -89,13 +90,16 @@ function CoinItModal({
   const [chain, setChain]   = useState("near");
   const [busy, setBusy]     = useState(false);
   const [status, setStatus] = useState(null);
+  const [handoff, setHandoff] = useState(null);  // non-null opens the LaunchpadSelector
 
   async function submit() {
     if (!name.trim() || !ticker.trim()) return;
     setBusy(true);
     setStatus("Logging intent…");
     try {
-      const res = await fetch(`${BACKEND_BASE}/api/feed/coin-it`, {
+      // Fire-and-forget the analytics log so the funnel is measured
+      // even if the user abandons the launchpad step.
+      await fetch(`${BACKEND_BASE}/api/feed/coin-it`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -107,17 +111,36 @@ function CoinItModal({
           chain,
           platform:       "ironshield",
         }),
+      }).catch(() => { /* soft-fail — keep the UX moving */ });
+
+      // Hand off to the launchpad selector pre-filled with the user's
+      // edited name/ticker. Closes the Coin It → launch funnel fully;
+      // external platforms open in a new tab, IronShield Pad deep-
+      // links into the NewsCoin flow.
+      setHandoff({
+        name:   name.trim(),
+        ticker: ticker.trim().toUpperCase(),
+        sourceUrl: sourceUrl || null,
+        initialChain: chain,
       });
-      if (!res.ok) throw new Error(`server ${res.status}`);
-      setStatus(
-        "Logged. Full launch flow (IronClaw name-suggest + chain deploy) " +
-        "lands in Phase 5 alongside the launchpad selector."
-      );
     } catch (e) {
       setStatus(`Failed: ${e.message}`);
     } finally {
       setBusy(false);
     }
+  }
+
+  // Once the user commits, the Coin It modal fades into the
+  // LaunchpadSelector. Keeps the back-to-source continuity —
+  // prefill carries forward so they don't retype anything.
+  if (handoff) {
+    return (
+      <LaunchpadSelector
+        prefill={handoff}
+        initialChain={handoff.initialChain}
+        onClose={() => { setHandoff(null); onClose(); }}
+      />
+    );
   }
 
   return (
@@ -246,7 +269,7 @@ function CoinItModal({
             cursor: busy ? "wait" : "pointer",
           }}
         >
-          {busy ? "Logging…" : "Coin It"}
+          {busy ? "Logging…" : "Continue to Launchpad"}
         </button>
       </div>
     </div>

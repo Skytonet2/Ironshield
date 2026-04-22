@@ -29,6 +29,7 @@ import { useFeed } from "@/lib/stores/feedStore";
 import { usePrices } from "@/lib/hooks/usePrices";
 import AmbientBackground from "./AmbientBackground";
 import UserMenu from "@/components/auth/UserMenu";
+import LaunchpadSelector from "@/components/create/LaunchpadSelector";
 
 // lucide-react has no Bridge glyph; ArrowLeftRight is the closest
 // semantic fit for a cross-chain swap action.
@@ -390,9 +391,18 @@ function BottomBar() {
 export default function AppShell({ children, rightPanel = null, onAction }) {
   const t = useTheme();
   const pathname = usePathname();
-  // Stub handler so props stay optional; actions open modals in later phases.
   const [note, setNote] = useState(null);
-  const handleAction = onAction || ((kind) => setNote(`${kind} (wires up in a later phase)`));
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createPrefill, setCreatePrefill] = useState(null);
+
+  // AppShell routes CREATE/scan/etc. centrally so every route gets
+  // the launch modal without plumbing props. Callers can still pass
+  // onAction for route-specific overrides (e.g. /trading's "open the
+  // order book" in a later phase).
+  const handleAction = onAction || ((kind) => {
+    if (kind === "create") { setCreateOpen(true); setCreatePrefill(null); return; }
+    setNote(`${kind} (wires up in a later phase)`);
+  });
 
   return (
     <div style={{
@@ -426,6 +436,12 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
         )}
       </div>
       <BottomBar />
+      {createOpen && (
+        <LaunchpadSelector
+          prefill={createPrefill}
+          onClose={() => { setCreateOpen(false); setCreatePrefill(null); }}
+        />
+      )}
       {note && (
         <div
           onClick={() => setNote(null)}
