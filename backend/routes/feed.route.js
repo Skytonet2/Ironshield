@@ -4,6 +4,9 @@ const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, hydratePosts } = require("../services/feedHelpers");
 const { rankForYou, rankFollowing } = require("../services/feedRanker");
+const {
+  VOICES_PRESET_HANDLES, categoryOf,
+} = require("../data/voicesPreset");
 
 // GET /api/feed/foryou?cursor=&limit=20
 router.get("/foryou", async (req, res, next) => {
@@ -44,6 +47,93 @@ router.post("/engagement", async (req, res, next) => {
       "INSERT INTO feed_engagement (user_id, post_id, dwell_ms) VALUES ($1,$2,$3)",
       [viewer.id, postId, Math.min(dwellMs, 600_000)]);
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// GET /api/feed/voices?limit=30
+//
+// The Voices tab — a mixed stream of two sources:
+//   1. Native IronShield posts flagged as Voice
+//      (feed_posts.media_type = 'VOICE' OR kind = 'voice')
+//   2. Recent tweets from the 200-handle Voices preset via Nitter
+//      (shaped into the same post object as native posts, so the
+//      frontend FeedCard can render both identically).
+//
+// Shown in reverse-chronological order, with each post carrying a
+// `voice_category` field so UI can filter by politics/crypto/etc.
+router.get("/voices", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    const viewer = wallet ? await getOrCreateUser(wallet) : null;
+    const limit  = Math.min(parseInt(req.query.limit) || 30, 100);
+    const filterCategory = String(req.query.category || "").toLowerCase() || null;
+
+    // 1. Native voice posts.
+    const nativeQ = await db.query(
+      `SELECT p.* FROM feed_posts p
+       WHERE p.deleted_at IS NULL
+         AND (p.media_type = 'VOICE' OR p.kind = 'voice')
+       ORDER BY p.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+    const native = await hydratePosts(nativeQ.rows, viewer?.id);
+    const nativeShaped = native.map((p) => ({ ...p, voice_category: null }));
+
+    // 2. Preset tweets via xfeed's in-module helpers. Importing the
+    //    route module gets us cache + fetch semantics for free. If
+    //    NITTER_BASE_URL isn't set, this returns an empty list and the
+    //    client falls back to just the native posts.
+    let external = [];
+    try {
+      const xfeed = require("./xfeed.route");
+      // The route module doesn't export fetchHandleTweets directly —
+      // it's internal. Call via the timeline handler's logic by
+      // reading the preset from our own data module and invoking the
+      // same fetch helper. We re-require the fetch helper indirectly
+      // by going through the cached version xfeed maintains.
+      const { fetchHandleTweets } = xfeed.__internal || {};
+      if (fetchHandleTweets) {
+        const handles = VOICES_PRESET_HANDLES.slice(0, 40);  // throttle per request
+        const perHandle = Math.max(1, Math.ceil(limit / handles.length));
+        const results = await Promise.all(handles.map((h) =>
+          fetchHandleTweets(h, perHandle).catch(() => [])
+        ));
+        external = results.flat().filter((t) => t && t.id);
+      }
+    } catch { /* xfeed not loaded — skip */ }
+
+    const externalShaped = external.map((t) => ({
+      id: `x:${t.id}`,
+      content: t.text || "",
+      kind: "voice",
+      mediaType: "VOICE",
+      media_type: "VOICE",
+      mediaUrls: t.media || [],
+      createdAt: t.createdAt,
+      author: {
+        username: t.handle,
+        display_name: t.displayName || t.handle,
+        pfp_url: t.pfp || null,
+        account_type: "X",
+        verified: false,
+        wallet_address: `x:${t.handle}`,
+      },
+      likes: 0, reposts: 0, comments: 0,
+      likedByMe: false, repostedByMe: false,
+      voice_category: categoryOf(t.handle),
+    }));
+
+    const merged = [...nativeShaped, ...externalShaped]
+      .filter((p) => !filterCategory || p.voice_category === filterCategory)
+      .sort((a, b) => {
+        const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+        const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+        return tb - ta;
+      })
+      .slice(0, limit);
+
+    res.json({ posts: merged });
   } catch (e) { next(e); }
 });
 

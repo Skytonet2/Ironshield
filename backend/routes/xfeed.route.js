@@ -25,31 +25,19 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
+const {
+  VOICES_CATEGORIES,
+  VOICES_PRESET_HANDLES,
+  categoryOf,
+} = require("../data/voicesPreset");
 
 /* ── Defaults ──────────────────────────────────────────────────── */
 
-// Curated "top CT voices" preset. Handles only (no @), one per row.
-// Picked for signal-to-noise across on-chain analysis, macro, and
-// protocol research. Governance can rotate this via a PromptUpdate
-// proposal later (we'll move it into activeMission.json when the
-// governance contract ships that proposal type).
-const PRESET_HANDLES = [
-  "cobie",
-  "0xMert_",
-  "gainzy222",
-  "trader1sz",
-  "ansemf",
-  "icebergy_",
-  "zachxbt",
-  "Loopifyyy",
-  "AltcoinGordon",
-  "jesse_pollak",
-  "CryptoHayes",
-  "hasufl",
-  "RyanSAdams",
-  "punk9059",
-  "tayvano_",
-];
+// The preset ships as ~200 public voices across 6 categories
+// (politics, crypto, trends, web3, stock, tech) — see
+// backend/data/voicesPreset.js. Governance can rotate any of them via
+// a future PromptUpdate proposal.
+const PRESET_HANDLES = VOICES_PRESET_HANDLES;
 
 // Comma-separated env is nicer than JSON for ops. If nothing is set,
 // the timeline endpoint returns a structured "not_configured" payload
@@ -414,5 +402,10 @@ router.get("/handle/:handle", async (req, res) => {
   const items = await fetchHandleTweets(handle, limit);
   res.json({ handle, tweets: items });
 });
+
+// Internal handles for cross-module reuse — feed.route.js uses this
+// to build the Voices mixed stream without re-implementing the Nitter
+// cache layer.
+router.__internal = { fetchHandleTweets };
 
 module.exports = router;

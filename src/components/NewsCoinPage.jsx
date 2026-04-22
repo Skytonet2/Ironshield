@@ -1284,33 +1284,45 @@ export default function NewsCoinPage() {
   }, [loadMore]);
 
   const openCoin = (coin) => {
-    // Desktop: route into the full 3-column NewsCoinTerminal.
-    // Mobile: keep the existing slide-up CoinModal sheet.
-    if (isDesktop) {
-      setTerminalCoinId(coin.id || coin.coinAddress);
-      return;
-    }
-    setSelectedCoin(coin);
-    setSelectedPost(coin.post || { content: coin.headline, coins: [coin] });
+    // Always route into the full NewsCoinTerminal — it stacks on mobile
+    // (chart full-width + order panel as a slide-up drawer), so the old
+    // CoinModal slide-up sheet is no longer the mobile fallback. Having
+    // one code path means every platform gets candles, trades, and the
+    // buy/sell flow identically.
+    setTerminalCoinId(coin.id || coin.coinAddress);
   };
 
-  // Deep-link support: if a ?id= is present in the hash route, open the
-  // terminal directly on that coin (e.g. from push notifications or feed
-  // sidebar clicks).
+  // Deep-link support: accept either ?id= / ?token= in the location
+  // query (e.g. from YourDeploysPanel right-rail links) OR in the hash
+  // route's query (#?id=... from push notifications). Opens the
+  // terminal on that coin for any viewport.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const read = () => {
+      const tryOpen = (id) => { if (id) setTerminalCoinId(id); };
+      // Top-level query (static-export normal links)
+      try {
+        const qs = new URLSearchParams(window.location.search);
+        tryOpen(qs.get("id") || qs.get("token"));
+      } catch {}
+      // Hash query (legacy hash-routed deep links)
       const h = window.location.hash || "";
       const qIdx = h.indexOf("?");
-      if (qIdx === -1) return;
-      const params = new URLSearchParams(h.slice(qIdx + 1));
-      const id = params.get("id");
-      if (id && isDesktop) setTerminalCoinId(id);
+      if (qIdx !== -1) {
+        try {
+          const params = new URLSearchParams(h.slice(qIdx + 1));
+          tryOpen(params.get("id") || params.get("token"));
+        } catch {}
+      }
     };
     read();
     window.addEventListener("hashchange", read);
-    return () => window.removeEventListener("hashchange", read);
-  }, [isDesktop]);
+    window.addEventListener("popstate", read);
+    return () => {
+      window.removeEventListener("hashchange", read);
+      window.removeEventListener("popstate", read);
+    };
+  }, []);
 
   // If the terminal is open, render it full-bleed in place of the list.
   if (terminalCoinId) {
