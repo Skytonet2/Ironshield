@@ -25,6 +25,7 @@ import { useNotifications } from "@/lib/hooks/useNotifications";
 import NotificationsDrawer from "@/components/notifications/NotificationsDrawer";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { BrandMark } from "@/components/brand/Brand";
 import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
@@ -312,10 +313,7 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
         borderBottom: `1px solid ${t.border}`,
         margin: "0 -4px 4px",
       }}>
-        <Shield size={20} color={t.accent} />
-        <span style={{ fontSize: 15, fontWeight: 800, color: t.white, letterSpacing: -0.3 }}>
-          IronShield
-        </span>
+        <BrandMark size={22} withWordmark />
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -458,9 +456,8 @@ function TopNav({ pathname, onAction, isMobile, onDrawer, unreadCount = 0 }) {
           <Menu size={16} />
         </button>
       )}
-      <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-        <Shield size={18} style={{ color: t.accent }} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>IronShield</span>
+      <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: t.text }}>
+        <BrandMark size={20} withWordmark />
       </Link>
       {!isMobile && (
       <nav style={{ display: "flex", gap: 4, marginLeft: 20 }}>

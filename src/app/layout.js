@@ -26,7 +26,14 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata = {
   title: "IronShield | NEAR Protocol",
   description: "AI Security. On-Chain. Unstoppable.",
-  icons: { icon: "/icon.svg", apple: "/mascot.png" },
+  icons: {
+    icon: "/icon.svg",
+    // Apple touch icon now uses the branded app-icon (rounded-square
+    // container + shield) rather than the raw mascot photo — the OS
+    // renders these with its own mask, so a solid-bg crest works best.
+    apple: "/brand/app-icon.svg",
+    shortcut: "/icon.svg",
+  },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -42,11 +49,14 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
       <head>
-        <link rel="preload" as="image" href="/mascot.webp" type="image/webp" />
-        <meta name="theme-color" content="#3b82f6" />
+        {/* Preload mascot raster used in the landing hero + CTA band.
+            Browser prefers .webp but the file doesn't ship yet — preload
+            the .png we actually have. */}
+        <link rel="preload" as="image" href="/mascot.png" />
+        <meta name="theme-color" content="#0b0e1c" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <link rel="apple-touch-icon" href="/mascot.png" />
+        <link rel="apple-touch-icon" href="/brand/app-icon.svg" />
         <style dangerouslySetInnerHTML={{ __html: `
           /* Pre-React loader — pure CSS, no JS required for animation.
              Designed to feel premium rather than "a spinner with a
@@ -217,8 +227,23 @@ export default function RootLayout({ children }) {
               <div className="ic-ring ic-ring-outer" />
               <div className="ic-ring" />
               <div className="ic-shield">
-                <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2L3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6l-9-4z" />
+                {/* Inline SVG so it paints on first byte — <img> would
+                    load async and flash empty. Geometry matches the
+                    brand-system shield (public/brand/shield-*.svg). */}
+                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
+                  <path
+                    d="M32 4 L54 10 C55.5 10.4 56.5 11.8 56.5 13.4 L56.5 32 C56.5 44.3 48 54.3 32 60 C16 54.3 7.5 44.3 7.5 32 L7.5 13.4 C7.5 11.8 8.5 10.4 10 10 Z"
+                    fill="#0b0e1c"
+                    stroke="rgba(255,255,255,0.85)"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                  />
+                  <g transform="translate(32, 34)" fill="rgba(255,255,255,0.95)">
+                    <rect x="-6" y="-8" width="12" height="12" rx="2.4" />
+                    <rect x="-4.5" y="-6" width="9" height="2.5" rx="0.8" fill="#1a1d2e" />
+                    <circle cx="-2.5" cy="1.2" r="1.4" fill="#1a1d2e" />
+                    <circle cx="2.5"  cy="1.2" r="1.4" fill="#1a1d2e" />
+                  </g>
                 </svg>
               </div>
             </div>

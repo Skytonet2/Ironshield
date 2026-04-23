@@ -33,6 +33,7 @@ import {
 import {
   LazyMotion, domAnimation, m, AnimatePresence, useInView,
 } from "@/lib/motion";
+import { BrandMark as SharedBrandMark, BrandPrimary } from "@/components/brand/Brand";
 
 const NAV_LINKS = [
   { label: "Features", href: "#features" },
@@ -320,17 +321,14 @@ function LaunchCta({ href }) {
   );
 }
 
+// Landing-page-local BrandMark shim. Delegates to the shared
+// src/components/brand system so the nav-sized crest uses the real
+// shield geometry + glow instead of the old gradient-square+lucide
+// placeholder. Kept here (rather than replacing every call site)
+// because the landing page uses it in three places and the call
+// signature stays stable.
 function BrandMark({ size = 28 }) {
-  return (
-    <span aria-hidden style={{
-      width: size, height: size, borderRadius: size * 0.3,
-      background: "linear-gradient(135deg, #a855f7, #3b82f6)",
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-      boxShadow: "0 8px 22px rgba(168,85,247,0.4), inset 0 1px 0 rgba(255,255,255,0.22)",
-    }}>
-      <Shield size={Math.round(size * 0.58)} color="#fff" />
-    </span>
-  );
+  return <SharedBrandMark size={size} />;
 }
 
 /* ───────────────────────────── HERO ───────────────────────────── */

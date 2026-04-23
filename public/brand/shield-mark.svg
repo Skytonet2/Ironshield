@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" role="img" aria-label="IronShield">
+  <!-- Nav mark: minimal shield with simplified mascot face. Tuned to
+       stay clean and recognizable at 16px–40px sizes — no gradients
+       that go muddy at small scales, strokes scaled for crispness. -->
+  <defs>
+    <linearGradient id="ix-m-rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#60a5fa" />
+    </linearGradient>
+  </defs>
+  <path
+    d="M12 2 L20 4.2 C20.5 4.35 20.85 4.85 20.85 5.4 L20.85 12
+       C20.85 16.6 17.85 20.4 12 22.4 C6.15 20.4 3.15 16.6 3.15 12
+       L3.15 5.4 C3.15 4.85 3.5 4.35 4 4.2 Z"
+    fill="#0b0e1c"
+    stroke="url(#ix-m-rim)"
+    stroke-width="1.3"
+    stroke-linejoin="round"
+  />
+  <!-- Mascot face (simplified) -->
+  <g transform="translate(12, 13)">
+    <rect x="-3.8" y="-4.8" width="7.6" height="8" rx="1.6" fill="#d8dcf5" />
+    <rect x="-2.8" y="-3.5" width="5.6" height="2" rx="0.6" fill="#1a1d2e" />
+    <circle cx="-1.6" cy="1" r="0.9" fill="#1a1d2e" />
+    <circle cx="1.6"  cy="1" r="0.9" fill="#1a1d2e" />
+  </g>
+</svg>

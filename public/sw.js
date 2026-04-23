@@ -1,9 +1,19 @@
 // IronShield Service Worker — PWA offline shell + push notifications
-// Bumped to v2: some mobile clients were stuck loading because v1 held
-// onto broken chunk responses. Activate clears every non-current cache,
-// so bumping the name is the kill-switch.
-const CACHE_NAME = "ironshield-v2";
-const SHELL_URLS = ["/", "/icon.svg", "/mascot.png"];
+// Bumped to v3 alongside the brand-system rollout: adds the new
+// /brand/* assets to the shell cache, and the bumped name forces
+// every client to clear its v2 cache on next visit (which held the
+// old mascot-only app icon).
+const CACHE_NAME = "ironshield-v3";
+const SHELL_URLS = [
+  "/",
+  "/icon.svg",
+  "/mascot.png",
+  "/brand/app-icon.svg",
+  "/brand/shield-mark.svg",
+  "/brand/shield-primary.svg",
+  "/brand/shield-mono.svg",
+  "/brand/social-avatar.svg",
+];
 
 // ─── Install: cache the app shell ──────────────────────────────────
 self.addEventListener("install", (e) => {
@@ -83,7 +93,10 @@ self.addEventListener("push", (e) => {
 
   const options = {
     body,
-    icon: "/mascot.png",
+    // Push-notification chrome: full-color app-icon for the big icon,
+    // monochrome shield for the status-bar badge (Android flattens
+    // badges to white; the outline + cut-outs stay legible).
+    icon: "/brand/app-icon.svg",
     badge: "/icon.svg",
     tag: data.tag || "general",
     renotify: true,

@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="IronShield">
+  <!-- Primary brand shield: premium gradient fill + purple outer glow.
+       Used on landing hero, marketing surfaces. Mascot silhouette is
+       intentionally simplified so the silhouette reads clearly at
+       every size this file is rasterized to. -->
+  <defs>
+    <linearGradient id="ix-shield-body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#232742" />
+      <stop offset="100%" stop-color="#0b0e1c" />
+    </linearGradient>
+    <linearGradient id="ix-shield-rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#c4b8ff" />
+      <stop offset="55%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#60a5fa" />
+    </linearGradient>
+    <linearGradient id="ix-helmet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#eef0fc" />
+      <stop offset="100%" stop-color="#9aa1c8" />
+    </linearGradient>
+    <filter id="ix-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.4" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Shield body -->
+  <path
+    d="M32 4 L54 10 C55.5 10.4 56.5 11.8 56.5 13.4 L56.5 32
+       C56.5 44.3 48 54.3 32 60 C16 54.3 7.5 44.3 7.5 32
+       L7.5 13.4 C7.5 11.8 8.5 10.4 10 10 Z"
+    fill="url(#ix-shield-body)"
+    stroke="url(#ix-shield-rim)"
+    stroke-width="1.6"
+    stroke-linejoin="round"
+    filter="url(#ix-glow)"
+  />
+
+  <!-- Mascot: knight helmet -->
+  <g transform="translate(32, 34)">
+    <!-- Antennae -->
+    <path d="M-8 -16 L-10 -22" stroke="#e6e8f5" stroke-width="1.4" stroke-linecap="round" />
+    <path d="M 8 -16 L 10 -22" stroke="#e6e8f5" stroke-width="1.4" stroke-linecap="round" />
+    <circle cx="-10" cy="-22" r="1.3" fill="#c4b8ff" />
+    <circle cx="10" cy="-22" r="1.3" fill="#c4b8ff" />
+
+    <!-- Side ear caps -->
+    <rect x="-14" y="-4" width="3" height="8" rx="1.2" fill="url(#ix-helmet)" />
+    <rect x="11" y="-4" width="3" height="8" rx="1.2" fill="url(#ix-helmet)" />
+
+    <!-- Helmet body -->
+    <path
+      d="M-11 -16 C-11 -20 -7 -22 0 -22 C 7 -22 11 -20 11 -16
+         L 11 4 C 11 7 8 9 0 9 C -8 9 -11 7 -11 4 Z"
+      fill="url(#ix-helmet)"
+    />
+
+    <!-- Visor slits -->
+    <g fill="#1a1d2e">
+      <rect x="-9"   y="-12" width="2" height="6" rx="0.8" />
+      <rect x="-5.5" y="-12" width="2" height="6" rx="0.8" />
+      <rect x="-2"   y="-12" width="2" height="6" rx="0.8" />
+      <rect x="1.5"  y="-12" width="2" height="6" rx="0.8" />
+      <rect x="5"    y="-12" width="2" height="6" rx="0.8" />
+    </g>
+
+    <!-- Eyes — big + friendly -->
+    <circle cx="-4.5" cy="-1" r="2.6" fill="#1a1d2e" />
+    <circle cx="4.5"  cy="-1" r="2.6" fill="#1a1d2e" />
+    <circle cx="-3.6" cy="-1.8" r="0.9" fill="#e6e8f5" />
+    <circle cx="5.4"  cy="-1.8" r="0.9" fill="#e6e8f5" />
+  </g>
+</svg>
