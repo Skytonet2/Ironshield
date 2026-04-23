@@ -17,6 +17,8 @@ import {
   Smile, Link2, Globe, Users, Lock, ChevronDown, Sparkles, Shield,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
+import { useWallet as useWalletStore } from "@/lib/stores/walletStore";
+import { useSettings } from "@/lib/stores/settingsStore";
 import useNear from "@/hooks/useNear";
 
 // Heuristic: does this address look like a NEAR account? Accepts `x.near`,
@@ -49,8 +51,27 @@ const AUDIENCES = [
 
 export default function ComposeBar({ onPosted }) {
   const t = useTheme();
-  const { address, showModal } = useWallet();
+  const nearCtx = useWallet();
+  const { showModal } = nearCtx;
   const { callMethod } = useNear();
+  // Posting works regardless of which wallet type is connected. We
+  // accept, in order of preference: NEAR wallet-selector address,
+  // active-chain Privy wallet (per settingsStore), then any Privy
+  // EVM/SOL wallet as a last-resort fallback. This stays in sync with
+  // how FeedCard/FeedRightRail read the viewer identity, and fixes the
+  // regression where connecting via Privy alone blanked out the Post
+  // button (NEAR ctx's `address` was null).
+  const activeChain    = useSettings((s) => s.activeChain);
+  const nearWallet     = useWalletStore((s) => s.near);
+  const solWallet      = useWalletStore((s) => s.sol);
+  const bnbWallet      = useWalletStore((s) => s.bnb);
+  const address = useMemo(() => {
+    if (nearCtx?.address) return nearCtx.address;
+    if (activeChain === "sol" && solWallet?.address) return solWallet.address;
+    if (activeChain === "bnb" && bnbWallet?.address) return bnbWallet.address;
+    if (activeChain === "near" && nearWallet?.address) return nearWallet.address;
+    return nearWallet?.address || solWallet?.address || bnbWallet?.address || null;
+  }, [nearCtx?.address, activeChain, nearWallet?.address, solWallet?.address, bnbWallet?.address]);
   const [open, setOpen]       = useState(false);
   const [text, setText]       = useState("");
   const [voice, setVoice]     = useState(false);
@@ -224,7 +245,10 @@ export default function ComposeBar({ onPosted }) {
           onchainTx,
         }),
       });
-      if (!res.ok) throw new Error(`post failed (${res.status})`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || j?.hint || `Post failed (${res.status})`);
+      }
       const j = await res.json();
       setText(""); setVoice(false); setMediaUrls([]); setOpen(false); setAud("everyone");
       setOnchain(false);
