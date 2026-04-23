@@ -56,28 +56,66 @@ router.post("/repost", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/social/comment  body: { postId, content }
+// POST /api/social/comment  body: { postId, content, parentCommentId? }
+// parentCommentId turns the comment into a nested reply — validated
+// against the same post so users can't cross-link into another post's
+// thread. Notifies the post author for top-level comments, and the
+// PARENT comment's author for replies.
 router.post("/comment", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const { postId, content } = req.body || {};
     if (!content || content.length > 500) return res.status(400).json({ error: "content required, max 500" });
+    // Validate parent belongs to the same post if provided.
+    let parentCommentId = null;
+    if (req.body?.parentCommentId != null) {
+      const pid = parseInt(req.body.parentCommentId, 10);
+      if (Number.isFinite(pid)) {
+        const p = await db.query(
+          "SELECT post_id, author_id FROM feed_comments WHERE id=$1 LIMIT 1",
+          [pid]
+        );
+        if (p.rows[0]?.post_id === postId) {
+          parentCommentId = pid;
+        }
+      }
+    }
     const r = await db.query(
-      "INSERT INTO feed_comments (author_id, post_id, content) VALUES ($1,$2,$3) RETURNING *",
-      [user.id, postId, content]);
-    const author = await db.query("SELECT author_id FROM feed_posts WHERE id=$1", [postId]);
-    if (author.rows[0]) notify(author.rows[0].author_id, "comment", user.id, postId);
-    await enqueue(user.id, "comment", { postId, commentId: r.rows[0].id });
+      "INSERT INTO feed_comments (author_id, post_id, content, parent_comment_id) VALUES ($1,$2,$3,$4) RETURNING *",
+      [user.id, postId, content, parentCommentId]);
+    // Notification target: parent comment author for a reply,
+    // post author for a top-level comment. Self-replies skip notify.
+    if (parentCommentId) {
+      const parent = await db.query(
+        "SELECT author_id FROM feed_comments WHERE id=$1", [parentCommentId]
+      );
+      const target = parent.rows[0]?.author_id;
+      if (target && target !== user.id) notify(target, "comment", user.id, postId);
+    } else {
+      const author = await db.query("SELECT author_id FROM feed_posts WHERE id=$1", [postId]);
+      const target = author.rows[0]?.author_id;
+      if (target && target !== user.id) notify(target, "comment", user.id, postId);
+    }
+    await enqueue(user.id, "comment", { postId, commentId: r.rows[0].id, parentCommentId });
     res.json({ comment: r.rows[0] });
   } catch (e) { next(e); }
 });
 
+// GET /api/social/comments/:postId
+//
+// Returns flat list ordered oldest→newest so the frontend can build
+// a tree in O(n) via a single pass. Old behavior (DESC) was fine for
+// a flat list but tree rendering needs parents before children for
+// the render order to be stable across reloads. UI caps at 300
+// comments per post; the cap is loose — nested reply counts will
+// realistically stay well under this.
 router.get("/comments/:postId", async (req, res, next) => {
   try {
     const r = await db.query(
-      `SELECT c.*, u.username, u.display_name, u.pfp_url, u.account_type
+      `SELECT c.*, u.username, u.display_name, u.pfp_url, u.account_type,
+              u.wallet_address
          FROM feed_comments c JOIN feed_users u ON u.id = c.author_id
-        WHERE c.post_id=$1 ORDER BY c.created_at DESC LIMIT 100`, [req.params.postId]);
+        WHERE c.post_id=$1 ORDER BY c.created_at ASC LIMIT 300`, [req.params.postId]);
     res.json({ comments: r.rows });
   } catch (e) { next(e); }
 });

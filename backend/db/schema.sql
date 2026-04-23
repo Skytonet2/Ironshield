@@ -208,7 +208,15 @@ CREATE TABLE IF NOT EXISTS feed_comments (
   content    TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Nested-thread support: a comment can reply to another comment in
+-- the same post. NULL = top-level. ON DELETE SET NULL keeps child
+-- comments alive if the parent is deleted; the UI shows "in reply
+-- to a deleted comment." Added via ALTER so existing deployments
+-- pick it up on next migrate() without a manual step.
+ALTER TABLE feed_comments
+  ADD COLUMN IF NOT EXISTS parent_comment_id INTEGER REFERENCES feed_comments(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_feed_comments_post ON feed_comments(post_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feed_comments_parent ON feed_comments(parent_comment_id) WHERE parent_comment_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS feed_reposts (
   id         SERIAL PRIMARY KEY,
