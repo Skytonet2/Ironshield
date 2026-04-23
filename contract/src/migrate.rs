@@ -21,7 +21,10 @@
 // b"mr").
 
 use crate::*;
-use near_sdk::store::{LookupMap as OldLookupMap, Vector as OldVector};
+use near_sdk::store::{
+    LookupMap as OldLookupMap, LookupSet as OldLookupSet,
+    UnorderedMap as OldUnorderedMap, Vector as OldVector,
+};
 
 /// Byte-for-byte mirror of the deployed `StakingContract` state.
 /// DO NOT change this struct after the upgrade has run on mainnet — its only
@@ -107,6 +110,188 @@ impl StakingContract {
             vanguard_nft_contracts,
             vanguard_verified:      LookupSet::new(b"V"),
             vanguard_token_id_max:  1000,
+
+            // Agent profiles + points (initialized empty on Phase 1 → Phase 4 path)
+            agent_profiles:      UnorderedMap::new(b"G"),
+            agent_handles:       UnorderedMap::new(b"H"),
+            total_points_issued: 0,
+            agent_stats:         UnorderedMap::new(b"S"),
+        }
+    }
+}
+
+/// Byte-for-byte mirror of the Phase-3 (post-`migrate_add_agents()`) shape.
+/// Used by `migrate_v4_agent_stats()` to upgrade an already-Phase-3 contract
+/// without discarding state. Do NOT edit once the Phase 4 upgrade has run on
+/// mainnet.
+#[near(serializers=[borsh])]
+struct Phase3StakingContract {
+    owner_id:               AccountId,
+    ironclaw_token_id:      AccountId,
+    pools:                  OldVector<PoolInfo>,
+    user_info:              OldLookupMap<String, UserInfo>,
+    reward_per_ns:          Balance,
+    last_reward_time:       u64,
+    total_alloc_point:      u32,
+    paused:                 bool,
+    proposals:              OldVector<Proposal>,
+    votes:                  OldLookupMap<String, String>,
+    mission_results:        OldLookupMap<u32, MissionResult>,
+    orchestrator_id:        AccountId,
+    total_revenue:          Balance,
+    distributed_revenue:    Balance,
+    staker_share_bps:       u32,
+    contributor_share_bps:  u32,
+    reserve_share_bps:      u32,
+    proposer_share_bps:     u32,
+    contributor_wallet:     AccountId,
+    reserve_wallet:         AccountId,
+    proposer_wallet:        AccountId,
+    pretoken_mode:          bool,
+    contributors:           OldUnorderedMap<AccountId, ContributorInfo>,
+    pending_applications:   OldUnorderedMap<AccountId, ContributorApplication>,
+    vanguard_nft_contracts: OldVector<AccountId>,
+    vanguard_verified:      OldLookupSet<AccountId>,
+    vanguard_token_id_max:  u64,
+    agent_profiles:         OldUnorderedMap<AccountId, AgentProfile>,
+    agent_handles:          OldUnorderedMap<String, AccountId>,
+    total_points_issued:    Balance,
+}
+
+#[near]
+impl StakingContract {
+    /// Phase 3 → Phase 4 upgrade: preserves all existing state and seeds the
+    /// new per-agent stats storage. Safe to call exactly once on a contract
+    /// that has already run `migrate_add_agents()`.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate_v4_agent_stats() -> Self {
+        let old: Phase3StakingContract = env::state_read()
+            .expect("No state to migrate — was the contract ever initialized?");
+
+        env::log_str("EVENT_JSON:{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"state_migrated\",\"data\":{\"to\":\"phase4_agent_stats\"}}");
+
+        Self {
+            owner_id:               old.owner_id,
+            ironclaw_token_id:      old.ironclaw_token_id,
+            pools:                  old.pools,
+            user_info:              old.user_info,
+            reward_per_ns:          old.reward_per_ns,
+            last_reward_time:       old.last_reward_time,
+            total_alloc_point:      old.total_alloc_point,
+            paused:                 old.paused,
+            proposals:              old.proposals,
+            votes:                  old.votes,
+            mission_results:        old.mission_results,
+            orchestrator_id:        old.orchestrator_id,
+            total_revenue:          old.total_revenue,
+            distributed_revenue:    old.distributed_revenue,
+            staker_share_bps:       old.staker_share_bps,
+            contributor_share_bps:  old.contributor_share_bps,
+            reserve_share_bps:      old.reserve_share_bps,
+            proposer_share_bps:     old.proposer_share_bps,
+            contributor_wallet:     old.contributor_wallet,
+            reserve_wallet:         old.reserve_wallet,
+            proposer_wallet:        old.proposer_wallet,
+            pretoken_mode:          old.pretoken_mode,
+            contributors:           old.contributors,
+            pending_applications:   old.pending_applications,
+            vanguard_nft_contracts: old.vanguard_nft_contracts,
+            vanguard_verified:      old.vanguard_verified,
+            vanguard_token_id_max:  old.vanguard_token_id_max,
+            agent_profiles:         old.agent_profiles,
+            agent_handles:          old.agent_handles,
+            total_points_issued:    old.total_points_issued,
+
+            // Phase 4 — empty stats map, populated lazily by award_points etc.
+            agent_stats: UnorderedMap::new(b"S"),
+        }
+    }
+}
+
+/// Byte-for-byte mirror of the Phase-2 (post-`migrate()`) shape. Used by
+/// `migrate_add_agents()` to upgrade an already-Phase-2 contract without
+/// discarding state. Do NOT edit once the Phase 3 upgrade has run on mainnet.
+#[near(serializers=[borsh])]
+struct Phase2StakingContract {
+    owner_id:               AccountId,
+    ironclaw_token_id:      AccountId,
+    pools:                  OldVector<PoolInfo>,
+    user_info:              OldLookupMap<String, UserInfo>,
+    reward_per_ns:          Balance,
+    last_reward_time:       u64,
+    total_alloc_point:      u32,
+    paused:                 bool,
+    proposals:              OldVector<Proposal>,
+    votes:                  OldLookupMap<String, String>,
+    mission_results:        OldLookupMap<u32, MissionResult>,
+    orchestrator_id:        AccountId,
+    total_revenue:          Balance,
+    distributed_revenue:    Balance,
+    staker_share_bps:       u32,
+    contributor_share_bps:  u32,
+    reserve_share_bps:      u32,
+    proposer_share_bps:     u32,
+    contributor_wallet:     AccountId,
+    reserve_wallet:         AccountId,
+    proposer_wallet:        AccountId,
+    pretoken_mode:          bool,
+    contributors:           OldUnorderedMap<AccountId, ContributorInfo>,
+    pending_applications:   OldUnorderedMap<AccountId, ContributorApplication>,
+    vanguard_nft_contracts: OldVector<AccountId>,
+    vanguard_verified:      OldLookupSet<AccountId>,
+    vanguard_token_id_max:  u64,
+}
+
+#[near]
+impl StakingContract {
+    /// Phase 2 → Phase 3 upgrade: preserves all existing state and seeds the
+    /// new agent profile / points storage. Safe to call exactly once on a
+    /// contract that has already run `migrate()` (or deployed fresh with the
+    /// Phase 2 `new()` signature). Call order in the deploy transaction:
+    /// deploy-code + `migrate_add_agents`.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate_add_agents() -> Self {
+        let old: Phase2StakingContract = env::state_read()
+            .expect("No state to migrate — was the contract ever initialized?");
+
+        env::log_str("EVENT_JSON:{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"state_migrated\",\"data\":{\"to\":\"phase3_agents\"}}");
+
+        Self {
+            owner_id:               old.owner_id,
+            ironclaw_token_id:      old.ironclaw_token_id,
+            pools:                  old.pools,
+            user_info:              old.user_info,
+            reward_per_ns:          old.reward_per_ns,
+            last_reward_time:       old.last_reward_time,
+            total_alloc_point:      old.total_alloc_point,
+            paused:                 old.paused,
+            proposals:              old.proposals,
+            votes:                  old.votes,
+            mission_results:        old.mission_results,
+            orchestrator_id:        old.orchestrator_id,
+            total_revenue:          old.total_revenue,
+            distributed_revenue:    old.distributed_revenue,
+            staker_share_bps:       old.staker_share_bps,
+            contributor_share_bps:  old.contributor_share_bps,
+            reserve_share_bps:      old.reserve_share_bps,
+            proposer_share_bps:     old.proposer_share_bps,
+            contributor_wallet:     old.contributor_wallet,
+            reserve_wallet:         old.reserve_wallet,
+            proposer_wallet:        old.proposer_wallet,
+            pretoken_mode:          old.pretoken_mode,
+            contributors:           old.contributors,
+            pending_applications:   old.pending_applications,
+            vanguard_nft_contracts: old.vanguard_nft_contracts,
+            vanguard_verified:      old.vanguard_verified,
+            vanguard_token_id_max:  old.vanguard_token_id_max,
+
+            // New agent + points storage
+            agent_profiles:      UnorderedMap::new(b"G"),
+            agent_handles:       UnorderedMap::new(b"H"),
+            total_points_issued: 0,
+            agent_stats:         UnorderedMap::new(b"S"),
         }
     }
 }

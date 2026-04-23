@@ -13,9 +13,11 @@ mod treasury;
 mod missions;
 mod web4;
 mod pretoken;
+mod agents;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
+pub use agents::{AgentProfile, AgentStats, ActivityEntry};
 
 pub type PoolId = u32;
 
@@ -132,6 +134,26 @@ pub struct StakingContract {
     /// Top-N rule: token IDs in [1, vanguard_token_id_max] count as Vanguard.
     /// Default 1000 = top 30% of NEAR Legion's 3,333 supply.
     pub vanguard_token_id_max:  u64,
+
+    // ── Agent profiles + points (Slice 1) ──────────────────────────────
+    /// Platform identity for a user's agent. Keyed by owner AccountId; the
+    /// optional `agent_account` inside holds the scoped sub-wallet once the
+    /// owner links it.
+    pub agent_profiles:      UnorderedMap<AccountId, AgentProfile>,
+    /// Case-insensitive handle → owner index. Enforces uniqueness and powers
+    /// handle-based lookups from the frontend.
+    pub agent_handles:       UnorderedMap<String, AccountId>,
+    /// Monotonic total of all points ever awarded. Drives the pool-share math
+    /// for the future $IRONCLAW conversion and sanity-checks drift against
+    /// summed profile balances.
+    pub total_points_issued: Balance,
+
+    // ── Agent stats (Phase 4) ──────────────────────────────────────────
+    /// Per-agent rolling stats: weekly points snapshots, submission/mission
+    /// counters, last-active, and a bounded recent-activity ring buffer. Kept
+    /// as a separate map from `agent_profiles` so Phase 4 didn't need to
+    /// rewrite existing profiles; each entry is lazy-created on first write.
+    pub agent_stats: UnorderedMap<AccountId, AgentStats>,
 }
 
 #[near]
@@ -176,6 +198,12 @@ impl StakingContract {
             vanguard_nft_contracts,
             vanguard_verified:      LookupSet::new(b"V"),
             vanguard_token_id_max:  1000,
+
+            // Agent profiles + points
+            agent_profiles:      UnorderedMap::new(b"G"),
+            agent_handles:       UnorderedMap::new(b"H"),
+            total_points_issued: 0,
+            agent_stats:         UnorderedMap::new(b"S"),
         }
     }
 }
