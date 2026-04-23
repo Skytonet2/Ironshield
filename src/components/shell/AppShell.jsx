@@ -75,14 +75,15 @@ const SIDEBAR_GROUPS = [
   {
     label: "Platform",
     items: [
-      { key: "ironfeed",    label: "IronFeed",         Icon: Rss,           href: "/feed"        },
-      { key: "newscoin",    label: "NewsCoin",         Icon: Coins,         href: "/newscoin"    },
-      { key: "portfolio",   label: "Portfolio",        Icon: Briefcase,     href: "/portfolio"   },
-      { key: "bridge",      label: "Bridge",           Icon: ArrowLeftRight, href: "/bridge"     },
-      { key: "automations", label: "Automations",      Icon: Zap,           href: "/automations" },
-      { key: "profile",     label: "Profile",          Icon: User,          href: "/profile"     },
-      { key: "rewards",     label: "Rewards",          Icon: Trophy,        href: "/rewards"     },
-      { key: "rooms",       label: "Rooms",            Icon: Mic,           href: "/rooms"       },
+      { key: "ironfeed",    label: "IronFeed",         Icon: Rss,            href: "/feed"        },
+      { key: "messages",    label: "Messages",         Icon: MessageCircle,  href: "/messages"    },
+      { key: "newscoin",    label: "NewsCoin",         Icon: Coins,          href: "/newscoin"    },
+      { key: "portfolio",   label: "Portfolio",        Icon: Briefcase,      href: "/portfolio"   },
+      { key: "bridge",      label: "Bridge",           Icon: ArrowLeftRight, href: "/bridge"      },
+      { key: "automations", label: "Automations",      Icon: Zap,            href: "/automations" },
+      { key: "profile",     label: "Profile",          Icon: User,           href: "/profile"     },
+      { key: "rewards",     label: "Rewards",          Icon: Trophy,         href: "/rewards"     },
+      { key: "rooms",       label: "Rooms",            Icon: Mic,            href: "/rooms"       },
     ],
   },
   {

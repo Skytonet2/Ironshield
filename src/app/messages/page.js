@@ -822,12 +822,12 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             LiveKit room flow is wired up; for now they're disabled
             placeholders so the layout matches the reference. */}
         <button type="button" title="Voice call — coming soon" aria-label="Voice call"
-          disabled style={iconHeaderBtn(t, { disabled: true })}
+          disabled className="ix-msg-header-voice" style={iconHeaderBtn(t, { disabled: true })}
         >
           <Phone size={15} />
         </button>
         <button type="button" title="Video call — coming soon" aria-label="Video call"
-          disabled style={iconHeaderBtn(t, { disabled: true })}
+          disabled className="ix-msg-header-video" style={iconHeaderBtn(t, { disabled: true })}
         >
           <Video size={15} />
         </button>
@@ -998,11 +998,17 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             style={{ transition: "transform 160ms ease", transform: actionOpen ? "rotate(45deg)" : "none" }}
           />
         </button>
+        {/* Secondary quick-icons — hidden on phones so the input pill
+            gets breathing room. Every action is still reachable via the
+            + sheet, and desktop has plenty of horizontal space for all
+            four. The .ix-msg-quick class is toggled by the block at
+            the bottom of Thread. */}
         <button
           type="button"
           onClick={() => alert("Attach an image — comes with the media upload pass in the next build.")}
           aria-label="Attach image"
           title="Attach image"
+          className="ix-msg-quick"
           style={composerIconBtn(t)}
         >
           <ImageIcon size={16} />
@@ -1016,6 +1022,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           }}
           aria-label="Share chart"
           title="Share chart"
+          className="ix-msg-quick"
           style={composerIconBtn(t)}
         >
           <BarChart3 size={16} />
@@ -1025,6 +1032,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           onClick={() => setText((p) => `${p}${p.endsWith(" ") || !p ? "" : " "}🙂 `)}
           aria-label="Emoji"
           title="Emoji — quick insert"
+          className="ix-msg-quick"
           style={composerIconBtn(t)}
         >
           <Smile size={16} />
@@ -1093,6 +1101,18 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           .ix-msg-list[data-hidden-on-mobile="true"]   { display: none; }
           .ix-msg-thread[data-hidden-on-mobile="true"] { display: none; }
           .ix-msg-back { display: inline-flex !important; }
+
+          /* Composer: hide the image/chart/emoji shortcut icons on
+             phones — the + sheet still carries all of them, and the
+             input pill needs the horizontal room. */
+          .ix-msg-quick { display: none !important; }
+
+          /* Thread header: collapse the 4-button cluster down to
+             info + kebab on phones. Phone/video are still reachable
+             via the kebab's menu on a future pass; for now the
+             sparser header fits cleanly at 375–393px widths. */
+          .ix-msg-header-voice,
+          .ix-msg-header-video { display: none !important; }
         }
         @keyframes ic-spin { to { transform: rotate(360deg); } }
         .ic-spin { animation: ic-spin 800ms linear infinite; }
