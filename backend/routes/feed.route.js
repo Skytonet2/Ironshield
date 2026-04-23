@@ -131,6 +131,12 @@ router.get("/voices", async (req, res, next) => {
     //    NITTER_BASE_URL isn't set, this returns an empty list and the
     //    client falls back to just the native posts.
     let external = [];
+    // Track upstream state so the frontend can show a useful banner
+    // instead of a silent empty feed. `status` is one of:
+    //   "ok"             — fetched non-zero tweets (or we never tried)
+    //   "not_configured" — NITTER_BASE_URL is unset
+    //   "upstream_down"  — configured instances returned empty / failed
+    let externalStatus = "ok";
     try {
       const xfeed = require("./xfeed.route");
       const { fetchHandleTweets } = xfeed.__internal || {};
@@ -156,9 +162,12 @@ router.get("/voices", async (req, res, next) => {
             fetchHandleTweets(h, perHandle).catch(() => [])
           ));
           external = results.flat().filter((t) => t && t.id);
+          if (external.length === 0) externalStatus = "upstream_down";
         }
+      } else {
+        externalStatus = "not_configured";
       }
-    } catch { /* xfeed not loaded — skip */ }
+    } catch { externalStatus = "upstream_down"; }
 
     const externalShaped = external.map((t) => ({
       id: `x:${t.id}`,
@@ -190,7 +199,12 @@ router.get("/voices", async (req, res, next) => {
       })
       .slice(0, limit);
 
-    res.json({ posts: merged });
+    res.json({
+      posts: merged,
+      externalStatus,
+      nativeCount:   nativeShaped.length,
+      externalCount: externalShaped.length,
+    });
   } catch (e) { next(e); }
 });
 

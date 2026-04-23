@@ -340,11 +340,21 @@ router.get("/groups/:groupId/messages", requireWallet, async (req, res, next) =>
     const gid = parseInt(req.params.groupId, 10);
     if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
     if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
+    // LEFT JOIN the reply target so we get a one-line preview of the
+    // quoted message for the UI (sender handle + first 80 chars). If
+    // the parent was deleted, ON DELETE SET NULL leaves reply_to_id
+    // null — the UI falls back to "Replying to a deleted message."
     const r = await db.query(
-      `SELECT gm.id, gm.content, gm.created_at,
-              u.wallet_address AS from_wallet, COALESCE(u.display_name, u.username, u.wallet_address) AS from_display
+      `SELECT gm.id, gm.content, gm.created_at, gm.reply_to_id,
+              u.wallet_address AS from_wallet,
+              COALESCE(u.display_name, u.username, u.wallet_address) AS from_display,
+              rm.content       AS reply_to_content,
+              ru.wallet_address AS reply_to_wallet,
+              COALESCE(ru.display_name, ru.username, ru.wallet_address) AS reply_to_display
          FROM feed_group_messages gm
          JOIN feed_users u ON u.id = gm.from_id
+         LEFT JOIN feed_group_messages rm ON rm.id = gm.reply_to_id
+         LEFT JOIN feed_users ru ON ru.id = rm.from_id
         WHERE gm.group_id = $1
         ORDER BY gm.created_at ASC
         LIMIT 300`,
@@ -354,20 +364,33 @@ router.get("/groups/:groupId/messages", requireWallet, async (req, res, next) =>
   } catch (e) { next(e); }
 });
 
-// POST /api/dm/groups/:groupId/send  body: { content }
+// POST /api/dm/groups/:groupId/send  body: { content, replyToId? }
 router.post("/groups/:groupId/send", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
     const gid = parseInt(req.params.groupId, 10);
     const content = String(req.body?.content || "").trim();
+    // replyToId is optional; validate that it exists in the SAME group
+    // so a member of group A can't reply into group B (info leak).
+    let replyToId = null;
+    if (req.body?.replyToId != null) {
+      const candidate = parseInt(req.body.replyToId, 10);
+      if (Number.isFinite(candidate)) {
+        const r = await db.query(
+          "SELECT group_id FROM feed_group_messages WHERE id=$1 LIMIT 1",
+          [candidate]
+        );
+        if (r.rows[0]?.group_id === gid) replyToId = candidate;
+      }
+    }
     if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
     if (!content) return res.status(400).json({ error: "content required" });
     if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
     const r = await db.query(
-      `INSERT INTO feed_group_messages (group_id, from_id, content)
-       VALUES ($1,$2,$3)
-       RETURNING id, content, created_at`,
-      [gid, me.id, content.slice(0, 4000)]
+      `INSERT INTO feed_group_messages (group_id, from_id, content, reply_to_id)
+       VALUES ($1,$2,$3,$4)
+       RETURNING id, content, created_at, reply_to_id`,
+      [gid, me.id, content.slice(0, 4000), replyToId]
     );
     await db.query("UPDATE feed_group_chats SET last_message_at=NOW() WHERE id=$1", [gid]);
 

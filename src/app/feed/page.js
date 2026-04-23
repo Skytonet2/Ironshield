@@ -13,6 +13,7 @@ import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
 import ComposeBar from "@/components/feed/ComposeBar";
 import FeedRightRail from "@/components/feed/FeedRightRail";
+import ReferrerFollowPrompt from "@/components/feed/ReferrerFollowPrompt";
 import { m, feedContainerVariants, feedCardVariants } from "@/lib/motion";
 
 const BACKEND_BASE = (() => {
@@ -106,6 +107,11 @@ export default function FeedPage() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+  // Voices-tab upstream status — "ok" | "not_configured" | "upstream_down".
+  // Used to render a small "Voices temporarily unavailable" banner so
+  // users with no tweets don't stare at an empty feed wondering what
+  // broke. Only set when viewing the voices tab.
+  const [voicesStatus, setVoicesStatus] = useState("ok");
   const [muted, refreshMuted] = useMutedSet(wallet);
 
   useEffect(() => {
@@ -154,6 +160,9 @@ export default function FeedPage() {
           if (!res.ok) throw new Error(`${target.label} ${res.status}`);
           const j = await res.json();
           setPosts(j.posts || []);
+          if (tab === "voices") {
+            setVoicesStatus(j.externalStatus || "ok");
+          }
         }
       } catch (e) {
         if (e.name !== "AbortError") setErr(e.message);
@@ -284,6 +293,10 @@ export default function FeedPage() {
   return (
     <AppShell rightPanel={<FeedRightRail />}>
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "12px 16px" }}>
+        {/* Invited-by banner — renders only for brand-new users who
+            arrived via /?ref=<code>. Dismissed permanently after the
+            first click or x. See ReferrerFollowPrompt for details. */}
+        <ReferrerFollowPrompt />
         <ComposeBar onPosted={prependPost} />
 
         {/* Tab strip */}
@@ -318,6 +331,30 @@ export default function FeedPage() {
             );
           })}
         </div>
+
+        {/* Voices upstream status banner — only on the Voices tab,
+            only when the backend flagged the X-source as dead. Gives
+            users a reason when the feed's thin instead of an
+            unexplained empty page. */}
+        {tab === "voices" && voicesStatus !== "ok" && (
+          <div style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: `1px solid rgba(245,158,11,0.35)`,
+            background: "rgba(245,158,11,0.08)",
+            color: t.text, fontSize: 12, lineHeight: 1.5,
+            marginBottom: 10,
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>
+              Voices: external feed temporarily unavailable
+            </div>
+            <div style={{ color: t.textDim }}>
+              {voicesStatus === "not_configured"
+                ? "The X-bridge isn't configured on this backend — only native IronShield posts show below."
+                : "The upstream Nitter instance isn't responding right now. Native posts still work; X-sourced tweets will come back when upstream recovers."}
+            </div>
+          </div>
+        )}
 
         {/* States */}
         {loading && posts.length === 0 && (

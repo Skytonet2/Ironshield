@@ -290,8 +290,17 @@ CREATE TABLE IF NOT EXISTS feed_group_messages (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Per-message reply target. Nullable — most messages aren't replies.
+-- ON DELETE SET NULL keeps the replying message alive if its parent
+-- is removed; the UI falls back to "Replying to a deleted message".
+-- IF NOT EXISTS (pg 9.6+) so existing deployments pick it up on the
+-- next migrate() run without a manual step.
+ALTER TABLE feed_group_messages
+  ADD COLUMN IF NOT EXISTS reply_to_id INTEGER REFERENCES feed_group_messages(id) ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON feed_group_chat_members(user_id, group_id);
 CREATE INDEX IF NOT EXISTS idx_group_messages_group ON feed_group_messages(group_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_group_messages_reply ON feed_group_messages(reply_to_id) WHERE reply_to_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS feed_ad_campaigns (
   id          SERIAL PRIMARY KEY,

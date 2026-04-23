@@ -120,6 +120,36 @@ router.get("/comments/:postId", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/social/following-state?target=<wallet>
+//
+// Returns { following: bool } for the authed viewer vs the target
+// wallet. Used by FollowButton to render the correct initial label
+// without the "Follow → Following" flip on mount. Returns false for
+// unauthed viewers, self-follow attempts, or when the target user
+// row doesn't exist yet (nothing to follow).
+router.get("/following-state", requireWallet, async (req, res, next) => {
+  try {
+    const target = String(req.query.target || "").trim();
+    if (!target) return res.json({ following: false });
+    const viewer = await getOrCreateUser(req.wallet);
+    // Don't auto-create the target on a state-read — avoids inflating
+    // the users table with drive-by lookups of handles that don't
+    // exist. Look up strictly.
+    const tRow = await db.query(
+      "SELECT id FROM feed_users WHERE LOWER(wallet_address)=LOWER($1) LIMIT 1",
+      [target]
+    );
+    if (!tRow.rows.length || tRow.rows[0].id === viewer.id) {
+      return res.json({ following: false });
+    }
+    const r = await db.query(
+      "SELECT 1 FROM feed_follows WHERE follower_id=$1 AND following_id=$2 LIMIT 1",
+      [viewer.id, tRow.rows[0].id]
+    );
+    res.json({ following: r.rows.length > 0 });
+  } catch (e) { next(e); }
+});
+
 // POST /api/social/follow  body: { targetWallet }
 router.post("/follow", requireWallet, async (req, res, next) => {
   try {
