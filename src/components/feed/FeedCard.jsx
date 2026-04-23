@@ -148,10 +148,17 @@ function Metric({ Icon, label, count, active, color, onClick, t }) {
 
 export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip, onReply, onMute, onDelete }) {
   const t = useTheme() || {};
+  // viewer can arrive in two shapes depending on the caller:
+  //   - the WalletCtx object (address field, used by /feed/page.js)
+  //   - a server user row ({ wallet_address, username, ... }, used by
+  //     IronFeedPage legacy call sites).
+  // Without this fallback the impression POST silently lands with
+  // viewerWallet=null and the backend bails with skipped:"no-wallet",
+  // so every card's "views" counter stays stuck at 0.
   const nodeRef = useImpression({
     postId: post?.id,
     isOwn: !!isOwn,
-    viewerWallet: viewer?.wallet_address || null,
+    viewerWallet: viewer?.wallet_address || viewer?.address || null,
   });
   // Defensive: if the backend returns `null` as a post row (very
   // occasionally happens on cursor-boundary hydration), render

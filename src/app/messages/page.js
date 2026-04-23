@@ -267,6 +267,14 @@ export default function MessagesPage() {
         .ix-msg-grid {
           display: grid;
           grid-template-columns: 300px minmax(0, 1fr);
+          /* Row template is load-bearing. Without \`minmax(0, 1fr)\` the
+             implicit row auto-sizes to content, so when a thread is
+             short (few messages) the row collapses and the composer
+             floats in the middle of the viewport with a giant empty
+             band below it. The minmax floor at 0 also lets the scroll
+             area shrink below its intrinsic content size instead of
+             blowing out the row. */
+          grid-template-rows: minmax(0, 1fr);
           height: 100%;
           border: 1px solid var(--border, #1d2540);
           border-radius: 14px;
@@ -310,6 +318,17 @@ export default function MessagesPage() {
         @media (prefers-reduced-motion: reduce) {
           .ix-msg-bubble, .ix-msg-bubble[data-fresh="true"] { animation: none !important; }
           .ix-typing-dot { animation: none !important; }
+        }
+
+        /* Composer drag handle: thin hairline that thickens on hover
+           so users find the grab target without cluttering the chrome
+           at rest. The inner bar gets the accent when the user is
+           actively dragging. */
+        .ix-msg-composer-handle:hover > div,
+        .ix-msg-composer-handle:active > div {
+          height: 3px !important;
+          background: var(--accent, #a855f7) !important;
+          opacity: 0.55;
         }
       `}</style>
     </AppShell>
@@ -600,6 +619,51 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
   const [err, setErr] = useState(null);
   const [actionOpen, setActionOpen] = useState(false);
   const scrollRef = useRef(null);
+
+  // Composer height — user-resizable via the drag handle that sits on
+  // the top border of the composer form. 56px matches the baked-in
+  // single-row height the form had before; we clamp to 44–400 so the
+  // send button always has room and the thread doesn't disappear
+  // behind a giant input. Persist in sessionStorage so switching
+  // conversations in the same tab keeps the user's chosen height.
+  const [composerH, setComposerH] = useState(() => {
+    if (typeof window === "undefined") return 56;
+    const saved = Number(sessionStorage.getItem("ironshield:composerH"));
+    return Number.isFinite(saved) && saved >= 44 ? Math.min(saved, 400) : 56;
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem("ironshield:composerH", String(composerH)); } catch {}
+  }, [composerH]);
+  const composerDragRef = useRef(null);
+  const onComposerHandleDown = useCallback((e) => {
+    // Only primary-button drags; ignore middle/right clicks.
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = composerH;
+    let dragging = true;
+    const onMove = (ev) => {
+      if (!dragging) return;
+      // Pointer moves up → deltaY negative → composer grows.
+      const delta = startY - ev.clientY;
+      const next = Math.max(44, Math.min(400, startH + delta));
+      setComposerH(next);
+    };
+    const onUp = () => {
+      dragging = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    // Lock the cursor + block text selection while dragging — without
+    // these the pointer flickers between ns-resize and the default
+    // arrow any time the user drags past a non-resize region.
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+  }, [composerH]);
   // Track which message ids were already on screen so only *new*
   // arrivals get the fresh-glow halo.
   const seenIdsRef = useRef(new Set());
@@ -970,12 +1034,54 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
         />
       )}
 
+      {/* Draggable divider between the thread scroller and the
+          composer. The actual grab area is 10px tall (bigger hit
+          target) but only a 1px line is painted; the hairline thickens
+          on hover + drag so the affordance is visible without noise
+          at rest. touch-action: none keeps finger-drag from hijacking
+          the thread scroll on phones. */}
+      <div
+        ref={composerDragRef}
+        className="ix-msg-composer-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize composer"
+        title="Drag to resize"
+        onPointerDown={onComposerHandleDown}
+        style={{
+          flexShrink: 0,
+          height: 10,
+          margin: 0,
+          cursor: "ns-resize",
+          touchAction: "none",
+          position: "relative",
+          background: "transparent",
+        }}
+      >
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: 0, right: 0, top: "50%",
+            height: 1,
+            transform: "translateY(-0.5px)",
+            background: t.border,
+            transition: "background 120ms ease, height 120ms ease",
+          }}
+        />
+      </div>
       <form
         onSubmit={(e) => { e.preventDefault(); send(); }}
         style={{
           flexShrink: 0,
-          display: "flex", alignItems: "center", gap: 8,
-          padding: 12, borderTop: `1px solid ${t.border}`,
+          display: "flex",
+          // At the default height we want controls vertically centered
+          // like the old layout; once the user enlarges the composer
+          // we stretch so the pill + textarea fill the new space.
+          alignItems: composerH > 64 ? "stretch" : "center",
+          gap: 8,
+          padding: 12,
+          minHeight: composerH,
           background: "var(--bg-card)",
         }}
       >
@@ -1038,8 +1144,14 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           <Smile size={16} />
         </button>
         <div style={{
-          flex: 1, display: "flex", alignItems: "center",
-          padding: "6px 14px", borderRadius: 999,
+          flex: 1, display: "flex",
+          // Pill collapses to center-row at the default height and
+          // stretches vertically once the user grows the composer.
+          alignItems: composerH > 64 ? "stretch" : "center",
+          padding: "6px 14px",
+          // Pill corners relax from fully-rounded to a 16px card shape
+          // once the composer is tall — a tall pill looks awkward.
+          borderRadius: composerH > 80 ? 16 : 999,
           background: "var(--bg-input)", border: `1px solid ${t.border}`,
         }}>
           <textarea
@@ -1051,11 +1163,20 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             placeholder={conv.kind === "direct" ? "Type a message…" : "Message the group…"}
             rows={1}
             style={{
-              flex: 1, resize: "none", maxHeight: 140,
+              flex: 1,
+              // Let the textarea breathe: the native CSS resize grip
+              // would fight the drag handle, so keep \`resize: none\`
+              // and size directly off composerH. Subtracts: 24 form
+              // padding + 12 pill padding + 4 slack = 40.
+              resize: "none",
+              minHeight: 0,
+              height: "auto",
+              maxHeight: Math.max(24, composerH - 40),
               padding: "6px 0", border: "none", outline: "none",
               background: "transparent",
               color: t.text, fontSize: 14, fontFamily: "inherit",
               lineHeight: 1.5,
+              width: "100%",
             }}
           />
         </div>

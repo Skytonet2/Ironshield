@@ -13,6 +13,7 @@ import SecurityTab  from "./SecurityTab";
 import TrackersTab  from "./TrackersTab";
 import NotificationsTab from "./NotificationsTab";
 import VoicesTab from "./VoicesTab";
+import TelegramTab from "./TelegramTab";
 import KeywordsTab from "./KeywordsTab";
 import KeybindsTab from "./KeybindsTab";
 import WalletsTab from "./WalletsTab";
@@ -40,6 +41,7 @@ const GROUPS = [
     items: [
       { key: "trackers",      label: "Trackers" },
       { key: "notifications", label: "Notifications" },
+      { key: "telegram",      label: "Telegram" },
       { key: "voices",        label: "Voices" },
       { key: "keywords",      label: "Keywords" },
       { key: "feed",          label: "Feed Accounts", disabled: true },
@@ -218,6 +220,7 @@ function TabContent({ tab }) {
   if (tab === "security")      return <SecurityTab />;
   if (tab === "trackers")      return <TrackersTab />;
   if (tab === "notifications") return <NotificationsTab />;
+  if (tab === "telegram")      return <TelegramTab />;
   if (tab === "voices")        return <VoicesTab />;
   if (tab === "keywords")      return <KeywordsTab />;
   if (tab === "keybinds")      return <KeybindsTab />;
