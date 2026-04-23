@@ -8,19 +8,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { API_BASE as API } from "@/lib/apiBase";
 
-// ─── Service Worker registration ───────────────────────────────────
+// ─── Service Worker registration — TEMPORARILY DISABLED ───────────
+// Stale SW caches turned out to be the cause of the renderer crash
+// ("This page couldn't load") after the brand-system deploy. Until we
+// ship a cleaner SW caching strategy, skip registration entirely and
+// let the browser's HTTP cache handle asset freshness. Push
+// notifications and offline app-shell come back with the re-enable.
+//
+// We also ensure any OLD registration (from a pre-disable build) gets
+// nuked on mount — the /sw.js on the server is now a self-
+// uninstalling no-op, but unregistering from the client side too
+// gives us a deterministic cleanup path.
 let swRegistration = null;
 
 async function registerSW() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
   try {
-    swRegistration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    console.log("[PWA] SW registered, scope:", swRegistration.scope);
-    return swRegistration;
-  } catch (e) {
-    console.warn("[PWA] SW registration failed:", e.message);
-    return null;
-  }
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const r of regs) {
+      try { await r.unregister(); } catch (_) { /* ignore */ }
+    }
+  } catch (_) { /* ignore */ }
+  return null;
 }
 
 // ─── Push subscription ─────────────────────────────────────────────

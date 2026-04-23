@@ -1,171 +1,49 @@
-// IronShield Service Worker — PWA offline shell + push notifications
-// Bumped to v3 alongside the brand-system rollout: adds the new
-// /brand/* assets to the shell cache, and the bumped name forces
-// every client to clear its v2 cache on next visit (which held the
-// old mascot-only app icon).
-const CACHE_NAME = "ironshield-v3";
-const SHELL_URLS = [
-  "/",
-  "/icon.svg",
-  "/mascot.png",
-  "/brand/app-icon.svg",
-  "/brand/shield-mark.svg",
-  "/brand/shield-primary.svg",
-  "/brand/shield-mono.svg",
-  "/brand/social-avatar.svg",
-];
+// IronShield Service Worker — DISABLED (self-uninstall build).
+//
+// Previous versions (v1/v2/v3) turned out to be the cause of a
+// "This page couldn't load" crash for users with a stale SW serving
+// broken cached responses after the brand-system deploy. Rather than
+// keep iterating on caching strategy while users are stuck, this
+// build ships a service worker whose only job is to unregister
+// itself and wipe every cache it ever owned.
+//
+// When a browser with an old IronShield SW next visits, it fetches
+// /sw.js (standard SW update-check cadence), sees this new content,
+// goes through install→activate, then the activate hook:
+//   1. deletes every cache
+//   2. unregisters itself
+//   3. tells every controlled client to reload once
+// After that, the page is served directly by the browser's normal
+// HTTP cache with no SW in the middle.
+//
+// src/lib/usePWA.js also short-circuits its registerSW() call so no
+// new clients pick up a SW. We can re-enable offline/push later with
+// a cleaner design; right now, stability wins.
 
-// ─── Install: cache the app shell ──────────────────────────────────
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((c) => c.addAll(SHELL_URLS))
-  );
+self.addEventListener("install", () => {
+  // Skip waiting so activate runs on the next tick, not after the
+  // old SW has finished handling in-flight fetches.
   self.skipWaiting();
 });
 
-// ─── Activate: clean old caches ────────────────────────────────────
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
-// ─── Fetch: network-first for API, cache-first for static ─────────
-self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
-
-  // Never cache API or LiveKit calls
-  if (url.pathname.startsWith("/api/") || url.hostname.includes("livekit")) return;
-
-  // Next.js hashed chunks under /_next/static/ are already content-addressed
-  // and handled by the browser's HTTP cache. Putting them through our
-  // stale-while-revalidate layer risks holding onto a bad response across
-  // deploys (e.g. an abort mid-download) with no way for us to invalidate
-  // short of a CACHE_NAME bump. Just let the network handle them.
-  if (url.pathname.startsWith("/_next/static/")) return;
-
-  // For navigation requests (HTML pages), serve cache fallback for offline
-  if (e.request.mode === "navigate") {
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match("/"))
-    );
-    return;
-  }
-
-  // Static assets: stale-while-revalidate
-  e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const fetched = fetch(e.request).then((resp) => {
-        if (resp.ok) {
-          const clone = resp.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
-        }
-        return resp;
-      }).catch(() => cached);
-      return cached || fetched;
-    })
-  );
-});
-
-// ─── Push notifications ────────────────────────────────────────────
-self.addEventListener("push", (e) => {
-  let data = { title: "IronShield", body: "You have a new notification", tag: "general", kind: "general" };
-  try {
-    if (e.data) data = { ...data, ...e.data.json() };
-  } catch {
-    if (e.data) data.body = e.data.text();
-  }
-
-  const isCall = data.kind === "call";
-
-  // Calls: long vibrate pattern (browsers cap this, but it's the closest we
-  // get to a ring without a native wrapper), require interaction so the
-  // banner stays up until Answer/Decline is tapped, and attach action buttons.
-  const callVibrate = [400, 200, 400, 200, 400, 200, 400, 200, 400];
-
-  // Force a phone-call look on both Android and iOS. iOS PWA ignores action
-  // buttons, so the title/body have to carry the meaning on their own.
-  const title = isCall ? (data.title?.startsWith("📞") ? data.title : `📞 ${data.title || "Incoming call"}`) : data.title;
-  const body  = isCall ? (data.body  || "Tap to answer") : data.body;
-
-  const options = {
-    body,
-    // Push-notification chrome: full-color app-icon for the big icon,
-    // monochrome shield for the status-bar badge (Android flattens
-    // badges to white; the outline + cut-outs stay legible).
-    icon: "/brand/app-icon.svg",
-    badge: "/icon.svg",
-    tag: data.tag || "general",
-    renotify: true,
-    vibrate: isCall ? callVibrate : [100, 50, 100],
-    requireInteraction: isCall,
-    silent: false,
-    data: {
-      url: data.url || "/",
-      kind: data.kind || "general",
-      conversationId: data.conversationId,
-    },
-    actions: data.actions || [],
-  };
-
-  // If any app window is focused/visible, let it handle the ring in-app
-  // (full-screen overlay + looping ringtone) instead of relying on the
-  // OS notification, which on many mobile browsers reads as a plain DM.
-  const relayToForeground = async () => {
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
     try {
-      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const hasVisible = clients.some((c) => c.visibilityState === "visible" || c.focused);
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (_) { /* ignore */ }
+    try {
+      await self.registration.unregister();
+    } catch (_) { /* ignore */ }
+    // Force every tab controlled by this SW to reload without cache.
+    try {
+      const clients = await self.clients.matchAll({ type: "window" });
       for (const c of clients) {
-        c.postMessage({ type: "ix-push", kind: data.kind, data });
+        try { c.navigate(c.url); } catch (_) { /* ignore */ }
       }
-      // Still show the notification when no window is visible; when one is
-      // visible we skip the OS banner so the in-app ringing UI is the single
-      // source of truth.
-      if (isCall && hasVisible) return;
-      await self.registration.showNotification(title, options);
-    } catch {
-      await self.registration.showNotification(title, options);
-    }
-  };
-
-  e.waitUntil(relayToForeground());
+    } catch (_) { /* ignore */ }
+  })());
 });
 
-// ─── Notification click: route based on action + kind ──────────────
-self.addEventListener("notificationclick", (e) => {
-  const action = e.action || "";
-  const nData = e.notification.data || {};
-  e.notification.close();
-
-  // Call actions
-  if (nData.kind === "call") {
-    if (action === "decline") {
-      // Soft-decline: just dismiss. (A server-side hangup would need an
-      // authenticated call, which we can't do from a push click without
-      // relay infra — acceptable since the LiveKit room just times out.)
-      return;
-    }
-    // answer or tap-through: open the call overlay deep link
-    const url = nData.url || "/";
-    e.waitUntil(openOrFocus(url));
-    return;
-  }
-
-  const url = nData.url || "/";
-  e.waitUntil(openOrFocus(url));
-});
-
-function openOrFocus(url) {
-  return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-    for (const client of clients) {
-      if (new URL(client.url).origin === self.location.origin) {
-        client.navigate(url);
-        return client.focus();
-      }
-    }
-    return self.clients.openWindow(url);
-  });
-}
+// No fetch handler — let every request go straight to the network /
+// HTTP cache. No push handler — re-add when SW is re-enabled.

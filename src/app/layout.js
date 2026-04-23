@@ -266,44 +266,36 @@ export default function RootLayout({ children }) {
             we never loop. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
-            // ─── One-time SW purge on this build ────────────────────
-            // The brand-system + Messages rework changed chunk layout
-            // enough that an old service worker serving stale HTML
-            // from its cache would reference chunks that no longer
-            // exist → renderer crash ("This page couldn't load").
+            // ─── Kill any lingering service worker + caches ────────
+            // Previous SW versions were serving stale HTML that
+            // referenced chunks no longer on the deploy → Chrome
+            // renderer crash ("This page couldn't load"). SW
+            // registration is disabled client-side, but users may
+            // still have an old SW active from earlier visits. This
+            // block fires on every visit until the SW is confirmed
+            // gone — cheap no-op once there's nothing to clean.
             //
-            // On first paint of this build, compare a stamped version
-            // marker to localStorage; if it's different, unregister
-            // every SW and drop every cache, then reload once. The
-            // marker prevents loops — subsequent visits with the same
-            // build skip the purge entirely.
+            // The ?swreset=1 query param is a one-shot guard so we
+            // never reload more than once per visit: if it's present,
+            // cleanup already happened, skip.
             try {
-              var BUILD = "ironshield-build-2026-04-23-brand";
-              var PREV = null;
-              try { PREV = localStorage.getItem("ironshield:build"); } catch(e){}
-              if (PREV !== BUILD) {
-                try { localStorage.setItem("ironshield:build", BUILD); } catch(e){}
-                if (!/[?&]purged=1/.test(location.search)) {
-                  // Kick off unregister + cache clear, then reload.
-                  var sep = location.search ? "&" : "?";
-                  var next = location.pathname + location.search + sep + "purged=1" + location.hash;
-                  var killSw = (navigator.serviceWorker && navigator.serviceWorker.getRegistrations)
-                    ? navigator.serviceWorker.getRegistrations().then(function(regs){
-                        return Promise.all(regs.map(function(r){ return r.unregister(); }));
-                      }).catch(function(){})
-                    : Promise.resolve();
-                  var killCache = (window.caches && caches.keys)
-                    ? caches.keys().then(function(keys){
-                        return Promise.all(keys.map(function(k){ return caches.delete(k); }));
-                      }).catch(function(){})
-                    : Promise.resolve();
-                  Promise.all([killSw, killCache]).then(function(){
-                    location.replace(location.origin + next);
+              if (!/[?&]swreset=1/.test(location.search)
+                  && navigator.serviceWorker
+                  && navigator.serviceWorker.getRegistrations) {
+                navigator.serviceWorker.getRegistrations().then(function(regs){
+                  if (!regs.length) return; // nothing to do
+                  return Promise.all(regs.map(function(r){ return r.unregister(); })).then(function(){
+                    var killCache = (window.caches && caches.keys)
+                      ? caches.keys().then(function(keys){
+                          return Promise.all(keys.map(function(k){ return caches.delete(k); }));
+                        }).catch(function(){})
+                      : Promise.resolve();
+                    return killCache;
+                  }).then(function(){
+                    var sep = location.search ? "&" : "?";
+                    location.replace(location.origin + location.pathname + location.search + sep + "swreset=1" + location.hash);
                   });
-                  // Don't proceed with the rest of the loader script
-                  // on this pass — we're about to reload.
-                  return;
-                }
+                }).catch(function(){});
               }
             } catch(e){}
 
