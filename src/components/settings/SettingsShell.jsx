@@ -12,6 +12,7 @@ import AppearanceTab from "./AppearanceTab";
 import SecurityTab  from "./SecurityTab";
 import TrackersTab  from "./TrackersTab";
 import NotificationsTab from "./NotificationsTab";
+import VoicesTab from "./VoicesTab";
 import KeywordsTab from "./KeywordsTab";
 import KeybindsTab from "./KeybindsTab";
 import WalletsTab from "./WalletsTab";
@@ -39,6 +40,7 @@ const GROUPS = [
     items: [
       { key: "trackers",      label: "Trackers" },
       { key: "notifications", label: "Notifications" },
+      { key: "voices",        label: "Voices" },
       { key: "keywords",      label: "Keywords" },
       { key: "feed",          label: "Feed Accounts", disabled: true },
       { key: "pins",          label: "Pins & Tags",   disabled: true },
@@ -216,6 +218,7 @@ function TabContent({ tab }) {
   if (tab === "security")      return <SecurityTab />;
   if (tab === "trackers")      return <TrackersTab />;
   if (tab === "notifications") return <NotificationsTab />;
+  if (tab === "voices")        return <VoicesTab />;
   if (tab === "keywords")      return <KeywordsTab />;
   if (tab === "keybinds")      return <KeybindsTab />;
   if (tab === "wallets")       return <WalletsTab />;

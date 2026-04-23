@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { notifyUser } = require("../services/pushNotify");
 
 // GET /api/push/vapid-key — public VAPID key for the frontend
 router.get("/vapid-key", (req, res) => {
@@ -28,6 +29,36 @@ router.post("/subscribe", requireWallet, async (req, res, next) => {
       [user.id, sub.endpoint, subJson]
     );
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// POST /api/push/test — fire a test push to the caller's own
+// subscriptions so they can verify the flow end-to-end without
+// waiting for someone else to like/comment. Returns the number of
+// subscriptions pushed to so the UI can tell the user whether they
+// actually have a device enrolled.
+router.post("/test", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const r = await db.query(
+      "SELECT COUNT(*)::int AS n FROM feed_push_subscriptions WHERE user_id = $1",
+      [user.id]
+    );
+    const count = r.rows[0]?.n || 0;
+    if (count === 0) {
+      return res.status(409).json({
+        ok: false,
+        reason: "no_subscriptions",
+        message: "No push subscription on file for this wallet. Enable Push first.",
+      });
+    }
+    await notifyUser(user.id, {
+      title: "IronShield",
+      body: "Push is working — you'll see real alerts here.",
+      url: "/",
+      tag: "test",
+    });
+    res.json({ ok: true, pushedTo: count });
   } catch (e) { next(e); }
 });
 

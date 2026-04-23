@@ -56,6 +56,7 @@ export default function NotificationsTab() {
   const [prefs, setPrefs] = useState(DEFAULTS);
   const [syncedAt, setSyncedAt] = useState(null);
   const [pushError, setPushError] = useState("");
+  const [testResult, setTestResult] = useState("");
 
   useEffect(() => { setPrefs(loadPrefs()); }, []);
 
@@ -135,6 +136,40 @@ export default function NotificationsTab() {
             </div>
           ))}
         </div>
+        {/* Test-push button — users couldn't otherwise verify the
+            subscribe flow worked end-to-end without waiting for
+            someone to like/comment. /api/push/test fires a real push
+            to the caller's own device subscriptions. */}
+        {pushEnabled && (
+          <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!address) { setTestResult("Connect wallet first."); return; }
+                setTestResult("Sending…");
+                try {
+                  const r = await fetch(`${API}/api/push/test`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-wallet": address },
+                  });
+                  const j = await r.json().catch(() => ({}));
+                  if (r.ok) setTestResult(`Sent to ${j.pushedTo || 1} device(s). Check your notifications.`);
+                  else setTestResult(j.message || `Test failed (HTTP ${r.status}).`);
+                } catch (e) { setTestResult(`Test failed: ${e.message}`); }
+              }}
+              style={{
+                padding: "8px 14px", borderRadius: 10, border: `1px solid ${t.border}`,
+                background: "transparent", color: t.text, fontSize: 12, fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Send test notification
+            </button>
+            {testResult && (
+              <span style={{ fontSize: 11, color: t.textDim }}>{testResult}</span>
+            )}
+          </div>
+        )}
       </section>
 
       <section style={tabCard(t)}>
