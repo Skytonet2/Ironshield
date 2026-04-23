@@ -83,6 +83,7 @@ export default function ComposeBar({ onPosted }) {
   const fileRef = useRef(null);
   const [mediaUrls, setMediaUrls] = useState([]);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadingName, setUploadingName] = useState(null);
   const [onchain, setOnchain] = useState(false);
   const isNear = useMemo(() => isNearAccountId(address), [address]);
 
@@ -137,41 +138,65 @@ export default function ComposeBar({ onPosted }) {
   const aud = AUDIENCES.find((a) => a.key === audience) || AUDIENCES[0];
   const AudIcon = aud.Icon;
 
-  // Uploads go through the backend's catbox.moe proxy (POST /api/media/upload),
-  // which requires no API keys. Prod had Cloudinary signing as the only path
-  // and CLOUDINARY_* wasn't set — image posts failed silently. Catbox is the
-  // default because it just works; if it's down, the route falls back to an
-  // inline data URL for images under 512KB.
+  // Uploads go through the backend's POST /api/media/upload which now
+  // cascades through uguu.se → tmpfiles.org → 0x0.st → catbox.moe with
+  // an inline data-URL fallback for small images, so users never end
+  // up stuck when one external host is down.
+  //
+  // The `[address]` dep used to capture a stale null on the first render
+  // if the wallet hook hadn't resolved yet. Upload itself doesn't need a
+  // wallet, so we drop address from the header when it's empty rather
+  // than blocking — mirrors how the backend treats media.route.js.
   const upload = useCallback(async (files) => {
     if (!files || !files.length) return;
-    setUploadBusy(true);
-    setErr(null);
+    const ok = [];
     try {
-      const urls = [];
       for (const file of files) {
-        if (file.size > 25 * 1024 * 1024) {
-          throw new Error(`${file.name} is over 25 MB`);
-        }
+        if (file.size > 25 * 1024 * 1024) throw new Error(`${file.name} is over 25 MB`);
+        setUploadingName(file.name);
+        setUploadBusy(true);
+        setErr(null);
+        // eslint-disable-next-line no-console
+        console.log(`[ComposeBar] uploading ${file.name} (${file.size}B) to ${API}/api/media/upload`);
         const fd = new FormData();
         fd.append("file", file);
-        const up = await fetch(`${API}/api/media/upload`, {
-          method: "POST",
-          headers: address ? { "x-wallet": address } : {},
-          body: fd,
-        });
+        let up;
+        try {
+          up = await fetch(`${API}/api/media/upload`, {
+            method: "POST",
+            headers: address ? { "x-wallet": address } : {},
+            body: fd,
+          });
+        } catch (netErr) {
+          throw new Error(`Network error during upload: ${netErr.message}. Check your connection or try again.`);
+        }
         if (!up.ok) {
           const j = await up.json().catch(() => ({}));
-          throw new Error(j?.error || `upload ${up.status}`);
+          throw new Error(
+            j?.error ||
+            j?.hint ||
+            (up.status === 413 ? "File is too large (25 MB max)." :
+             up.status === 0   ? "Upload blocked (CORS or network). Try again." :
+                                  `Upload failed (${up.status})`)
+          );
         }
         const j = await up.json();
-        if (!j?.url) throw new Error("upload returned no url");
-        urls.push(j.url);
+        if (!j?.url) throw new Error("Upload returned no URL — retry, please.");
+        ok.push(j.url);
+        // eslint-disable-next-line no-console
+        console.log(`[ComposeBar] uploaded ${file.name} via ${j.host || "unknown"} → ${j.url}`);
       }
-      setMediaUrls((prev) => [...prev, ...urls].slice(0, 4));
+      setMediaUrls((prev) => [...prev, ...ok].slice(0, 4));
     } catch (e) {
       setErr(e.message || "Upload failed");
+      // eslint-disable-next-line no-console
+      console.warn("[ComposeBar] upload error:", e);
     } finally {
       setUploadBusy(false);
+      setUploadingName(null);
+      // Reset the file input so the user can re-select the same file if
+      // they need to retry after an error.
+      if (fileRef.current) fileRef.current.value = "";
     }
   }, [address]);
 
@@ -447,7 +472,7 @@ export default function ComposeBar({ onPosted }) {
               <span>{text.length}/{MAX}</span>
               {voice && <span style={{ color: "#c084fc", fontWeight: 700 }}>· Voice post</span>}
               {onchain && <span style={{ color: "#60a5fa", fontWeight: 700 }}>· On-chain</span>}
-              {uploadBusy && <span>· Uploading…</span>}
+              {uploadBusy && <span style={{ color: "#60a5fa" }}>· Uploading {uploadingName || "…"}</span>}
             </div>
 
             {err && (
@@ -764,7 +789,7 @@ export default function ComposeBar({ onPosted }) {
               <div style={{ fontSize: 11, color: t.textDim, marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
                 <span>{text.length}/{MAX}</span>
                 {voice && <span style={{ color: "#c084fc", fontWeight: 700 }}>· Voice post</span>}
-                {uploadBusy && <span>· Uploading…</span>}
+                {uploadBusy && <span style={{ color: "#60a5fa" }}>· Uploading {uploadingName || "…"}</span>}
                 <span style={{ flex: 1 }} />
                 {open && (
                   <button
