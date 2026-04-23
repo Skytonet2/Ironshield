@@ -234,47 +234,36 @@ export default function useAgent() {
 
     // Generate the keypair client-side. near-api-js ships its own
     // cryptographically strong KeyPair.fromRandom.
-    const { KeyPair } = await import("near-api-js");
-    const keyPair  = KeyPair.fromRandom("ed25519");
-    const publicKey  = keyPair.getPublicKey().toString();
+    const naj = await import("near-api-js");
+    const { KeyPair, transactions: tx, utils: { PublicKey } } = naj;
+    const keyPair   = KeyPair.fromRandom("ed25519");
+    const publicKey = keyPair.getPublicKey().toString();
     const privateKey = keyPair.toString(); // "ed25519:<bs58>"
 
-    // Two transactions, one approval in the wallet modal.
+    // Two transactions, one approval in the wallet modal. Actions are NAJ
+    // Action instances — wallet-selector v10 adapters call najActionToInternal
+    // on what we pass in, so plain {type,params} objects fail with
+    // "Unsupported NAJ action". We use transactions.* action creators.
     const transactions = [
       {
         signerId:   address,
         receiverId: subAccountId,
         actions: [
-          { type: "CreateAccount" },
-          {
-            type: "Transfer",
-            params: { deposit: SUBWALLET_INITIAL_NEAR },
-          },
-          {
-            type: "AddKey",
-            params: {
-              publicKey,
-              accessKey: {
-                nonce: 0,
-                permission: "FullAccess",
-              },
-            },
-          },
+          tx.createAccount(),
+          tx.transfer(BigInt(SUBWALLET_INITIAL_NEAR)),
+          tx.addKey(PublicKey.from(publicKey), tx.fullAccessKey()),
         ],
       },
       {
         signerId:   address,
         receiverId: STAKING_CONTRACT,
         actions: [
-          {
-            type: "FunctionCall",
-            params: {
-              methodName: "set_agent_account",
-              args:       { agent_account: subAccountId },
-              gas:        "30000000000000",
-              deposit:    "0",
-            },
-          },
+          tx.functionCall(
+            "set_agent_account",
+            { agent_account: subAccountId },
+            30_000_000_000_000n,
+            0n,
+          ),
         ],
       },
     ];

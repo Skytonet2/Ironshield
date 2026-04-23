@@ -36,17 +36,21 @@ export default function useNear() {
     if (!selector) throw new Error("Wallet not connected. Please connect your wallet first.");
     try {
       const wallet = await selector.wallet();
+      // wallet-selector v10 adapters (Meteor, HERE, HOT, Intear) all call
+      // najActionToInternal on incoming actions, so they expect NAJ Action
+      // objects — NOT the internal {type,params} shape older versions took.
+      // Passing the internal shape throws "Unsupported NAJ action" because
+      // the NAJ→internal decoder can't find action.functionCall on it.
+      const { transactions } = await import("near-api-js");
+      const action = transactions.functionCall(
+        methodName,
+        args,
+        30_000_000_000_000n,
+        BigInt(depositYocto || "0"),
+      );
       const result = await wallet.signAndSendTransaction({
         receiverId: contractId,
-        actions: [{
-          type: "FunctionCall",
-          params: {
-            methodName,
-            args,
-            gas:     "30000000000000",
-            deposit: depositYocto,
-          },
-        }],
+        actions: [action],
       });
       return result;
     } catch (err) {
