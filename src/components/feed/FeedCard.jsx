@@ -12,8 +12,8 @@
 // Also wires useImpression so counting lives wherever cards live —
 // no separate plumbing from each consumer.
 
-import { useMemo, useState, useCallback } from "react";
-import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckCircle2, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckCircle2, Send, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Flag } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 import useImpression from "@/lib/hooks/useImpression";
 import CoinItButton from "./CoinItButton";
@@ -146,7 +146,7 @@ function Metric({ Icon, label, count, active, color, onClick, t }) {
   );
 }
 
-export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip, onReply, onMute }) {
+export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip, onReply, onMute, onDelete }) {
   const t = useTheme() || {};
   const nodeRef = useImpression({
     postId: post?.id,
@@ -319,20 +319,13 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
             suggestedName={coinItName}
             style={{ opacity: 0, transition: "opacity 120ms var(--ease-out)" }}
           />
-          {onMute && author?.username && (
-            <button
-              type="button"
-              onClick={() => onMute(author.username)}
-              title={`Mute @${author.username}`}
-              style={{
-                background: "transparent", border: "none",
-                color: t.textDim, cursor: "pointer", padding: 4,
-                opacity: 0.6,
-              }}
-            >
-              <VolumeX size={13} />
-            </button>
-          )}
+          <CardActionsMenu
+            t={t}
+            isOwn={isOwn}
+            author={author}
+            onMute={onMute}
+            onDelete={onDelete && isOwn ? () => onDelete(post) : null}
+          />
         </div>
 
         {/* Title (for article kind) */}
@@ -448,5 +441,105 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
         }
       `}</style>
     </article>
+  );
+}
+
+// Kebab menu on the top-right of each card. Surfaces "Delete" for
+// posts the viewer owns, "Mute @user" + "Report" for everyone else's.
+// Previously mute was the only affordance and was hidden in a
+// nearly-invisible icon; this exposes all three at once.
+function CardActionsMenu({ t, isOwn, author, onMute, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    if (!window.confirm("Delete this post? This cannot be undone.")) return;
+    setBusy(true);
+    try { await onDelete(); setOpen(false); }
+    finally { setBusy(false); }
+  };
+
+  const handleMute = () => {
+    if (!onMute || !author?.username) return;
+    onMute(author.username);
+    setOpen(false);
+  };
+
+  const items = [];
+  if (isOwn && onDelete) {
+    items.push({ key: "delete", label: busy ? "Deleting…" : "Delete post", Icon: Trash2, color: "var(--red)", onClick: handleDelete, disabled: busy });
+  }
+  if (!isOwn && onMute && author?.username) {
+    items.push({ key: "mute", label: `Mute @${author.username}`, Icon: VolumeX, onClick: handleMute });
+  }
+  if (!isOwn) {
+    items.push({ key: "report", label: "Report post", Icon: Flag, onClick: () => { alert("Thanks — reporting flow lands next pass."); setOpen(false); } });
+  }
+  if (items.length === 0) return null;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        aria-label="Post actions"
+        aria-expanded={open}
+        style={{
+          background: "transparent", border: "none",
+          color: open ? t.accent : t.textDim,
+          cursor: "pointer", padding: 4,
+          borderRadius: 6,
+          opacity: open ? 1 : 0.65,
+          transition: "opacity 120ms ease, color 120ms ease",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={(e) => { if (!open) e.currentTarget.style.opacity = "0.65"; }}
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute", top: "calc(100% + 4px)", right: 0,
+            minWidth: 180,
+            background: "var(--bg-surface)",
+            border: `1px solid ${t.border}`,
+            borderRadius: 8,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.4)",
+            zIndex: 20, overflow: "hidden",
+          }}
+        >
+          {items.map((it) => (
+            <button
+              key={it.key}
+              type="button"
+              disabled={it.disabled}
+              onClick={it.onClick}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 10px", border: "none", background: "transparent",
+                color: it.color || t.text, fontSize: 12,
+                cursor: it.disabled ? "wait" : "pointer", textAlign: "left",
+              }}
+              onMouseEnter={(e) => { if (!it.disabled) e.currentTarget.style.background = "var(--bg-card-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              <it.Icon size={12} />
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -20,6 +20,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import { useWallet as useWalletStore } from "@/lib/stores/walletStore";
 import { useSettings } from "@/lib/stores/settingsStore";
 import useNear from "@/hooks/useNear";
+import useViewerProfile from "@/lib/hooks/useViewerProfile";
 
 // Heuristic: does this address look like a NEAR account? Accepts `x.near`,
 // `x.tg`, `x.testnet` etc., plus 64-hex implicit accounts. Ethereum addrs
@@ -86,6 +87,7 @@ export default function ComposeBar({ onPosted }) {
   const [uploadingName, setUploadingName] = useState(null);
   const [onchain, setOnchain] = useState(false);
   const isNear = useMemo(() => isNearAccountId(address), [address]);
+  const viewerProfile = useViewerProfile(address);
 
   // Detect mobile once on mount + on resize. When `open && isMobile`
   // we render the whole composer inside a full-screen portal (reference
@@ -352,22 +354,26 @@ export default function ComposeBar({ onPosted }) {
 
           {/* Body — scrollable */}
           <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 20px" }}>
-            {/* Author strip */}
+            {/* Author strip — renders the viewer's real pfp when
+                available, falls back to gradient + first letter so the
+                composer has an avatar even before /api/profile hydrates. */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <div style={{
                 width: 40, height: 40, borderRadius: "50%",
-                background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+                background: viewerProfile?.pfpUrl
+                  ? `url("${viewerProfile.pfpUrl}") center/cover no-repeat`
+                  : `linear-gradient(135deg, ${t.accent}, #a855f7)`,
                 color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 16, fontWeight: 800, flexShrink: 0,
               }}>
-                {(address?.[0]?.toUpperCase()) || <Plus size={16} />}
+                {!viewerProfile?.pfpUrl && ((address?.[0]?.toUpperCase()) || <Plus size={16} />)}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: t.white }}>
-                  {address ? "Shield Holder" : "Guest"}
+                  {viewerProfile?.displayName || (address ? "Shield Holder" : "Guest")}
                 </div>
                 <div style={{ fontSize: 12, color: t.textDim }}>
-                  @{address ? (address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address) : "signin"}
+                  @{viewerProfile?.username || (address ? (address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address) : "signin")}
                 </div>
               </div>
 
@@ -601,19 +607,22 @@ export default function ComposeBar({ onPosted }) {
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
       }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-          {/* Avatar — neutral gradient when no pfp. Click routes to profile. */}
+          {/* Avatar — shows real pfp via useViewerProfile, falls back
+              to gradient + initial. Click routes to the user's profile. */}
           <a
             href={address ? `/profile?address=${encodeURIComponent(address)}` : "/profile"}
             style={{
               width: 40, height: 40, borderRadius: "50%",
-              background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+              background: viewerProfile?.pfpUrl
+                ? `url("${viewerProfile.pfpUrl}") center/cover no-repeat`
+                : `linear-gradient(135deg, ${t.accent}, #a855f7)`,
               color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 16, fontWeight: 800, flexShrink: 0,
               textDecoration: "none",
             }}
             aria-label="Your profile"
           >
-            {(address?.[0]?.toUpperCase()) || <Plus size={16} />}
+            {!viewerProfile?.pfpUrl && ((address?.[0]?.toUpperCase()) || <Plus size={16} />)}
           </a>
 
           <div style={{ flex: 1, minWidth: 0 }}>

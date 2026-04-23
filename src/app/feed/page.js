@@ -118,6 +118,12 @@ export default function FeedPage() {
 
   const mute = useCallback(async (username) => {
     if (!wallet || !username) return;
+    // Optimistic: drop any post by this author from the current view
+    // immediately so the button gives instant feedback. The server
+    // fetch + refreshMuted() keeps the muted set authoritative.
+    setPosts((prev) => prev.filter((p) =>
+      (p?.author?.username || "").toLowerCase() !== username.toLowerCase()
+    ));
     try {
       await fetch(`${BACKEND_BASE}/api/feed/mute`, {
         method: "POST",
@@ -127,6 +133,24 @@ export default function FeedPage() {
       refreshMuted();
     } catch { /* swallow */ }
   }, [wallet, refreshMuted]);
+
+  const deletePost = useCallback(async (post) => {
+    if (!wallet || !post?.id) return;
+    // Optimistic: yank the card before the server confirms so it
+    // vanishes instantly. If the DELETE fails, we re-add it.
+    const prev = posts;
+    setPosts((ps) => ps.filter((p) => p.id !== post.id));
+    try {
+      const r = await fetch(`${BACKEND_BASE}/api/posts/${post.id}`, {
+        method: "DELETE",
+        headers: { "x-wallet": wallet },
+      });
+      if (!r.ok) throw new Error(`delete failed (${r.status})`);
+    } catch (e) {
+      setPosts(prev);
+      alert(`Couldn't delete: ${e.message}`);
+    }
+  }, [wallet, posts]);
 
   // Optimistic updates — flip the like/repost flag and adjust the
   // counter client-side so the UI feels instant. If the API call
@@ -284,6 +308,7 @@ export default function FeedPage() {
                 viewer={walletCtx}
                 isOwn={wallet && p?.author?.wallet_address && wallet.toLowerCase() === p.author.wallet_address.toLowerCase()}
                 onMute={mute}
+                onDelete={deletePost}
                 onLike={()   => onLike(p)}
                 onRepost={() => onRepost(p)}
                 onTip={()    => onTip(p)}

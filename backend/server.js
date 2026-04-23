@@ -31,6 +31,7 @@ app.use("/api/feed",          require("./routes/feed.route"));
 app.use("/api/posts",         require("./routes/posts.route"));
 app.use("/api/social",        require("./routes/social.route"));
 app.use("/api/profile",       require("./routes/profile.route"));
+app.use("/api/users",         require("./routes/users.route"));
 app.use("/api/dm",            require("./routes/dm.route"));
 app.use("/api/feed-org",      require("./routes/feedOrg.route"));
 app.use("/api/feed-agent",    require("./routes/feedAgent.route"));

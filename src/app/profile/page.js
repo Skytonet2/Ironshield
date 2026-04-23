@@ -12,6 +12,7 @@ import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import { Coins, Camera, X as XIcon, Loader2 } from "lucide-react";
+import { primeViewerProfile } from "@/lib/hooks/useViewerProfile";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -383,31 +384,30 @@ function ProfileEditor({ initial, wallet, onClose, onSaved }) {
   const pfpInput = useRef(null);
   const bannerInput = useRef(null);
 
+  // Profile picture + banner uploads go through the same cascade used
+  // by the feed composer: POST /api/media/upload (uguu → tmpfiles →
+  // inline fallback). Cloudinary signed uploads are gated on env vars
+  // that aren't configured on prod, so the old path 503'd silently.
   const upload = useCallback(async (file, kind) => {
     if (!file) return;
     setErr(null);
     setBusyKind(kind);
     try {
-      const sigRes = await fetch(`${BACKEND_BASE}/api/profile/upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
-      });
-      if (!sigRes.ok) {
-        const j = await sigRes.json().catch(() => ({}));
-        throw new Error(j?.hint || j?.error || `upload-signature ${sigRes.status}`);
-      }
-      const sig = await sigRes.json();
+      if (file.size > 25 * 1024 * 1024) throw new Error("File is over 25 MB");
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("api_key", sig.apiKey);
-      fd.append("timestamp", String(sig.timestamp));
-      fd.append("signature", sig.signature);
-      fd.append("folder", sig.folder);
-      const up = await fetch(sig.uploadUrl, { method: "POST", body: fd });
-      if (!up.ok) throw new Error(`cloudinary ${up.status}`);
+      const up = await fetch(`${BACKEND_BASE}/api/media/upload`, {
+        method: "POST",
+        headers: wallet ? { "x-wallet": wallet } : {},
+        body: fd,
+      });
+      if (!up.ok) {
+        const j = await up.json().catch(() => ({}));
+        throw new Error(j?.error || j?.hint || `Upload failed (${up.status})`);
+      }
       const j = await up.json();
-      const url = j.secure_url;
-      setForm((f) => ({ ...f, [kind === "pfp" ? "pfpUrl" : "bannerUrl"]: url }));
+      if (!j?.url) throw new Error("Upload returned no URL");
+      setForm((f) => ({ ...f, [kind === "pfp" ? "pfpUrl" : "bannerUrl"]: j.url }));
     } catch (e) {
       setErr(e.message || "Upload failed");
     } finally {
@@ -432,14 +432,19 @@ function ProfileEditor({ initial, wallet, onClose, onSaved }) {
       // Normalize the PATCH response (snake_case cols) back into the
       // camelCase shape the GET /api/profile/:key returned.
       const u = j.user || {};
-      onSaved({
+      const merged = {
         ...initial,
         displayName: u.display_name ?? form.displayName,
         username:    u.username ?? form.username,
         bio:         u.bio ?? form.bio,
         pfpUrl:      u.pfp_url ?? form.pfpUrl,
         bannerUrl:   u.banner_url ?? form.bannerUrl,
-      });
+      };
+      // Push the new values into the shared cache so the composer
+      // avatar, top-nav UserMenu, and right-rail "Your Account" panel
+      // pick them up without a re-fetch.
+      if (wallet) primeViewerProfile(wallet, merged);
+      onSaved(merged);
     } catch (e) {
       setErr(e.message || "Save failed");
     } finally {
