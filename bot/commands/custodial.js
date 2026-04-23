@@ -94,10 +94,18 @@ async function handleBalance(bot, msg) {
  */
 function parseIntent(text) {
   if (!text || typeof text !== "string") return null;
-  const s = text.trim().toLowerCase();
+  // Strip the leading slash command (/swap, /buy, /send) and any
+  // @BotName suffix so both "/swap 10 near to usdc" and free-form
+  // "swap 10 near to usdc" parse identically. Before this, every
+  // slash-command invocation fell through to the help text because
+  // the regexes below wouldn't match text starting with "/".
+  const s = text
+    .trim()
+    .replace(/^\s*\/(swap|buy|send)(@\w+)?\s*/i, (_, verb) => `${verb.toLowerCase()} `)
+    .toLowerCase();
 
-  // swap:  "swap <amt> <from> to <to>"
-  const swap = s.match(/^\s*swap\s+(\$?[\d.]+)\s+([a-z0-9.$]+)\s+(?:to|for|->)\s+([a-z0-9.$]+)/i);
+  // swap:  "swap <amt> <from> to <to>"  (also matches /buy as a swap)
+  const swap = s.match(/^\s*(?:swap|buy)\s+(\$?[\d.]+)\s+([a-z0-9.$]+)\s+(?:to|for|->)\s+([a-z0-9.$]+)/i);
   if (swap) {
     const [, amt, from, to] = swap;
     return {
@@ -106,6 +114,23 @@ function parseIntent(text) {
       amountIsUsd: amt.startsWith("$"),
       fromToken: normaliseToken(from),
       toToken:   normaliseToken(to),
+    };
+  }
+
+  // "buy <amt> <token>" — shorthand without a "from" clause. Defaults
+  // the source side to native NEAR, because 99% of the time that's
+  // what a user pre-funded the custodial account with. If they want
+  // to spend USDC or something else, the full "swap <amt> <from> to
+  // <to>" form still works.
+  const buy = s.match(/^\s*buy\s+(\$?[\d.]+)\s+([a-z0-9.$]+)\s*$/i);
+  if (buy) {
+    const [, amt, tok] = buy;
+    return {
+      kind: "swap",
+      amount: amt.replace(/^\$/, ""),
+      amountIsUsd: amt.startsWith("$"),
+      fromToken: "nep141:wrap.near",
+      toToken:   normaliseToken(tok),
     };
   }
 
