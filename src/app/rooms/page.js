@@ -165,7 +165,6 @@ export default function RoomsPage() {
       )}
 
       <style>{`.ix-spin { animation: ixSpin 1s linear infinite; } @keyframes ixSpin { to { transform: rotate(360deg); } }`}</style>
-      </div>
     </AppShell>
   );
 }
