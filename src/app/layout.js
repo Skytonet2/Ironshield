@@ -266,35 +266,23 @@ export default function RootLayout({ children }) {
             we never loop. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
-            // ─── Kill any lingering service worker + caches ────────
-            // Previous SW versions were serving stale HTML that
-            // referenced chunks no longer on the deploy → Chrome
-            // renderer crash ("This page couldn't load"). SW
-            // registration is disabled client-side, but users may
-            // still have an old SW active from earlier visits. This
-            // block fires on every visit until the SW is confirmed
-            // gone — cheap no-op once there's nothing to clean.
-            //
-            // The ?swreset=1 query param is a one-shot guard so we
-            // never reload more than once per visit: if it's present,
-            // cleanup already happened, skip.
+            // ─── Background SW cleanup (non-reloading) ────────────
+            // Quietly unregister any leftover service worker and drop
+            // its caches. NO reload here — triggering a reload from
+            // this path while chunks are still downloading can race
+            // with the 12-second auto-recover below and trap users
+            // in a loop. The new /sw.js is a self-uninstaller, so
+            // when a stale SW hands control to it, the cleanup
+            // completes without us orchestrating anything.
             try {
-              if (!/[?&]swreset=1/.test(location.search)
-                  && navigator.serviceWorker
-                  && navigator.serviceWorker.getRegistrations) {
+              if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
                 navigator.serviceWorker.getRegistrations().then(function(regs){
-                  if (!regs.length) return; // nothing to do
-                  return Promise.all(regs.map(function(r){ return r.unregister(); })).then(function(){
-                    var killCache = (window.caches && caches.keys)
-                      ? caches.keys().then(function(keys){
-                          return Promise.all(keys.map(function(k){ return caches.delete(k); }));
-                        }).catch(function(){})
-                      : Promise.resolve();
-                    return killCache;
-                  }).then(function(){
-                    var sep = location.search ? "&" : "?";
-                    location.replace(location.origin + location.pathname + location.search + sep + "swreset=1" + location.hash);
-                  });
+                  regs.forEach(function(r){ try { r.unregister(); } catch(e){} });
+                }).catch(function(){});
+              }
+              if (window.caches && caches.keys) {
+                caches.keys().then(function(keys){
+                  keys.forEach(function(k){ try { caches.delete(k); } catch(e){} });
                 }).catch(function(){});
               }
             } catch(e){}
