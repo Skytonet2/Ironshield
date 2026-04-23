@@ -50,10 +50,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
       <head>
-        {/* Preload mascot raster used in the landing hero + CTA band.
-            Browser prefers .webp but the file doesn't ship yet — preload
-            the .png we actually have. */}
-        <link rel="preload" as="image" href="/mascot.png" />
+        {/* Preload lightweight mascot WebP (31KB, 520×780). Was previously
+            preloading the 346KB PNG which decoded to ~4MB and OOM'd Telegram
+            in-app WebView. */}
+        <link rel="preload" as="image" href="/mascot.webp" type="image/webp" />
         <meta name="theme-color" content="#0b0e1c" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

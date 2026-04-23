@@ -27,7 +27,11 @@ export default function AmbientBackground() {
     maxWidth: 900,
     maxHeight: 900,
     borderRadius: "50%",
-    filter: "blur(80px)",
+    // 80px blur on 60vw squares animating in a fixed layer was an OOM vector
+    // for in-app WebViews (Telegram, X). 40px still reads as ambient depth and
+    // costs ~4× less to composite. The CSS below removes the layer entirely on
+    // narrow screens where the effect is visually wasted anyway.
+    filter: "blur(40px)",
     willChange: "transform",
     pointerEvents: "none",
   };
@@ -35,6 +39,7 @@ export default function AmbientBackground() {
   return (
     <div
       aria-hidden="true"
+      className="ambient-bg"
       style={{
         position: "fixed",
         inset: 0,
@@ -90,6 +95,12 @@ export default function AmbientBackground() {
         }
         @media (prefers-reduced-motion: reduce) {
           div { animation: none !important; }
+        }
+        @media (max-width: 780px) {
+          /* Skip the decorative ambient blobs entirely on mobile. Heavy blur
+             on a fixed layer is the biggest single contributor to in-app
+             WebView OOMs we've observed. */
+          :global(.ambient-bg) { display: none !important; }
         }
       `}</style>
     </div>

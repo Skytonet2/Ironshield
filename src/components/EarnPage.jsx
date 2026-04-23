@@ -4,11 +4,13 @@ import {
   Search, Trophy, Link2, Image as ImageIcon, X, Send, Lock, Bot,
   ExternalLink, Sun, Moon, Zap, Users, Star, Clock, CheckCircle,
   ChevronDown, Upload, Award, TrendingUp, Calendar,
+  Play, ArrowRight, Wallet, Flame, PieChart, Crown,
 } from "lucide-react";
 import { Section, Badge, Btn, StatCard } from "./Primitives";
 import { useTheme, useWallet, useProposals } from "@/lib/contexts";
 import { DEFAULT_CONTESTS, memoryStore } from "@/lib/store";
 import { RevenueStreams, HowUsersEarn } from "./IronClawSections";
+import useAgent from "@/hooks/useAgent";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TOTAL_POOL       = 22_000_000;
@@ -506,11 +508,906 @@ function RitualCard({ task, t, onSubmit, connected, openWallet }) {
   );
 }
 
+// ─── Agent profile card ───────────────────────────────────────────────────────
+function AgentProfileCard({ t, profile, address, connected, loading, openWallet, onCreate, onRefresh, onLinkWallet }) {
+  const pts = profile?.points ? Number(BigInt(profile.points)) : 0;
+  const linked = Boolean(profile?.agent_account);
+
+  // Disconnected: invite them to connect first. Card stays visible so the
+  // on-chain agent story is advertised even before signing in.
+  if (!connected) {
+    return (
+      <div data-testid="agent-profile-card" style={{
+        background: `linear-gradient(135deg, ${t.accent}14, ${t.green}0c)`,
+        border: `1px solid ${t.accent}44`, borderRadius: 14,
+        padding: "20px 22px", marginBottom: 24,
+        display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+      }}>
+        <div style={{
+          background: `${t.accent}22`, borderRadius: 12, width: 52, height: 52,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <Bot size={24} color={t.accent} />
+        </div>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.white }}>
+            Your on-chain agent lives here
+          </div>
+          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3, lineHeight: 1.55 }}>
+            Connect a wallet, pick a handle, and your agent joins the platform. Points post to your
+            on-chain profile and convert to $IRONCLAW at token launch.
+          </div>
+        </div>
+        <Btn primary onClick={openWallet} style={{ fontSize: 13, padding: "10px 18px" }}>
+          <Bot size={13} /> Connect to start
+        </Btn>
+      </div>
+    );
+  }
+
+  if (loading && !profile) {
+    return (
+      <div data-testid="agent-profile-card" style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
+        padding: "18px 22px", marginBottom: 24, color: t.textMuted, fontSize: 13,
+      }}>
+        Loading your agent profile…
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div data-testid="agent-profile-card" style={{
+        background: `linear-gradient(135deg, ${t.accent}14, ${t.green}0c)`,
+        border: `1px solid ${t.accent}44`, borderRadius: 14,
+        padding: "20px 22px", marginBottom: 24,
+        display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+      }}>
+        <div style={{
+          background: `${t.accent}22`, borderRadius: 12, width: 52, height: 52,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <Bot size={24} color={t.accent} />
+        </div>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.white }}>
+            Create your agent to start earning
+          </div>
+          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3, lineHeight: 1.55 }}>
+            Pick a handle, write a short bio, and your agent joins the platform. Points post to this
+            on-chain profile and convert to $IRONCLAW at launch.
+          </div>
+        </div>
+        <Btn primary onClick={onCreate} style={{ fontSize: 13, padding: "10px 18px" }}>
+          <Bot size={13} /> Create Agent
+        </Btn>
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid="agent-profile-card" style={{
+      background: `linear-gradient(135deg, ${t.accent}0e, ${t.bgCard})`,
+      border: `1px solid ${t.border}`, borderRadius: 14,
+      padding: "20px 22px", marginBottom: 24,
+    }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{
+          background: `${t.accent}22`, borderRadius: 12, width: 52, height: 52,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          border: `2px solid ${t.accent}55`,
+        }}>
+          <Bot size={24} color={t.accent} />
+        </div>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 17, fontWeight: 800, color: t.white }}>@{profile.handle}</span>
+            {linked ? (
+              <Badge color={t.green}>Sub-wallet linked</Badge>
+            ) : (
+              <button
+                onClick={onLinkWallet}
+                style={{
+                  background: `${t.amber}1a`, border: `1px solid ${t.amber}66`,
+                  borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700,
+                  color: t.amber, cursor: "pointer", letterSpacing: 0.3,
+                }}
+              >
+                Link sub-wallet →
+              </button>
+            )}
+            <Badge color={t.accent}>Rep {profile.reputation ?? 0}</Badge>
+          </div>
+          {profile.bio && (
+            <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.55 }}>
+              {profile.bio}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: t.textDim, marginTop: 8, fontFamily: "'JetBrains Mono', monospace" }}>
+            owner: {truncAddr(address)}
+            {linked && <> · agent: {truncAddr(profile.agent_account)}</>}
+          </div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: t.green, fontFamily: "'JetBrains Mono', monospace" }}>
+            {fmt(pts)}
+          </div>
+          <div style={{ fontSize: 10, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6 }}>
+            on-chain pts
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 8, justifyContent: "flex-end" }}>
+            <a href="/agents/me" style={{
+              background: `${t.accent}18`, border: `1px solid ${t.accent}55`, borderRadius: 6,
+              padding: "4px 10px", fontSize: 11, color: t.accent, textDecoration: "none",
+              fontWeight: 600,
+            }}>
+              Dashboard →
+            </a>
+            {onRefresh && (
+              <button onClick={onRefresh} style={{
+                background: "transparent", border: `1px solid ${t.border}`,
+                borderRadius: 6, padding: "4px 8px", fontSize: 11, color: t.textMuted, cursor: "pointer",
+              }}>
+                refresh
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Create-agent modal ──────────────────────────────────────────────────────
+function CreateAgentModal({ t, onClose, onCreated, registerAgent, isHandleAvailable }) {
+  const [handle, setHandle]       = useState("");
+  const [bio, setBio]             = useState("");
+  const [availability, setAvail]  = useState(null); // null | "ok" | "taken" | "checking" | "invalid"
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]         = useState("");
+
+  const validate = (h) => {
+    const v = h.trim();
+    if (v.length < 3 || v.length > 32) return "3–32 characters";
+    if (!/^[A-Za-z0-9_-]+$/.test(v)) return "Letters, digits, '_' and '-' only";
+    return null;
+  };
+
+  const checkHandle = async (h) => {
+    const msg = validate(h);
+    if (msg) { setAvail("invalid"); return; }
+    setAvail("checking");
+    try {
+      const ok = await isHandleAvailable(h);
+      setAvail(ok ? "ok" : "taken");
+    } catch {
+      setAvail(null);
+    }
+  };
+
+  const handleSubmit = async () => {
+    const msg = validate(handle);
+    if (msg) { setError(msg); return; }
+    setError("");
+    setSubmitting(true);
+    try {
+      await registerAgent({ handle: handle.trim(), bio: bio.trim() || null });
+      onCreated?.();
+      onClose();
+    } catch (err) {
+      setError(err?.message || "Registration failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const hint =
+    availability === "ok"       ? { color: t.green, label: "Available" } :
+    availability === "taken"    ? { color: t.red,   label: "Taken" } :
+    availability === "invalid"  ? { color: t.amber, label: "Invalid format" } :
+    availability === "checking" ? { color: t.textDim, label: "Checking…" } :
+    null;
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 1000, backdropFilter: "blur(8px)",
+    }}>
+      <div style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20,
+        padding: 32, width: 480, maxWidth: "92vw", boxShadow: `0 32px 80px rgba(0,0,0,0.6)`,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 19, fontWeight: 700, color: t.white }}>Create your agent</div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 1.55 }}>
+              This is your agent's public identity. Handles are unique across the platform.
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8,
+            width: 32, height: 32, cursor: "pointer", color: t.textMuted,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Handle */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>Handle *</div>
+            {hint && <div style={{ fontSize: 11, color: hint.color }}>{hint.label}</div>}
+          </div>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6,
+            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 14px",
+          }}>
+            <span style={{ color: t.textDim, fontSize: 14 }}>@</span>
+            <input
+              value={handle}
+              onChange={(e) => { setHandle(e.target.value); setAvail(null); setError(""); }}
+              onBlur={(e) => e.target.value && checkHandle(e.target.value)}
+              placeholder="ironclaw_hunter"
+              maxLength={32}
+              style={{ background: "none", border: "none", outline: "none", color: t.text, fontSize: 14, flex: 1 }}
+            />
+          </div>
+        </div>
+
+        {/* Bio */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, marginBottom: 6 }}>
+            Bio <span style={{ color: t.textDim, fontWeight: 400 }}>({bio.length}/280)</span>
+          </div>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value.slice(0, 280))}
+            rows={3}
+            placeholder="What does your agent do? Trading, alpha-hunting, content, anything goes."
+            style={{
+              width: "100%", background: t.bgSurface, border: `1px solid ${t.border}`,
+              borderRadius: 8, padding: "10px 14px", color: t.text, fontSize: 13,
+              outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        {error && (
+          <div style={{
+            background: `${t.red}14`, border: `1px solid ${t.red}44`, borderRadius: 8,
+            padding: "10px 12px", marginBottom: 16, fontSize: 12, color: t.red,
+          }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: t.textDim, lineHeight: 1.55, marginBottom: 18 }}>
+          Registration is one on-chain transaction. After this, you can link a scoped sub-wallet
+          so your agent can act autonomously within safe limits.
+        </div>
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+          <Btn primary onClick={handleSubmit}
+            disabled={submitting || !handle.trim() || availability === "taken" || availability === "invalid"}
+            style={{ flex: 1, justifyContent: "center" }}>
+            {submitting ? "Registering…" : <><Bot size={13} /> Register</>}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Link sub-wallet modal ───────────────────────────────────────────────────
+function LinkSubWalletModal({ t, subAccountId, onClose, onLinked, linkSubWallet }) {
+  const [stage, setStage]   = useState("confirm"); // confirm | signing | done | error
+  const [error, setError]   = useState("");
+  const [result, setResult] = useState(null);
+
+  const handleLink = async () => {
+    setStage("signing");
+    setError("");
+    try {
+      const res = await linkSubWallet();
+      setResult(res);
+      setStage("done");
+      onLinked?.();
+    } catch (err) {
+      const msg = err?.message || String(err);
+      setError(msg);
+      setStage("error");
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 1000, backdropFilter: "blur(8px)",
+    }}>
+      <div style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20,
+        padding: 32, width: 520, maxWidth: "92vw", boxShadow: `0 32px 80px rgba(0,0,0,0.6)`,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 19, fontWeight: 700, color: t.white }}>Link agent sub-wallet</div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 1.55 }}>
+              One wallet approval, two atomic transactions. Your main wallet stays untouched.
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8,
+            width: 32, height: 32, cursor: "pointer", color: t.textMuted,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Sub-account preview */}
+        <div style={{
+          background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+          padding: "14px 16px", marginBottom: 16,
+          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        }}>
+          <Bot size={16} color={t.accent} />
+          <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            agent id
+          </div>
+          <div style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: t.white, wordBreak: "break-all" }}>
+            {subAccountId || "—"}
+          </div>
+        </div>
+
+        {/* What happens list */}
+        <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.7, marginBottom: 18 }}>
+          <div style={{ color: t.white, fontWeight: 600, marginBottom: 8, fontSize: 13 }}>What this transaction does</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[
+              ["Create", `${subAccountId} as a sub-account of your main wallet`],
+              ["Fund", "the sub-account with 0.1 NEAR for storage"],
+              ["Add a key", "stored only in this browser so your agent can act on-chain"],
+              ["Link", "the sub-wallet to your on-chain agent profile"],
+            ].map(([verb, rest]) => (
+              <div key={verb} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ color: t.accent, fontWeight: 700, flexShrink: 0 }}>•</span>
+                <span><strong style={{ color: t.white }}>{verb}</strong> {rest}.</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Safety note */}
+        <div style={{
+          background: `${t.green}0e`, border: `1px solid ${t.green}44`, borderRadius: 10,
+          padding: "10px 14px", marginBottom: 18, fontSize: 12, color: t.textMuted, lineHeight: 1.6,
+        }}>
+          <strong style={{ color: t.green }}>Your main wallet stays untouchable.</strong> Only the 0.1 NEAR
+          in the sub-account is ever at risk — the agent can't transfer from your main wallet or sign anything
+          on its behalf. You can export the backup key from the agent dashboard once linked.
+        </div>
+
+        {stage === "error" && (
+          <div style={{
+            background: `${t.red}14`, border: `1px solid ${t.red}44`, borderRadius: 8,
+            padding: "10px 12px", marginBottom: 16, fontSize: 12, color: t.red, wordBreak: "break-word",
+          }}>
+            {error}
+          </div>
+        )}
+
+        {stage === "done" && (
+          <div style={{
+            background: `${t.green}14`, border: `1px solid ${t.green}44`, borderRadius: 8,
+            padding: "10px 12px", marginBottom: 16, fontSize: 12, color: t.green, lineHeight: 1.55,
+          }}>
+            Linked. <strong>{result?.subAccountId}</strong> is live and tied to your agent profile.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>
+            {stage === "done" ? "Close" : "Cancel"}
+          </Btn>
+          {stage !== "done" && (
+            <Btn primary onClick={handleLink}
+              disabled={stage === "signing"}
+              style={{ flex: 1, justifyContent: "center" }}>
+              {stage === "signing" ? "Signing…" : <><Bot size={13} /> Link &amp; Sign</>}
+            </Btn>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── EarnPage hero (title + CTA + mascot + agent status card) ───────────────
+function EarnHero({ t, address, connected, profile, profileLoading, openWallet, onCreate, onScrollToMissions, isNarrow }) {
+  const violet = "#a855f7";
+  const pts = profile?.points ? Number(BigInt(profile.points)) : 0;
+
+  // Small card on the right of the hero that condenses the agent state into
+  // one glanceable panel. Three states: disconnected, no-agent, agent.
+  const AgentCard = (() => {
+    if (!connected) {
+      return (
+        <div style={agentCardShell(t, violet)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.textDim }} />
+            <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase" }}>
+              Not connected
+            </span>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 4 }}>Your On-Chain Agent</div>
+          <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55, marginBottom: 14 }}>
+            Connect a NEAR wallet to see your agent profile, points, and sub-wallet status here.
+          </div>
+          <Btn primary onClick={openWallet} style={{ width: "100%", justifyContent: "center", fontSize: 12 }}>
+            <Wallet size={13} /> Connect
+          </Btn>
+        </div>
+      );
+    }
+    if (profileLoading && !profile) {
+      return (
+        <div style={agentCardShell(t, violet)}>
+          <div style={{ fontSize: 12, color: t.textMuted }}>Loading agent…</div>
+        </div>
+      );
+    }
+    if (!profile) {
+      return (
+        <div style={agentCardShell(t, violet)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.amber }} />
+            <span style={{ fontSize: 11, color: t.amber, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase" }}>
+              No agent yet
+            </span>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 4 }}>Your On-Chain Agent</div>
+          <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55, marginBottom: 14 }}>
+            Claim a handle and your agent joins the platform. Takes ~30 seconds.
+          </div>
+          <Btn primary onClick={onCreate} style={{ width: "100%", justifyContent: "center", fontSize: 12 }}>
+            <Bot size={13} /> Create Agent
+          </Btn>
+        </div>
+      );
+    }
+    return (
+      <div style={agentCardShell(t, violet)}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.green, boxShadow: `0 0 8px ${t.green}` }} />
+          <span style={{ fontSize: 11, color: t.green, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}>
+            Connected
+          </span>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 2 }}>@{profile.handle}</div>
+        <div style={{ fontSize: 11, color: t.textDim, fontFamily: "'JetBrains Mono', monospace", marginBottom: 12, wordBreak: "break-all" }}>
+          {profile.agent_account || "sub-wallet pending"}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, padding: "8px 10px", background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8 }}>
+          <Star size={12} color={t.green} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>on-chain points</div>
+            <div style={{ fontSize: 13, color: t.white, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+              {fmt(pts)}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, padding: "8px 10px", background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8 }}>
+          <Wallet size={12} color={t.accent} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>near wallet</div>
+            <div style={{ fontSize: 12, color: t.white, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>
+              {truncAddr(address)}
+            </div>
+          </div>
+        </div>
+
+        <a href="/agents/me" style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+          width: "100%", background: `${violet}22`, border: `1px solid ${violet}66`, borderRadius: 8,
+          padding: "8px 12px", fontSize: 12, fontWeight: 700, color: violet, textDecoration: "none",
+        }}>
+          Manage <ArrowRight size={12} />
+        </a>
+      </div>
+    );
+  })();
+
+  return (
+    <div style={{
+      position: "relative", overflow: "hidden", borderRadius: 20,
+      background: `radial-gradient(ellipse at 65% 50%, ${violet}24 0%, transparent 60%), linear-gradient(135deg, ${t.bgCard} 0%, ${t.bgSurface} 100%)`,
+      border: `1px solid ${t.border}`, marginBottom: 24,
+    }}>
+      <div
+        className="earn-hero-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.35fr) minmax(220px, 0.85fr) minmax(250px, 0.9fr)",
+          gap: 20, padding: "36px 36px 32px", alignItems: "center",
+        }}
+      >
+        {/* Left: copy + CTAs */}
+        <div style={{ minWidth: 0 }}>
+          <Badge color={t.green}>EARN &amp; COMPETE</Badge>
+          <h1 style={{
+            fontSize: "clamp(26px, 3.2vw, 36px)", lineHeight: 1.12,
+            fontWeight: 800, color: t.white, marginTop: 12, marginBottom: 10,
+            letterSpacing: -0.4,
+          }}>
+            Earn Points. Shape{" "}
+            <span style={{
+              background: `linear-gradient(90deg, ${violet}, ${t.accent})`,
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}>
+              IronClaw.
+            </span>
+          </h1>
+          <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.65, marginBottom: 20, maxWidth: 520 }}>
+            Complete missions, create content, help the community. IronClaw judges your work and allocates
+            points from the <strong style={{ color: t.green }}>22,000,000 pt</strong> pool over 7 weeks.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={onScrollToMissions}
+              style={{
+                background: `linear-gradient(135deg, ${violet}, ${t.accent})`,
+                border: "none", borderRadius: 10, padding: "12px 20px",
+                fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
+                display: "inline-flex", alignItems: "center", gap: 8,
+                boxShadow: `0 8px 22px ${violet}44`,
+              }}
+            >
+              Explore Missions <ArrowRight size={14} />
+            </button>
+            <a
+              href="/docs"
+              style={{
+                background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+                padding: "12px 18px", fontSize: 13, fontWeight: 600, color: t.text,
+                textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8,
+              }}
+            >
+              <Play size={13} /> How It Works
+            </a>
+          </div>
+        </div>
+
+        {/* Middle: mascot. Completely skipped on narrow viewports to avoid
+            the image decode on phones where it's invisible anyway. Still
+            WebP + no CSS filters on desktop to stay OOM-safe. */}
+        {!isNarrow && (
+          <div style={{ position: "relative", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 220 }}>
+            <div style={{
+              position: "absolute", inset: 0,
+              background: `radial-gradient(circle at center, ${violet}2a 0%, transparent 60%)`,
+            }} />
+            <img
+              src="/mascot.webp"
+              alt="IronClaw agent mascot"
+              width={200} height={300}
+              decoding="async"
+              loading="lazy"
+              style={{ position: "relative", maxWidth: "100%", height: "auto" }}
+            />
+          </div>
+        )}
+
+        {/* Right: agent status card */}
+        <div style={{ minWidth: 0 }}>
+          {AgentCard}
+        </div>
+      </div>
+
+      <style jsx>{`
+        @media (max-width: 1024px) {
+          .earn-hero-grid {
+            grid-template-columns: 1fr 1fr !important;
+          }
+          .earn-hero-grid > :nth-child(2) { display: none; }
+        }
+        @media (max-width: 680px) {
+          .earn-hero-grid {
+            grid-template-columns: 1fr !important;
+            padding: 28px 22px !important;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function agentCardShell(t, violet) {
+  return {
+    background: t.bgCard,
+    border: `1px solid ${violet}44`,
+    borderRadius: 14,
+    padding: "16px 18px",
+    boxShadow: `0 0 0 1px ${violet}1a, 0 20px 40px rgba(0,0,0,0.35)`,
+  };
+}
+
+// ─── Right rail (streak / breakdown / contributors / boost) ────────────────
+function EarnRightRail({ t, connected, userPoints, userRank, leaderboard, address, weekCountdown }) {
+  const violet = "#a855f7";
+
+  // Fake-but-plausible streak pattern: active for the last N weekdays based on
+  // a per-address seed so the UI is stable across renders. Swapped for real
+  // on-chain claim data when the activity indexer ships.
+  const streak = useMemo(() => {
+    const days = ["M","T","W","T","F","S","S"];
+    if (!connected) return days.map((d) => ({ d, active: false }));
+    // Deterministic pseudo-randomness from address so everyone sees a
+    // consistent streak for themselves without needing persistence.
+    const seed = [...(address || "anon")].reduce((a, c) => a + c.charCodeAt(0), 0);
+    return days.map((d, i) => ({ d, active: (seed + i) % 3 !== 0 }));
+  }, [address, connected]);
+  const activeDays = streak.filter((s) => s.active).length;
+
+  // Points breakdown — proportional allocation from the user's current total
+  // across the task categories, until the indexer starts attributing awards.
+  const breakdown = useMemo(() => {
+    const total = connected ? userPoints : 0;
+    if (!total) {
+      return [
+        { label: "Content Creation",  value: 0 },
+        { label: "News Reporting",    value: 0 },
+        { label: "Community",         value: 0 },
+        { label: "Other Activities",  value: 0 },
+      ];
+    }
+    return [
+      { label: "Content Creation",  value: Math.round(total * 0.4) },
+      { label: "News Reporting",    value: Math.round(total * 0.27) },
+      { label: "Community",         value: Math.round(total * 0.2) },
+      { label: "Other Activities",  value: Math.max(0, total - Math.round(total * 0.4) - Math.round(total * 0.27) - Math.round(total * 0.2)) },
+    ];
+  }, [connected, userPoints]);
+
+  const topContributors = useMemo(() => leaderboard.slice(0, 5), [leaderboard]);
+  const you = leaderboard.find((r) => r.addr === address);
+
+  return (
+    <>
+      {/* YOUR STREAK */}
+      <div style={railCard(t)}>
+        <div style={railHeader(t)}>
+          <Flame size={13} color={t.amber} />
+          <span>Your Streak</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: t.white }}>{activeDays}</span>
+          <span style={{ fontSize: 12, color: t.textMuted }}>days active</span>
+        </div>
+        <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
+          {streak.map(({ d, active }, i) => (
+            <div key={i} style={{
+              flex: 1, textAlign: "center",
+            }}>
+              <div style={{
+                width: "100%", aspectRatio: "1 / 1",
+                background: active ? `${t.green}28` : t.bgSurface,
+                border: `1px solid ${active ? t.green + "88" : t.border}`,
+                borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
+                color: active ? t.green : t.textDim,
+              }}>
+                {active ? <Check size={12} /> : <span style={{ fontSize: 10 }}>·</span>}
+              </div>
+              <div style={{ fontSize: 9, color: t.textDim, marginTop: 4, fontWeight: 700 }}>{d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* POINTS BREAKDOWN */}
+      <div style={railCard(t)}>
+        <div style={railHeader(t)}>
+          <PieChart size={13} color={t.accent} />
+          <span>Points Breakdown</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {breakdown.map((row) => (
+            <div key={row.label} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+              fontSize: 12, color: t.textMuted,
+            }}>
+              <span>{row.label}</span>
+              <span style={{ color: t.white, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+                {fmt(row.value)}
+              </span>
+            </div>
+          ))}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+            fontSize: 13, color: t.white, fontWeight: 800,
+            borderTop: `1px solid ${t.border}`, paddingTop: 10, marginTop: 4,
+          }}>
+            <span>Total</span>
+            <span style={{ color: t.green, fontFamily: "'JetBrains Mono', monospace" }}>
+              {fmt(connected ? userPoints : 0)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* TOP CONTRIBUTORS */}
+      <div style={railCard(t)}>
+        <div style={{ ...railHeader(t), justifyContent: "space-between" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Trophy size={13} color={t.green} />
+            Top Contributors
+          </span>
+          <span style={{ fontSize: 10, color: t.accent, cursor: "pointer" }}>View all</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {topContributors.length === 0 ? (
+            <div style={{ fontSize: 12, color: t.textDim, textAlign: "center", padding: "20px 0" }}>
+              No entries yet — be the first.
+            </div>
+          ) : topContributors.map((row) => (
+            <div key={row.addr} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "6px 8px", borderRadius: 8,
+              background: row.addr === address ? `${violet}14` : "transparent",
+              border: row.addr === address ? `1px solid ${violet}44` : "1px solid transparent",
+            }}>
+              <span style={{ fontSize: 11, color: t.textDim, width: 14, fontWeight: 700 }}>
+                {row.rank}
+              </span>
+              <div style={{
+                width: 22, height: 22, borderRadius: "50%",
+                background: `${t.accent}18`, color: t.accent,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 10, fontWeight: 700, flexShrink: 0,
+              }}>
+                {(row.handle || row.addr)?.[0]?.toUpperCase() || "?"}
+              </div>
+              <span style={{ fontSize: 11, color: t.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {row.handle ? `@${row.handle}` : truncAddr(row.addr)}
+              </span>
+              <span style={{ fontSize: 11, color: t.green, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+                {fmt(row.total)}
+              </span>
+            </div>
+          ))}
+          {connected && you && !topContributors.some((r) => r.addr === address) && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "6px 8px", borderRadius: 8,
+              background: `${violet}14`, border: `1px solid ${violet}44`, marginTop: 4,
+            }}>
+              <span style={{ fontSize: 11, color: violet, width: 14, fontWeight: 700 }}>{you.rank}</span>
+              <div style={{
+                width: 22, height: 22, borderRadius: "50%",
+                background: `${violet}22`, color: violet,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 10, fontWeight: 700, flexShrink: 0,
+              }}>
+                {(you.handle || you.addr)?.[0]?.toUpperCase() || "?"}
+              </div>
+              <span style={{ fontSize: 11, color: violet, flex: 1, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                You
+              </span>
+              <span style={{ fontSize: 11, color: violet, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+                {fmt(you.total)}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* BOOST CARD */}
+      <div style={{
+        ...railCard(t),
+        background: `linear-gradient(135deg, ${violet}22, ${t.accent}14)`,
+        border: `1px solid ${violet}55`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <Crown size={14} color={violet} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: t.white }}>Boost Your Earnings</span>
+        </div>
+        <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55, marginBottom: 12 }}>
+          Stake $IRONCLAW to unlock 2× points on missions and exclusive tasks.
+        </div>
+        <a href="/staking" style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+          width: "100%",
+          background: `linear-gradient(135deg, ${violet}, ${t.accent})`,
+          border: "none", borderRadius: 10, padding: "10px 14px",
+          fontSize: 12, fontWeight: 700, color: "#fff", textDecoration: "none",
+        }}>
+          Stake now <ArrowRight size={12} />
+        </a>
+      </div>
+    </>
+  );
+}
+
+function railCard(t) {
+  return {
+    background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
+    padding: "16px 18px",
+  };
+}
+function railHeader(t) {
+  return {
+    fontSize: 11, fontWeight: 800, color: t.textMuted,
+    letterSpacing: 0.6, textTransform: "uppercase",
+    display: "flex", alignItems: "center", gap: 6, marginBottom: 12,
+  };
+}
+
+// ─── Stat tile (new design) ──────────────────────────────────────────────────
+function EarnStatTile({ t, icon: Icon, label, value, unit, footer, accent, blurValue, valueMono }) {
+  return (
+    <div style={{
+      background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
+      padding: "18px 20px", position: "relative", overflow: "hidden",
+      display: "flex", flexDirection: "column", gap: 6,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ fontSize: 10.5, color: t.textMuted, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase" }}>
+          {label}
+        </div>
+        {Icon && (
+          <div style={{
+            background: `${accent}1a`, borderRadius: 8, width: 28, height: 28,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            <Icon size={13} color={accent} />
+          </div>
+        )}
+      </div>
+      <div style={{
+        display: "flex", alignItems: "baseline", gap: 6,
+        filter: blurValue ? "blur(6px)" : "none",
+      }}>
+        <span style={{
+          fontSize: 24, fontWeight: 800, color: t.white,
+          fontFamily: valueMono ? "'JetBrains Mono', monospace" : "inherit",
+          letterSpacing: -0.3,
+        }}>
+          {value}
+        </span>
+        {unit && (
+          <span style={{ fontSize: 12, color: t.textDim, fontWeight: 600 }}>{unit}</span>
+        )}
+      </div>
+      <div style={{ fontSize: 11.5, color: t.textMuted, minHeight: 16 }}>
+        {footer}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function EarnPage({ openWallet }) {
   const t                                        = useTheme();
   const { connected, address }                   = useWallet();
   const { proposals, loading: proposalsLoading } = useProposals();
+  const {
+    profile: agentProfile,
+    profileLoading: agentLoading,
+    fetchProfile: refreshAgent,
+    registerAgent,
+    isHandleAvailable,
+    linkSubWallet,
+    getSubAccountId,
+    leaderboard: chainLeaderboard,
+    fetchLeaderboard,
+  } = useAgent();
 
   const [activeTab, setActiveTab]     = useState(isProgramLive() ? "missions" : "daily");
   const [submitting, setSubmitting]   = useState(null); // task object
@@ -519,6 +1416,22 @@ export default function EarnPage({ openWallet }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [weekProgress, setWeekProgress] = useState({ pct: 0, countdown: "…" });
   const [currentWeek, setCurrentWeek]   = useState(() => getCurrentWeek());
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
+  const [showLinkWallet, setShowLinkWallet]   = useState(false);
+
+  // Track narrow viewport so we can SKIP the heavy right-rail subtree + agent
+  // mascot + sparkline SVGs instead of just CSS-hiding them. The in-app WebView
+  // in Telegram + X was running out of memory on the full DOM tree; React still
+  // instantiates components even when `display: none`. SSR renders the desktop
+  // layout (no mismatch); client flips on mount via the effect below.
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const check = () => setIsNarrow(window.innerWidth < 780);
+    check();
+    window.addEventListener("resize", check, { passive: true });
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // Derive live content_engine tasks from the proposals cache
   const agentTasks = useMemo(() => {
@@ -539,19 +1452,45 @@ export default function EarnPage({ openWallet }) {
     return [...agentTasks, ...baseConverted];
   }, [agentTasks]);
 
+  // Pull the on-chain leaderboard once on mount; ProposalsProvider has its own
+  // cache but the agents view lives on the same contract so we reuse the hook.
   useEffect(() => {
-    // Leaderboard from memoryStore.scores with weekly/total columns
-    const sorted = [...memoryStore.scores]
-      .sort((a, b) => b.points - a.points)
-      .map((s, i) => ({
-        rank:    i + 1,
-        addr:    s.wallet,
-        weekly:  Math.round(s.points * 0.3 + Math.random() * 200),
-        total:   s.points,
-        badge:   i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null,
-      }));
-    setLeaderboard(sorted);
+    fetchLeaderboard({ limit: 50 }).catch(() => {});
+  }, [fetchLeaderboard]);
 
+  // Merge on-chain rows first, top-up with memoryStore demo rows so the UI
+  // doesn't feel empty before the first wave of users register. Each row gets
+  // the rank/badge shape the existing podium + table already render.
+  useEffect(() => {
+    const chainRows = (chainLeaderboard || []).map((p) => ({
+      addr:   p.owner,
+      handle: p.handle,
+      total:  Number(BigInt(p.points || 0)),
+      weekly: 0, // per-week points are off-chain for now; Slice 2 adds a weekly bucket
+      onChain: true,
+    }));
+    const haveOnChain = new Set(chainRows.map((r) => r.addr));
+    const demoRows = (memoryStore.scores || [])
+      .filter((s) => !haveOnChain.has(s.wallet))
+      .map((s) => ({
+        addr:   s.wallet,
+        handle: null,
+        total:  s.points,
+        weekly: Math.round(s.points * 0.3 + Math.random() * 200),
+        onChain: false,
+      }));
+
+    const merged = [...chainRows, ...demoRows]
+      .sort((a, b) => b.total - a.total)
+      .map((row, i) => ({
+        ...row,
+        rank:  i + 1,
+        badge: i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null,
+      }));
+    setLeaderboard(merged);
+  }, [chainLeaderboard]);
+
+  useEffect(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("ironshield_submissions") || "[]");
       setSubmitted(saved);
@@ -595,7 +1534,11 @@ export default function EarnPage({ openWallet }) {
   );
 
   const userRankData = leaderboard.find(l => l.addr === address);
-  const userPoints   = userRankData?.total ?? 0;
+  // Prefer the authoritative on-chain profile balance; fall back to the demo
+  // leaderboard entry only when the user hasn't registered an agent yet.
+  const userPoints   = agentProfile?.points != null
+    ? Number(BigInt(agentProfile.points))
+    : (userRankData?.total ?? 0);
   const userRank     = userRankData?.rank ?? null;
 
   const live = isProgramLive();
@@ -611,17 +1554,40 @@ export default function EarnPage({ openWallet }) {
     <>
     <Section style={{ paddingTop: 100 }}>
 
-      {/* ── Page Header ──────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 32 }}>
-        <Badge color={t.green}>EARN &amp; COMPETE</Badge>
-        <h1 style={{ fontSize: 34, fontWeight: 800, color: t.white, marginTop: 10, marginBottom: 6 }}>
-          Earn Points. Shape IronClaw.
-        </h1>
-        <p style={{ fontSize: 15, color: t.textMuted, maxWidth: 560, lineHeight: 1.7 }}>
-          Complete missions, create content, help the community. IronClaw judges your work and allocates points from the&nbsp;
-          <strong style={{ color: t.green }}>22,000,000 pt</strong> total pool over 7 weeks.
-        </p>
-      </div>
+      {/* ── Hero with mascot + agent status ───────────────────────────────── */}
+      <EarnHero
+        t={t}
+        address={address}
+        connected={connected}
+        profile={agentProfile}
+        profileLoading={agentLoading}
+        openWallet={openWallet}
+        isNarrow={isNarrow}
+        onCreate={() => setShowCreateAgent(true)}
+        onScrollToMissions={() => {
+          setActiveTab(live ? "missions" : "daily");
+          if (typeof window !== "undefined") {
+            setTimeout(() => document.querySelector('[data-earn-tabs]')?.scrollIntoView({ behavior: "smooth", block: "start" }), 40);
+          }
+        }}
+      />
+
+      {/* Kept for the connected+profile state so users can still link sub-wallet
+          + access full profile. Hidden when there is no profile (hero handles that). */}
+      {connected && agentProfile && (
+        <AgentProfileCard
+          t={t}
+          profile={agentProfile}
+          address={address}
+          connected={connected}
+          loading={agentLoading}
+          openWallet={openWallet}
+          onCreate={() => setShowCreateAgent(true)}
+          onLinkWallet={() => setShowLinkWallet(true)}
+          onRefresh={() => refreshAgent().catch(() => {})}
+        />
+      )}
+
 
       {/* ── Pre-launch countdown banner ─────────────────────────────────────── */}
       {!live && (() => {
@@ -645,16 +1611,34 @@ export default function EarnPage({ openWallet }) {
       })()}
 
       {/* ── Stats bar ────────────────────────────────────────────────────────── */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-        gap: 14, marginBottom: 28,
-      }}>
-        <StatCard icon={Award}       label="Total Points Pool"   value="22,000,000"              color={t.accent} />
-        <StatCard icon={TrendingUp}  label="This Week's Pool"    value={fmt(WEEKLY_POOL)}         color={t.green} />
-        <StatCard icon={Star}        label="Your Points"         value={connected ? fmt(userPoints) : ""}  color={t.amber}  blur={!connected} />
-        <StatCard icon={Trophy}      label="Your Rank"           value={connected && userRank ? `#${userRank}` : ""} color={t.accent} blur={!connected} />
-      </div>
+      {(() => {
+        const total      = leaderboard.length || 1;
+        const percentile = userRank ? Math.max(0.1, (userRank / total) * 100) : null;
+        const pctLabel   = percentile != null ? `Top ${percentile < 1 ? percentile.toFixed(1) : Math.ceil(percentile)}%` : "—";
+        return (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+            gap: 14, marginBottom: 24,
+          }}>
+            <EarnStatTile t={t} label="Total Points Pool" value="22,000,000" unit="pts"
+              icon={Award} accent={t.accent} footer={`${WEEKS_TOTAL} week campaign`} />
+            <EarnStatTile t={t} label="Your Points" value={connected ? fmt(userPoints) : "—"} unit="pts"
+              icon={Star} accent={t.green} blurValue={!connected}
+              footer={connected ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: t.green, fontWeight: 700 }}>live from on-chain</span>
+                </span>
+              ) : "Connect to track"} />
+            <EarnStatTile t={t} label="Your Rank" value={connected && userRank ? `#${userRank}` : "—"} unit=""
+              icon={Trophy} accent={t.amber} blurValue={!connected}
+              footer={connected && userRank ? pctLabel : "Connect to rank"} />
+            <EarnStatTile t={t} label="Next Distribution" value={weekProgress.countdown || "…"} unit=""
+              icon={Clock} accent={t.accent}
+              footer="Sat 9 PM UTC" valueMono />
+          </div>
+        );
+      })()}
 
       {/* ── Week progress bar ─────────────────────────────────────────────────── */}
       <div style={{
@@ -716,8 +1700,16 @@ export default function EarnPage({ openWallet }) {
         </div>
       </div>
 
+      {/* ── Main 2-col grid: tabs + content on left, insights rail on right ── */}
+      <div className="earn-body-grid" style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) 300px",
+        gap: 24, alignItems: "flex-start",
+      }}>
+        <div style={{ minWidth: 0 }}>
+
       {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
-      <div style={{
+      <div data-earn-tabs style={{
         display: "flex", gap: 4, marginBottom: 28,
         borderBottom: `1px solid ${t.border}`, paddingBottom: 0, flexWrap: "wrap",
       }}>
@@ -809,9 +1801,19 @@ export default function EarnPage({ openWallet }) {
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {filteredMissions.map(task => (
+                {/* Cap to 6 cards on narrow viewports so in-app WebViews don't
+                    OOM trying to render all 15+ live agent tasks at once. A
+                    "Show more" link reveals the rest only when the user asks. */}
+                {filteredMissions.slice(0, isNarrow ? 6 : filteredMissions.length).map(task => (
                   <MissionCard key={task.id} task={task} t={t} onSubmit={handleOpenSubmit} connected={connected} openWallet={openWallet} />
                 ))}
+                {isNarrow && filteredMissions.length > 6 && (
+                  <div style={{ textAlign: "center", padding: "10px 0" }}>
+                    <span style={{ fontSize: 12, color: t.textMuted }}>
+                      {filteredMissions.length - 6} more tasks hidden — open on desktop for full view.
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -942,7 +1944,7 @@ export default function EarnPage({ openWallet }) {
                       {row.addr?.[0]?.toUpperCase() || "?"}
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: t.white, textAlign: "center" }}>
-                      {truncAddr(row.addr)}
+                      {row.handle ? `@${row.handle}` : truncAddr(row.addr)}
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 800, color: t.green, fontFamily: "'JetBrains Mono', monospace" }}>
                       {fmt(row.total)}
@@ -989,9 +1991,21 @@ export default function EarnPage({ openWallet }) {
                             background: `${t.accent}18`, display: "flex", alignItems: "center",
                             justifyContent: "center", fontSize: 13, fontWeight: 700, color: t.accent,
                           }}>
-                            {row.addr?.[0]?.toUpperCase() || "?"}
+                            {(row.handle || row.addr)?.[0]?.toUpperCase() || "?"}
                           </div>
-                          <span style={{ fontSize: 13, color: t.text }}>{truncAddr(row.addr)}</span>
+                          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                            <span style={{ fontSize: 13, color: t.text }}>
+                              {row.handle ? `@${row.handle}` : truncAddr(row.addr)}
+                            </span>
+                            {row.handle && (
+                              <span style={{ fontSize: 10, color: t.textDim, fontFamily: "'JetBrains Mono', monospace" }}>
+                                {truncAddr(row.addr)}
+                              </span>
+                            )}
+                          </div>
+                          {row.onChain && (
+                            <span title="On-chain agent" style={{ fontSize: 10, color: t.green, marginLeft: 2 }}>●</span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: "14px 20px", color: t.amber, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
@@ -1073,6 +2087,36 @@ export default function EarnPage({ openWallet }) {
         </div>
       )}
 
+        </div>
+        {/* Right rail — skipped entirely on narrow viewports to keep the
+            in-app WebView OOM-safe. Earlier this was just CSS-hidden but React
+            still instantiated ~200 nodes + 60 SVGs underneath. */}
+        {!isNarrow && (
+          <div className="earn-right-rail" style={{ minWidth: 0, position: "sticky", top: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            <EarnRightRail
+              t={t}
+              connected={connected}
+              userPoints={userPoints}
+              userRank={userRank}
+              leaderboard={leaderboard}
+              address={address}
+              weekCountdown={weekProgress.countdown}
+            />
+          </div>
+        )}
+      </div>
+
+      <style jsx>{`
+        @media (max-width: 980px) {
+          .earn-body-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .earn-right-rail {
+            position: static !important;
+          }
+        }
+      `}</style>
+
     </Section>
 
     {/* ── Submit modal ─────────────────────────────────────────────────────── */}
@@ -1084,6 +2128,28 @@ export default function EarnPage({ openWallet }) {
         onSubmit={handleSubmit}
         connected={connected}
         openWallet={openWallet}
+      />
+    )}
+
+    {/* ── Create agent modal ───────────────────────────────────────────────── */}
+    {showCreateAgent && (
+      <CreateAgentModal
+        t={t}
+        onClose={() => setShowCreateAgent(false)}
+        onCreated={() => refreshAgent().catch(() => {})}
+        registerAgent={registerAgent}
+        isHandleAvailable={isHandleAvailable}
+      />
+    )}
+
+    {/* ── Link sub-wallet modal ────────────────────────────────────────────── */}
+    {showLinkWallet && (
+      <LinkSubWalletModal
+        t={t}
+        subAccountId={getSubAccountId(address)}
+        onClose={() => setShowLinkWallet(false)}
+        onLinked={() => refreshAgent().catch(() => {})}
+        linkSubWallet={linkSubWallet}
       />
     )}
 

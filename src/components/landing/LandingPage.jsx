@@ -536,10 +536,12 @@ function HeroMascot() {
       }}>
         <div style={{ animation: "ix-breathe 5s ease-in-out infinite" }}>
           <img
-            src="/mascot.png"
+            src="/mascot.webp"
             alt="IronShield mascot"
+            width={520} height={780}
             style={{ width: "100%", height: "auto", display: "block" }}
             loading="eager"
+            decoding="async"
           />
         </div>
       </div>
@@ -1171,7 +1173,7 @@ function StatsAndCTA() {
               background: "radial-gradient(circle, rgba(168,85,247,0.4), transparent 65%)",
               filter: "blur(20px)",
             }} />
-            <img src="/mascot.png" alt="" style={{
+            <img src="/mascot.webp" alt="" width={140} height={210} decoding="async" loading="lazy" style={{
               width: "100%", height: "100%", objectFit: "contain",
               animation: "ix-breathe 5s ease-in-out infinite",
               position: "relative", zIndex: 1,
