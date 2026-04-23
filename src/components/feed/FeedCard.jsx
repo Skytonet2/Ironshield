@@ -348,19 +348,44 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
           </h3>
         )}
 
-        {/* Content */}
-        <div style={{
-          color: t.text,
-          fontSize: 14,
-          lineHeight: 1.45,
-          marginTop: 4,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}>
-          {rendered}
-        </div>
-
-        <MediaGrid urls={post?.mediaUrls} t={t} />
+        {/* Content — click-to-open routes to the full post view. Only
+            native posts (numeric id); X-sourced tweets ("x:123...") link
+            out via their existing entity-pill handling. We use onClick
+            + cursor:pointer rather than wrapping in an <a> because the
+            content already has nested anchors (entity pills, mentions,
+            hashtags) and nested <a> elements are an HTML spec no-no.
+            The handler early-returns if the user tapped an inner link
+            or button, so mentions / pills keep working. */}
+        {(() => {
+          const openable = post?.id != null && !String(post.id).startsWith("x:");
+          const go = (e) => {
+            if (!openable) return;
+            if (e.target.closest && e.target.closest("a, button, input, textarea")) return;
+            e.preventDefault();
+            window.location.href = `/post/?id=${encodeURIComponent(post.id)}`;
+          };
+          return (
+            <div
+              role={openable ? "link" : undefined}
+              tabIndex={openable ? 0 : undefined}
+              onClick={go}
+              onKeyDown={(e) => { if (openable && (e.key === "Enter" || e.key === " ")) go(e); }}
+              style={{ cursor: openable ? "pointer" : "default" }}
+            >
+              <div style={{
+                color: t.text,
+                fontSize: 14,
+                lineHeight: 1.45,
+                marginTop: 4,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}>
+                {rendered}
+              </div>
+              <MediaGrid urls={post?.mediaUrls} t={t} />
+            </div>
+          );
+        })()}
 
         {/* Metrics */}
         <div style={{
