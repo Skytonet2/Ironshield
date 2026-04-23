@@ -161,7 +161,7 @@ export default function TelegramTab() {
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>IronClaw Bot</div>
-              <div style={{ fontSize: 12, color: t.textDim }}>@IronClawHQ on Telegram</div>
+              <div style={{ fontSize: 12, color: t.textDim }}>@IronShieldCore_bot on Telegram</div>
             </div>
           </div>
           <button
