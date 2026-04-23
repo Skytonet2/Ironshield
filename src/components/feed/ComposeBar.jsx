@@ -10,13 +10,25 @@
 //
 // Posts go to POST /api/posts.
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, X, Megaphone, Send, Image as ImageIcon, Film, BarChart3,
-  Smile, Link2, Globe, Users, Lock, ChevronDown, Sparkles,
+  Smile, Link2, Globe, Users, Lock, ChevronDown, Sparkles, Shield,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
+import useNear from "@/hooks/useNear";
+
+// Heuristic: does this address look like a NEAR account? Accepts `x.near`,
+// `x.tg`, `x.testnet` etc., plus 64-hex implicit accounts. Ethereum addrs
+// (0x… 40 hex) and Solana base58 strings won't match, so the on-chain
+// toggle hides itself for those wallets.
+function isNearAccountId(addr) {
+  if (!addr || typeof addr !== "string") return false;
+  if (/\.(near|tg|testnet|sputnik-dao\.near)$/i.test(addr)) return true;
+  if (/^[0-9a-f]{64}$/i.test(addr)) return true;
+  return false;
+}
 
 const API = (() => {
   if (typeof window === "undefined") return "";
@@ -38,6 +50,7 @@ const AUDIENCES = [
 export default function ComposeBar({ onPosted }) {
   const t = useTheme();
   const { address, showModal } = useWallet();
+  const { callMethod } = useNear();
   const [open, setOpen]       = useState(false);
   const [text, setText]       = useState("");
   const [voice, setVoice]     = useState(false);
@@ -49,6 +62,8 @@ export default function ComposeBar({ onPosted }) {
   const fileRef = useRef(null);
   const [mediaUrls, setMediaUrls] = useState([]);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const [onchain, setOnchain] = useState(false);
+  const isNear = useMemo(() => isNearAccountId(address), [address]);
 
   // Detect mobile once on mount + on resize. When `open && isMobile`
   // we render the whole composer inside a full-screen portal (reference
@@ -101,31 +116,35 @@ export default function ComposeBar({ onPosted }) {
   const aud = AUDIENCES.find((a) => a.key === audience) || AUDIENCES[0];
   const AudIcon = aud.Icon;
 
+  // Uploads go through the backend's catbox.moe proxy (POST /api/media/upload),
+  // which requires no API keys. Prod had Cloudinary signing as the only path
+  // and CLOUDINARY_* wasn't set — image posts failed silently. Catbox is the
+  // default because it just works; if it's down, the route falls back to an
+  // inline data URL for images under 512KB.
   const upload = useCallback(async (files) => {
-    if (!files || !files.length || !address) return;
+    if (!files || !files.length) return;
     setUploadBusy(true);
+    setErr(null);
     try {
-      const sigRes = await fetch(`${API}/api/profile/upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": address },
-      });
-      if (!sigRes.ok) {
-        const j = await sigRes.json().catch(() => ({}));
-        throw new Error(j?.hint || j?.error || `upload-signature ${sigRes.status}`);
-      }
-      const sig = await sigRes.json();
       const urls = [];
       for (const file of files) {
+        if (file.size > 25 * 1024 * 1024) {
+          throw new Error(`${file.name} is over 25 MB`);
+        }
         const fd = new FormData();
         fd.append("file", file);
-        fd.append("api_key", sig.apiKey);
-        fd.append("timestamp", String(sig.timestamp));
-        fd.append("signature", sig.signature);
-        fd.append("folder", sig.folder);
-        const up = await fetch(sig.uploadUrl, { method: "POST", body: fd });
-        if (!up.ok) throw new Error(`cloudinary ${up.status}`);
+        const up = await fetch(`${API}/api/media/upload`, {
+          method: "POST",
+          headers: address ? { "x-wallet": address } : {},
+          body: fd,
+        });
+        if (!up.ok) {
+          const j = await up.json().catch(() => ({}));
+          throw new Error(j?.error || `upload ${up.status}`);
+        }
         const j = await up.json();
-        urls.push(j.secure_url);
+        if (!j?.url) throw new Error("upload returned no url");
+        urls.push(j.url);
       }
       setMediaUrls((prev) => [...prev, ...urls].slice(0, 4));
     } catch (e) {
@@ -147,6 +166,34 @@ export default function ComposeBar({ onPosted }) {
     return () => window.removeEventListener("ironshield:open-composer", openFromEvent);
   }, []);
 
+  // When the on-chain toggle is on, we write the post to NEAR Social DB
+  // (contract: social.near) before sending it to our backend. Any standard
+  // NEAR Social client can read it there. The returned tx hash is stored
+  // alongside the row so the post card can link to the explorer.
+  // Storage on social.near is rent-paid; 0.01 NEAR comfortably covers a
+  // short post even on a fresh account.
+  const publishOnChain = useCallback(async (content, mediaUrls) => {
+    const payload = { text: content };
+    if (mediaUrls.length) {
+      // NEAR Social's convention is a single `image.url` field; extra media
+      // rides along in our own `mediaUrls` key for IronShield-aware clients.
+      payload.image = { url: mediaUrls[0] };
+      if (mediaUrls.length > 1) payload.mediaUrls = mediaUrls;
+    }
+    const args = {
+      data: { [address]: { post: { main: JSON.stringify(payload) } } },
+    };
+    const deposit = "10000000000000000000000"; // 0.01 NEAR in yocto
+    const result = await callMethod("social.near", "set", args, deposit);
+    // wallet-selector wallets sometimes redirect (no sync result). In that
+    // case result is undefined — we store null for onchainTx and let the
+    // server patch the hash in later via the wallet's redirect callback.
+    return result?.transaction?.hash
+      || result?.transaction_outcome?.id
+      || result?.hash
+      || null;
+  }, [address, callMethod]);
+
   const submit = useCallback(async () => {
     setErr(null);
     if (!address) { showModal?.(); return; }
@@ -155,6 +202,15 @@ export default function ComposeBar({ onPosted }) {
     if (content.length > MAX) { setErr(`Max ${MAX} chars`); return; }
     setBusy(true);
     try {
+      let onchainTx = null;
+      if (onchain) {
+        if (!isNear) throw new Error("On-chain posting needs a NEAR wallet. Connect one from the top bar.");
+        try {
+          onchainTx = await publishOnChain(content, mediaUrls);
+        } catch (e) {
+          throw new Error(`On-chain publish failed: ${e.message || "user cancelled"}`);
+        }
+      }
       const res = await fetch(`${API}/api/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-wallet": address },
@@ -165,18 +221,20 @@ export default function ComposeBar({ onPosted }) {
           // so any client can render the label without schema changes.
           mediaType: voice ? "VOICE" : (mediaUrls.length ? "MEDIA" : "NONE"),
           audience,
+          onchainTx,
         }),
       });
       if (!res.ok) throw new Error(`post failed (${res.status})`);
       const j = await res.json();
       setText(""); setVoice(false); setMediaUrls([]); setOpen(false); setAud("everyone");
+      setOnchain(false);
       onPosted?.(j.post || null);
     } catch (e) {
       setErr(e.message || "Post failed — is the backend online?");
     } finally {
       setBusy(false);
     }
-  }, [address, text, voice, mediaUrls, audience, onPosted, showModal]);
+  }, [address, text, voice, mediaUrls, audience, onchain, isNear, publishOnChain, onPosted, showModal]);
 
   const iconBtn = {
     display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -364,6 +422,7 @@ export default function ComposeBar({ onPosted }) {
             }}>
               <span>{text.length}/{MAX}</span>
               {voice && <span style={{ color: "#c084fc", fontWeight: 700 }}>· Voice post</span>}
+              {onchain && <span style={{ color: "#60a5fa", fontWeight: 700 }}>· On-chain</span>}
               {uploadBusy && <span>· Uploading…</span>}
             </div>
 
@@ -454,6 +513,16 @@ export default function ComposeBar({ onPosted }) {
             <IconAction Icon={Smile}     label="Emoji — soon" disabled style={iconBtn} t={t} />
             <IconAction Icon={Link2}     label="Link — soon" disabled style={iconBtn} t={t} />
             <IconAction Icon={Megaphone} label="Tag as Voice" onClick={() => setVoice((v) => !v)} active={voice} style={iconBtn} t={t} />
+            {isNear && (
+              <IconAction
+                Icon={Shield}
+                label={onchain ? "On-chain post (NEAR Social) — ON" : "Post on-chain (NEAR Social)"}
+                onClick={() => setOnchain((v) => !v)}
+                active={onchain}
+                style={iconBtn}
+                t={t}
+              />
+            )}
           </div>
 
           <style jsx global>{`
@@ -585,6 +654,16 @@ export default function ComposeBar({ onPosted }) {
                 style={iconBtn}
                 t={t}
               />
+              {isNear && (
+                <IconAction
+                  Icon={Shield}
+                  label={onchain ? "On-chain post (NEAR Social) — ON" : "Post on-chain (NEAR Social)"}
+                  onClick={() => setOnchain((v) => !v)}
+                  active={onchain}
+                  style={iconBtn}
+                  t={t}
+                />
+              )}
               <div style={{ flex: 1 }} />
 
               {/* Audience dropdown */}

@@ -27,7 +27,7 @@ import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
   Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
-  Home, Menu, X as XIcon, User,
+  Home, Menu, X as XIcon, User, MessageCircle,
 } from "lucide-react";
 import { useTheme, useWallet as useCtxWallet } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
@@ -591,22 +591,25 @@ function fmtUsd(n) {
 }
 
 /* ── Mobile bottom nav — native-feel primary navigation for phones.
- * Five items: Home · Search · + (gradient FAB) · Alerts · Profile.
+ * Five items: Home · Search · + (gradient FAB) · Messages · Profile.
  * The middle +, centered and raised, is the post shortcut — tapping
  * it fires the same "post" action that opens the feed composer.
+ * Notifications still live on the top bell; this slot is DMs so the
+ * inbox is one tap away on mobile.
  * Active route shows an accent tint + top-edge bar. */
-function MobileBottomNav({ pathname, onAction, unreadCount = 0 }) {
+function MobileBottomNav({ pathname, onAction, unreadCount = 0, dmUnread = 0 }) {
   const t = useTheme();
   const items = [
-    { key: "home",    label: "Home",    Icon: Home,   kind: "link",   href: "/"        },
-    { key: "search",  label: "Search",  Icon: Search, kind: "action", action: "search" },
-    { key: "post",    label: "",        Icon: Plus,   kind: "fab",    action: "post"   },
-    { key: "alerts",  label: "Alerts",  Icon: Bell,   kind: "action", action: "notifications", badge: unreadCount },
-    { key: "profile", label: "Profile", Icon: User,   kind: "link",   href: "/profile" },
+    { key: "home",     label: "Home",     Icon: Home,          kind: "link",   href: "/"        },
+    { key: "search",   label: "Search",   Icon: Search,        kind: "action", action: "search" },
+    { key: "post",     label: "",         Icon: Plus,          kind: "fab",    action: "post"   },
+    { key: "messages", label: "Messages", Icon: MessageCircle, kind: "link",   href: "/messages", badge: dmUnread },
+    { key: "profile",  label: "Profile",  Icon: User,          kind: "link",   href: "/profile" },
   ];
   const activeKey = (() => {
-    if (pathname?.startsWith("/profile")) return "profile";
-    if (pathname === "/")                 return "home";
+    if (pathname?.startsWith("/profile"))  return "profile";
+    if (pathname?.startsWith("/messages")) return "messages";
+    if (pathname === "/")                  return "home";
     return null;
   })();
 
@@ -820,6 +823,38 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   // unread count (polled every 30s while the shell is mounted).
   const { unreadCount } = useNotifications(walletAddress);
 
+  // DM unread count for the mobile Messages tab badge. Lives in the
+  // shell (not the /messages page) so the badge updates even when the
+  // user is on /feed or /portfolio. Same 30s cadence as notifications.
+  const [dmUnread, setDmUnread] = useState(0);
+  useEffect(() => {
+    if (!walletAddress) { setDmUnread(0); return; }
+    const API = (() => {
+      if (process.env.NEXT_PUBLIC_BACKEND_URL) return process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/+$/, "");
+      if (typeof window !== "undefined") {
+        const h = window.location.hostname;
+        if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3001";
+      }
+      return "https://ironclaw-backend.onrender.com";
+    })();
+    let alive = true;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${API}/api/dm/conversations`, {
+          headers: { "x-wallet": walletAddress },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!alive) return;
+        const total = (j.conversations || []).reduce((s, c) => s + (c.unread || 0), 0);
+        setDmUnread(total);
+      } catch { /* silent */ }
+    };
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [walletAddress]);
+
   // AppShell routes CREATE / bridge / scan / search centrally so every
   // route gets these modals without plumbing props. Callers can still
   // pass onAction for route-specific overrides (e.g. /trading's "open
@@ -1012,7 +1047,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
       {/* Bottom region splits by viewport: mobile gets the native
           five-tab nav, desktop keeps the status/chip strip. */}
       {isMobile
-        ? <MobileBottomNav pathname={pathname} onAction={handleAction} unreadCount={unreadCount} />
+        ? <MobileBottomNav pathname={pathname} onAction={handleAction} unreadCount={unreadCount} dmUnread={dmUnread} />
         : <BottomBar />}
       {createOpen && (
         <LaunchpadSelector

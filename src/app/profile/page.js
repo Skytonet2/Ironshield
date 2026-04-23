@@ -52,19 +52,32 @@ export default function ProfilePage() {
   const [tab, setTab] = useState("posts");
   const [posts, setPosts] = useState([]);
   const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState(null);
   const [deploys, setDeploys] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!targetKey) return;
+    setProfileLoading(true);
+    setProfileError(null);
     try {
       const r = await fetch(`${BACKEND_BASE}/api/profile/${encodeURIComponent(targetKey)}`);
-      if (!r.ok) { setProfile(null); return; }
+      if (!r.ok) {
+        setProfile(null);
+        if (r.status === 404) setProfileError("Profile not found");
+        else setProfileError(`Failed to load (${r.status})`);
+        return;
+      }
       const j = await r.json();
       setProfile(j?.user || null);
       if (j?.user?.walletAddress) setTargetAddress(j.user.walletAddress);
-    } catch { /* keep previous */ }
+    } catch (e) {
+      setProfileError(e?.message || "Backend unreachable");
+    } finally {
+      setProfileLoading(false);
+    }
   }, [targetKey]);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
@@ -179,22 +192,42 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* Header meta — sits below the banner, pfp overlaps it. */}
+        {/* Header meta — sits below the banner, pfp overlaps it. Shows
+            skeleton shimmers during the first fetch so the layout doesn't
+            flash from empty → populated. */}
         <div style={{
           padding: "48px 16px 12px",
           borderBottom: `1px solid ${t.border}`,
           marginBottom: 12,
         }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: t.white }}>
-            {profile?.displayName || short || "anon"}
-          </div>
-          <div style={{ fontSize: 13, color: t.textDim }}>
-            @{profile?.username || short} · {profile?.followers ?? 0} followers · {profile?.posts ?? 0} posts
-          </div>
-          {profile?.bio && (
-            <div style={{ fontSize: 14, color: t.text, marginTop: 8, whiteSpace: "pre-wrap" }}>
-              {profile.bio}
+          {profileLoading && !profile ? (
+            <>
+              <div className="ix-skel" style={{ width: "42%", height: 22, borderRadius: 6, marginBottom: 8 }} />
+              <div className="ix-skel" style={{ width: "62%", height: 14, borderRadius: 4 }} />
+            </>
+          ) : profileError && !profile ? (
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.white }}>
+                {short || "anon"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--amber)", marginTop: 6 }}>
+                {profileError}. Showing wallet only.
+              </div>
             </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.white }}>
+                {profile?.displayName || short || "anon"}
+              </div>
+              <div style={{ fontSize: 13, color: t.textDim }}>
+                @{profile?.username || short} · {profile?.followers ?? 0} followers · {profile?.posts ?? 0} posts
+              </div>
+              {profile?.bio && (
+                <div style={{ fontSize: 14, color: t.text, marginTop: 8, whiteSpace: "pre-wrap" }}>
+                  {profile.bio}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -227,7 +260,24 @@ export default function ProfilePage() {
         {/* Body */}
         <div style={{ padding: "0 16px" }}>
           {loading && (
-            <div style={{ padding: 24, color: t.textDim, fontSize: 12, textAlign: "center" }}>Loading…</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} style={{
+                  padding: 12, borderRadius: 10,
+                  border: `1px solid ${t.border}`, background: "var(--bg-card)",
+                }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                    <div className="ix-skel" style={{ width: 36, height: 36, borderRadius: "50%" }} />
+                    <div style={{ flex: 1 }}>
+                      <div className="ix-skel" style={{ width: "35%", height: 12, borderRadius: 4, marginBottom: 6 }} />
+                      <div className="ix-skel" style={{ width: "22%", height: 10, borderRadius: 4 }} />
+                    </div>
+                  </div>
+                  <div className="ix-skel" style={{ width: "92%", height: 12, borderRadius: 4, marginBottom: 6 }} />
+                  <div className="ix-skel" style={{ width: "68%", height: 12, borderRadius: 4 }} />
+                </div>
+              ))}
+            </div>
           )}
 
           {!loading && tab !== "deployed" && posts.length === 0 && (
@@ -282,6 +332,23 @@ export default function ProfilePage() {
           onSaved={(next) => { setProfile(next); setEditOpen(false); }}
         />
       )}
+
+      <style jsx global>{`
+        @keyframes ix-skel-shimmer {
+          0%   { background-position: -400px 0; }
+          100% { background-position:  400px 0; }
+        }
+        .ix-skel {
+          background: linear-gradient(
+            90deg,
+            rgba(255,255,255,0.04) 0%,
+            rgba(255,255,255,0.08) 50%,
+            rgba(255,255,255,0.04) 100%
+          );
+          background-size: 800px 100%;
+          animation: ix-skel-shimmer 1.4s linear infinite;
+        }
+      `}</style>
     </AppShell>
   );
 }
