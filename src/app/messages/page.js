@@ -267,6 +267,14 @@ export default function MessagesPage() {
         .ix-msg-grid {
           display: grid;
           grid-template-columns: 300px minmax(0, 1fr);
+          /* Row template is load-bearing. Without \`minmax(0, 1fr)\` the
+             implicit row auto-sizes to content, so when a thread is
+             short (few messages) the row collapses and the composer
+             floats in the middle of the viewport with a giant empty
+             band below it. The minmax floor at 0 also lets the scroll
+             area shrink below its intrinsic content size instead of
+             blowing out the row. */
+          grid-template-rows: minmax(0, 1fr);
           height: 100%;
           border: 1px solid var(--border, #1d2540);
           border-radius: 14px;
