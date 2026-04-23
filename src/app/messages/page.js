@@ -20,12 +20,19 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import {
   Search, ArrowLeft, Send, User, Shield, Loader2, MessageCircle,
-  Phone, Plus, X as XIcon, CheckCheck,
+  Phone, Plus, X as XIcon, CheckCheck, Info, Bell, BellOff, Pin,
+  UserX, Flag, Sparkles, DollarSign, Briefcase, BarChart3, Zap,
+  Calendar, Wallet, ExternalLink, Hash, TrendingUp, Check,
+  ChevronRight, Star, Trophy, Crown,
 } from "lucide-react";
 import {
   getOrCreateKeypair, exportPublicKey,
   encrypt as naclEncrypt, decrypt as naclDecrypt,
 } from "@/lib/dmCrypto";
+import {
+  splitBody, detectAutomationIntent, encodeChip,
+  CHIP_TYPES, classifyAddress,
+} from "@/lib/messageParser";
 
 const API = (() => {
   if (typeof window === "undefined") return "";
@@ -64,7 +71,10 @@ export default function MessagesPage() {
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [showThread, setShowThread] = useState(false); // mobile single-pane switch
+  const [showContext, setShowContext] = useState(false); // tablet/mobile context toggle
   const [newConvOpen, setNewConvOpen] = useState(false);
+  const [peerProfile, setPeerProfile] = useState(null);
+  const [peerPrefs, setPeerPrefs] = useState({}); // { [convId]: { mute, pin } }
 
   // Lazily create the local keypair and publish the public half so
   // anyone who opens our profile can DM us. This no-ops after the first
@@ -130,8 +140,19 @@ export default function MessagesPage() {
   }, [wallet]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) { setPeerProfile(null); return; }
     loadThread(active);
+    // Fetch the richer profile for the context pane. Conversation rows
+    // only carry name + pfp + pubkey; the profile endpoint adds bio,
+    // account type, follower counts, and the on/off-chain badge
+    // signals we need to render the wallet-identity card.
+    if (active.kind === "direct" && active.peer?.wallet) {
+      api(`/api/profile/${encodeURIComponent(active.peer.wallet)}`)
+        .then((j) => setPeerProfile(j?.user || null))
+        .catch(() => setPeerProfile(null));
+    } else {
+      setPeerProfile(null);
+    }
   }, [active, loadThread]);
 
   // Poll the active thread for fresh messages every 8s. Cheap polling
@@ -194,14 +215,14 @@ export default function MessagesPage() {
   return (
     <AppShell>
       <div className="ix-msg-root" style={{ height: "calc(100vh - 140px)", minHeight: 520 }}>
-        <div className="ix-msg-grid">
+        <div className="ix-msg-grid" data-context-open={showContext ? "true" : "false"}>
           <MessageList
             t={t}
             loading={loadingList}
             convs={convs}
             groups={groups}
             activeKey={activeKey}
-            onOpen={(conv) => { setActive(conv); setShowThread(true); }}
+            onOpen={(conv) => { setActive(conv); setShowThread(true); setShowContext(false); }}
             onNewConv={() => setNewConvOpen(true)}
             showThread={showThread}
           />
@@ -215,7 +236,20 @@ export default function MessagesPage() {
             onBack={() => setShowThread(false)}
             onSent={(msg) => setMessages((prev) => [...prev, msg])}
             showThread={showThread}
+            onToggleContext={() => setShowContext((v) => !v)}
+            contextOpen={showContext}
           />
+          {active && (
+            <ContextPane
+              t={t}
+              conv={active}
+              profile={peerProfile}
+              prefs={peerPrefs[active.id] || {}}
+              onPref={(patch) => setPeerPrefs((p) => ({ ...p, [active.id]: { ...(p[active.id] || {}), ...patch } }))}
+              onClose={() => setShowContext(false)}
+              open={showContext}
+            />
+          )}
         </div>
       </div>
 
@@ -231,12 +265,19 @@ export default function MessagesPage() {
       <style jsx global>{`
         .ix-msg-grid {
           display: grid;
-          grid-template-columns: 320px minmax(0, 1fr);
+          grid-template-columns: 300px minmax(0, 1fr);
           height: 100%;
           border: 1px solid var(--border, #1d2540);
           border-radius: 14px;
           overflow: hidden;
           background: var(--bg-card, #0e1324);
+        }
+        /* 3-column layout kicks in when a conversation is selected and
+           the user toggles the context pane open (desktop only). */
+        @media (min-width: 1180px) {
+          .ix-msg-grid[data-context-open="true"] {
+            grid-template-columns: 290px minmax(0, 1fr) 320px;
+          }
         }
         @media (max-width: 899px) {
           .ix-msg-root { height: calc(100vh - 120px); min-height: 480px; }
@@ -245,6 +286,29 @@ export default function MessagesPage() {
              attributes on .ix-msg-list and .ix-msg-thread — those rules
              live in Thread's styled-jsx block so they can read the
              component's local state. */
+        }
+
+        /* Motion primitives shared across the page. Bubbles slide in
+           from below on mount; incoming messages pulse a soft purple
+           halo once on arrival. Respect reduced motion. */
+        @keyframes ix-bubble-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes ix-bubble-glow {
+          0%   { box-shadow: 0 0 0 0 rgba(168,85,247,0); }
+          25%  { box-shadow: 0 0 0 6px rgba(168,85,247,0.18); }
+          100% { box-shadow: 0 0 0 0 rgba(168,85,247,0); }
+        }
+        @keyframes ix-typing-dot {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30%           { transform: translateY(-4px); opacity: 1; }
+        }
+        .ix-msg-bubble { animation: ix-bubble-in 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+        .ix-msg-bubble[data-fresh="true"] { animation: ix-bubble-in 260ms cubic-bezier(0.16, 1, 0.3, 1), ix-bubble-glow 1200ms ease-out 240ms; }
+        @media (prefers-reduced-motion: reduce) {
+          .ix-msg-bubble, .ix-msg-bubble[data-fresh="true"] { animation: none !important; }
+          .ix-typing-dot { animation: none !important; }
         }
       `}</style>
     </AppShell>
@@ -438,11 +502,16 @@ function MessageList({ t, loading, convs, groups, activeKey, onOpen, onNewConv, 
 
 /* ─────────── Thread view ─────────── */
 
-function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, showThread }) {
+function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, showThread, onToggleContext, contextOpen }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState(null);
+  const [actionOpen, setActionOpen] = useState(false);
   const scrollRef = useRef(null);
+  // Track which message ids were already on screen so only *new*
+  // arrivals get the fresh-glow halo.
+  const seenIdsRef = useRef(new Set());
+  const [freshIds, setFreshIds] = useState(() => new Set());
 
   // Auto-scroll to newest message whenever the list grows.
   useEffect(() => {
@@ -451,11 +520,51 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
     el.scrollTop = el.scrollHeight;
   }, [messages?.length, conv?.id]);
 
-  const send = useCallback(async () => {
-    if (!text.trim() || !conv || !wallet || sending) return;
+  // Diff message ids to mark which ones are new *this render*. First
+  // render of a thread: mark nothing fresh (avoid a full-list flash);
+  // subsequent renders: anything we haven't seen is fresh for ~1.2s.
+  useEffect(() => {
+    if (!conv) return;
+    const incoming = new Set(messages.map((m) => m.id ?? `tmp-${m.created_at || ""}`));
+    if (seenIdsRef.current.size === 0) {
+      seenIdsRef.current = incoming;
+      return;
+    }
+    const fresh = new Set();
+    for (const id of incoming) {
+      if (!seenIdsRef.current.has(id)) fresh.add(id);
+    }
+    if (fresh.size) {
+      setFreshIds(fresh);
+      const to = setTimeout(() => setFreshIds(new Set()), 1400);
+      seenIdsRef.current = incoming;
+      return () => clearTimeout(to);
+    }
+    seenIdsRef.current = incoming;
+  }, [messages, conv?.id]);
+
+  // Reset per-thread state when the conversation changes.
+  useEffect(() => {
+    seenIdsRef.current = new Set();
+    setFreshIds(new Set());
+    setActionOpen(false);
+  }, [conv?.id]);
+
+  // Natural-language automation intent. Runs on every input change so
+  // the suggestion chip appears/disappears as the phrase is typed. We
+  // only show it if the thread is a direct chat (group chat automations
+  // would need more auth plumbing; out of scope).
+  const automationIntent = useMemo(() => {
+    if (!text || conv?.kind !== "direct") return null;
+    return detectAutomationIntent(text);
+  }, [text, conv?.kind]);
+
+  // Low-level send that takes an explicit body (text or body-with-chip).
+  // Used by both the plain send button and the Smart Action sheet.
+  const sendRaw = useCallback(async (body) => {
+    if (!body.trim() || !conv || !wallet || sending) return;
     setSending(true);
     setErr(null);
-    const body = text.trim();
     try {
       if (conv.kind === "direct") {
         if (!keypair) throw new Error("Local key not ready — try again in a second");
@@ -471,8 +580,6 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             nonce: enc.nonce,
           },
         });
-        // Show optimistically with local plaintext so the sender sees
-        // their own message immediately.
         onSent?.({
           ...r.message,
           _decrypted: body,
@@ -484,13 +591,33 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
         });
         onSent?.(r.message);
       }
-      setText("");
     } catch (e) {
       setErr(e.message || "Send failed");
+      throw e;
     } finally {
       setSending(false);
     }
-  }, [text, conv, wallet, keypair, sending, onSent]);
+  }, [conv, wallet, keypair, sending, onSent]);
+
+  const send = useCallback(async () => {
+    const body = text.trim();
+    if (!body) return;
+    try { await sendRaw(body); setText(""); } catch { /* handled above */ }
+  }, [text, sendRaw]);
+
+  // Attach a structured chip (token send, portfolio share, etc.) by
+  // appending the encoded token to whatever's in the composer. If the
+  // input was empty, we send the chip by itself — the receiver renders
+  // it as a rich card and plain text is skipped.
+  const insertChip = useCallback(async (type, data, prefixText = "") => {
+    const chip = encodeChip(type, data);
+    const body = (prefixText ? `${prefixText}\n` : "") + chip;
+    setActionOpen(false);
+    try {
+      await sendRaw(body);
+      if (text.trim()) setText(""); // also clears any draft
+    } catch { /* handled */ }
+  }, [sendRaw, text]);
 
   if (!conv) {
     return (
@@ -574,6 +701,31 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             {conv.kind === "direct" ? "End-to-end encrypted · " : ""}{peerSub}
           </div>
         </div>
+
+        {/* Header actions — voice placeholder + info/context toggle.
+            The phone icon is intentionally here so the motion pattern
+            matches the reference screenshot, but the actual call
+            handshake lives in the global callContext (out of scope for
+            Tier-1 — wired up under feature flag later). */}
+        <button
+          type="button"
+          title="Voice call — coming soon"
+          aria-label="Voice call"
+          disabled
+          style={iconHeaderBtn(t, { disabled: true })}
+        >
+          <Phone size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={onToggleContext}
+          title={contextOpen ? "Hide details" : "Show details"}
+          aria-label="Toggle details"
+          aria-pressed={contextOpen}
+          style={iconHeaderBtn(t, { active: contextOpen })}
+        >
+          <Info size={15} />
+        </button>
       </header>
 
       <div
@@ -599,10 +751,37 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           </div>
         )}
 
-        {messages.map((m) => (
-          <MessageBubble key={m.id} m={m} t={t} wallet={wallet} conv={conv} keypair={keypair} />
-        ))}
+        {messages.map((m) => {
+          const key = m.id ?? `tmp-${m.created_at || ""}`;
+          return (
+            <MessageBubble
+              key={key} m={m} t={t} wallet={wallet} conv={conv} keypair={keypair}
+              fresh={freshIds.has(key)}
+            />
+          );
+        })}
       </div>
+
+      {/* Automation suggestion chip — fires when the composer text
+          matches a trade intent. One tap routes to /automations with
+          the parsed side/symbol/threshold prefilled. */}
+      {automationIntent && (
+        <AutomationSuggest
+          t={t}
+          intent={automationIntent}
+          onDismiss={() => { /* dismiss just by editing the text */ }}
+          onAccept={() => {
+            insertChip(CHIP_TYPES.AUTOMATION, {
+              side: automationIntent.side,
+              symbol: automationIntent.symbol,
+              op: automationIntent.op,
+              threshold: automationIntent.threshold,
+              summary: automationIntent.summary,
+            }, text.replace(automationIntent.phrase, "").trim());
+            setText("");
+          }}
+        />
+      )}
 
       {err && (
         <div style={{
@@ -611,6 +790,17 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
         }}>
           {err}
         </div>
+      )}
+
+      {/* Smart action sheet — slides in above the composer when + is
+          tapped. Each card inserts a structured chip into the thread. */}
+      {actionOpen && (
+        <SmartActionSheet
+          t={t}
+          wallet={wallet}
+          onClose={() => setActionOpen(false)}
+          onAction={(type, data) => insertChip(type, data)}
+        />
       )}
 
       <form
@@ -622,6 +812,25 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           background: "var(--bg-card)",
         }}
       >
+        <button
+          type="button"
+          onClick={() => setActionOpen((v) => !v)}
+          aria-label="Attach or act"
+          aria-pressed={actionOpen}
+          title="Smart actions"
+          style={{
+            width: 40, height: 40, borderRadius: 10,
+            border: `1px solid ${actionOpen ? t.accent : t.border}`,
+            background: actionOpen ? "var(--accent-dim)" : "var(--bg-input)",
+            color: actionOpen ? t.accent : t.textMuted,
+            cursor: "pointer", display: "inline-flex",
+            alignItems: "center", justifyContent: "center", flexShrink: 0,
+            transition: "border-color 140ms ease, background 140ms ease, transform 160ms ease",
+            transform: actionOpen ? "rotate(45deg)" : "rotate(0deg)",
+          }}
+        >
+          <Plus size={16} />
+        </button>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value.slice(0, 4000))}
@@ -656,6 +865,25 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
       </form>
 
       <style jsx global>{`
+        /* Context pane: docked on desktop, overlay on tablet/mobile. */
+        @media (min-width: 1180px) {
+          .ix-msg-context { position: static; width: auto; }
+        }
+        @media (max-width: 1179px) {
+          .ix-msg-context {
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: min(92vw, 340px);
+            transform: translateX(100%);
+            transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 5;
+            box-shadow: -14px 0 38px rgba(0,0,0,0.35);
+          }
+          .ix-msg-context[data-open="true"] { transform: translateX(0); }
+        }
+        .ix-msg-root { position: relative; }
+        .ix-msg-grid { position: relative; }
+
         @media (max-width: 899px) {
           .ix-msg-list[data-hidden-on-mobile="true"]   { display: none; }
           .ix-msg-thread[data-hidden-on-mobile="true"] { display: none; }
@@ -683,21 +911,11 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
   );
 }
 
-function MessageBubble({ m, t, wallet, conv, keypair }) {
-  // Ownership detection:
-  //   · Group rows have from_wallet; compare directly.
-  //   · Direct rows come back with from_id (server user PK). Any row
-  //     where from_id != peer.id came from us. Optimistic rows we
-  //     inserted locally also mark _decrypted, which is a reliable
-  //     fallback if the server hasn't roundtripped yet.
+function MessageBubble({ m, t, wallet, conv, keypair, fresh }) {
   const isMine = conv.kind === "group"
     ? (m.from_wallet && wallet && m.from_wallet.toLowerCase() === wallet.toLowerCase())
     : (m._decrypted ? true : (conv.peer?.id != null ? m.from_id !== conv.peer.id : false));
 
-  // Resolve body text. Group messages are plaintext. Direct messages
-  // are encrypted — decrypt with the peer's public key + our secret.
-  // Optimistic rows already carry _decrypted so the sender sees their
-  // own text before the server roundtrip.
   let body = m._decrypted || "";
   if (!body) {
     if (conv.kind === "direct") {
@@ -711,6 +929,25 @@ function MessageBubble({ m, t, wallet, conv, keypair }) {
     }
   }
 
+  // Parse the body into segments so chip tokens render as rich cards
+  // and plain URLs/addresses become inline entity pills. A bubble can
+  // hold any mix of text + entity + chip segments.
+  const segs = useMemo(() => splitBody(body), [body]);
+  const hasOnlyChips = segs.length && segs.every((s) => s.kind === "chip");
+
+  // When a bubble is JUST a chip, skip the gradient wrapper and let
+  // the chip card own its own styling — keeps the thread airy.
+  const wrapperStyle = hasOnlyChips ? {
+    background: "transparent", padding: 0, border: "none", boxShadow: "none",
+  } : {
+    background: isMine
+      ? `linear-gradient(135deg, ${t.accent}, #a855f7)`
+      : "var(--bg-card)",
+    color: isMine ? "#fff" : t.text,
+    border: isMine ? "none" : `1px solid ${t.border}`,
+    boxShadow: isMine ? "0 4px 10px rgba(168,85,247,0.25)" : "none",
+  };
+
   return (
     <div style={{
       display: "flex",
@@ -718,19 +955,18 @@ function MessageBubble({ m, t, wallet, conv, keypair }) {
       paddingLeft: isMine ? 40 : 0,
       paddingRight: isMine ? 0 : 40,
     }}>
-      <div style={{
-        maxWidth: "100%",
-        padding: "9px 12px",
-        borderRadius: 14,
-        background: isMine
-          ? `linear-gradient(135deg, ${t.accent}, #a855f7)`
-          : "var(--bg-card)",
-        color: isMine ? "#fff" : t.text,
-        border: isMine ? "none" : `1px solid ${t.border}`,
-        boxShadow: isMine ? "0 4px 10px rgba(168,85,247,0.25)" : "none",
-        fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word",
-      }}>
-        {conv.kind === "group" && !isMine && (
+      <div
+        className="ix-msg-bubble"
+        data-fresh={fresh && !isMine ? "true" : "false"}
+        style={{
+          maxWidth: "100%",
+          padding: hasOnlyChips ? 0 : "9px 12px",
+          borderRadius: 14,
+          fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word",
+          ...wrapperStyle,
+        }}
+      >
+        {conv.kind === "group" && !isMine && !hasOnlyChips && (
           <div style={{
             fontSize: 10, fontWeight: 800, letterSpacing: 0.3,
             color: t.accent, marginBottom: 3, opacity: 0.8,
@@ -738,16 +974,676 @@ function MessageBubble({ m, t, wallet, conv, keypair }) {
             {m.from_display || shortAddr(m.from_wallet)}
           </div>
         )}
-        {body}
-        <div style={{
-          fontSize: 10, opacity: 0.7, marginTop: 4,
-          display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 3,
-        }}>
-          {formatTime(m.created_at)}
-          {isMine && m.read_at && <CheckCheck size={10} />}
-        </div>
+        <BodySegments segs={segs} t={t} isMine={isMine} />
+        {!hasOnlyChips && (
+          <div style={{
+            fontSize: 10, opacity: 0.7, marginTop: 4,
+            display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 3,
+          }}>
+            {formatTime(m.created_at)}
+            {isMine && m.read_at && <CheckCheck size={10} />}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function BodySegments({ segs, t, isMine }) {
+  if (!segs.length) return null;
+  return (
+    <>
+      {segs.map((s, i) => {
+        if (s.kind === "text") return <span key={i}>{s.text}</span>;
+        if (s.kind === "entity") return <EntityPill key={i} e={s.entity} t={t} inverted={isMine} />;
+        if (s.kind === "chip") return <AttachmentCard key={i} chip={s} t={t} />;
+        return null;
+      })}
+    </>
+  );
+}
+
+function EntityPill({ e, t, inverted }) {
+  // Inline rich mention for URLs / addresses / tx-hashes / @handles.
+  // Renders as a subtly-tinted pill that links out to an explorer or
+  // keeps users on-app for handles. Icons match the parser's type.
+  const { type, raw } = e;
+  let icon = <Hash size={10} />;
+  let label = raw;
+  let href = null;
+  let chain = null;
+  if (type === "url") { icon = <ExternalLink size={10} />; href = raw; }
+  else if (type === "evm_addr") {
+    chain = "evm"; icon = <Wallet size={10} />;
+    label = `${raw.slice(0, 6)}…${raw.slice(-4)}`;
+    href = `https://etherscan.io/address/${raw}`;
+  }
+  else if (type === "near_account") {
+    chain = "near"; icon = <Wallet size={10} />;
+    label = raw;
+    href = `https://nearblocks.io/address/${raw}`;
+  }
+  else if (type === "tx_hash") {
+    chain = classifyAddress(raw) === "solana" ? "solana" : "near";
+    icon = <Zap size={10} />;
+    label = `${raw.slice(0, 6)}…${raw.slice(-4)} · tx`;
+    href = chain === "solana"
+      ? `https://solscan.io/tx/${raw}`
+      : `https://nearblocks.io/txns/${raw}`;
+  }
+  else if (type === "mention") {
+    icon = <User size={10} />;
+    href = `/profile?username=${encodeURIComponent(raw.slice(1))}`;
+  }
+  const accent = inverted ? "rgba(255,255,255,0.92)" : "#60a5fa";
+  const bg     = inverted ? "rgba(255,255,255,0.14)" : "rgba(96,165,250,0.08)";
+  const border = inverted ? "rgba(255,255,255,0.25)" : "rgba(96,165,250,0.35)";
+  const pill = (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "1px 7px", borderRadius: 6,
+      background: bg, color: accent,
+      border: `1px solid ${border}`,
+      fontSize: 12, fontWeight: 600, verticalAlign: "baseline",
+    }}>
+      {icon}{label}
+    </span>
+  );
+  if (!href) return pill;
+  return (
+    <a href={href} target={href.startsWith("http") ? "_blank" : undefined}
+       rel={href.startsWith("http") ? "noreferrer" : undefined}
+       style={{ textDecoration: "none" }}>
+      {pill}
+    </a>
+  );
+}
+
+function AttachmentCard({ chip, t }) {
+  const { type, data } = chip;
+  const card = {
+    display: "block", textDecoration: "none", color: "inherit",
+    padding: 12, borderRadius: 12,
+    border: `1px solid ${t.border}`,
+    background: "linear-gradient(180deg, rgba(168,85,247,0.06), transparent 60%), var(--bg-card)",
+    boxShadow: "0 6px 14px rgba(0,0,0,0.25)",
+    minWidth: 240, maxWidth: 340,
+  };
+  if (type === CHIP_TYPES.AUTOMATION) {
+    return (
+      <a href={`/automations?draft=${encodeURIComponent(JSON.stringify(data))}`} style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={chipIcon("#a855f7")}><Zap size={14} /></span>
+          <span style={chipTitle}>Automation plan</span>
+          <span style={chipBadge("#a855f7")}>TRADE</span>
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 4 }}>
+          {data.summary || `${(data.side || "").toUpperCase()} ${data.symbol}`}
+        </div>
+        <div style={{ fontSize: 11, color: t.textDim }}>
+          Tap to review and deploy on IronShield Automations
+        </div>
+      </a>
+    );
+  }
+  if (type === CHIP_TYPES.TOKEN_SEND) {
+    return (
+      <div style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={chipIcon("#10b981")}><DollarSign size={14} /></span>
+          <span style={chipTitle}>Token transfer</span>
+          <span style={chipBadge("#10b981")}>SEND</span>
+        </div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: t.white, letterSpacing: -0.2 }}>
+          {data.amount} {data.symbol || "NEAR"}
+        </div>
+        <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>
+          to <strong style={{ color: t.text }}>{data.to || "peer"}</strong> · {data.chain || "NEAR"}
+        </div>
+        {data.note && (
+          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6, fontStyle: "italic" }}>
+            "{data.note}"
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (type === CHIP_TYPES.PORTFOLIO) {
+    return (
+      <div style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={chipIcon("#60a5fa")}><Briefcase size={14} /></span>
+          <span style={chipTitle}>Portfolio snapshot</span>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: t.white }}>
+          ${Number(data.total || 0).toLocaleString()}
+        </div>
+        <div style={{ fontSize: 11, color: "#10b981", marginTop: 2, fontWeight: 700 }}>
+          {data.change24h != null ? `${data.change24h > 0 ? "+" : ""}${data.change24h}% · 24h` : "24h change"}
+        </div>
+        <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+          {(data.holdings || []).slice(0, 4).map((h, i) => (
+            <span key={i} style={{
+              fontSize: 10, padding: "2px 6px", borderRadius: 4,
+              background: "var(--bg-input)", color: t.textMuted, fontWeight: 600,
+            }}>{h.symbol} {h.pct}%</span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (type === CHIP_TYPES.CHART) {
+    return (
+      <a href={`/trading?token=${encodeURIComponent(data.symbol || "")}`} style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={chipIcon("#3b82f6")}><BarChart3 size={14} /></span>
+          <span style={chipTitle}>Chart</span>
+          <span style={chipBadge("#3b82f6")}>{(data.symbol || "?").toUpperCase()}</span>
+        </div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: t.white }}>
+          ${Number(data.price || 0).toLocaleString()}
+        </div>
+        <div style={{
+          fontSize: 11, fontWeight: 700,
+          color: Number(data.change24h) >= 0 ? "#10b981" : "#ef4444",
+          marginTop: 2,
+        }}>
+          {data.change24h != null ? `${data.change24h > 0 ? "+" : ""}${data.change24h}% · 24h` : ""}
+        </div>
+      </a>
+    );
+  }
+  if (type === CHIP_TYPES.WALLET_SHARE) {
+    return (
+      <a href={`/profile?address=${encodeURIComponent(data.address || "")}`} style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={chipIcon("#f59e0b")}><Wallet size={14} /></span>
+          <span style={chipTitle}>Wallet</span>
+          <span style={chipBadge("#f59e0b")}>{(data.chain || "near").toUpperCase()}</span>
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: t.white, wordBreak: "break-all" }}>
+          {data.address}
+        </div>
+      </a>
+    );
+  }
+  if (type === CHIP_TYPES.REMINDER) {
+    const when = data.when ? new Date(data.when) : null;
+    return (
+      <div style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={chipIcon("#f97316")}><Calendar size={14} /></span>
+          <span style={chipTitle}>Reminder</span>
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 4 }}>
+          {data.label || "Scheduled"}
+        </div>
+        <div style={{ fontSize: 11, color: t.textDim }}>
+          {when ? when.toLocaleString() : "Time not set"}
+        </div>
+      </div>
+    );
+  }
+  // Unknown chip type — render a debug pill rather than crash.
+  return (
+    <div style={{ ...card, opacity: 0.7 }}>
+      <div style={{ fontSize: 11, color: t.textMuted }}>Unsupported card: {type}</div>
+    </div>
+  );
+}
+
+const chipIcon = (color) => ({
+  display: "inline-flex", alignItems: "center", justifyContent: "center",
+  width: 28, height: 28, borderRadius: 8,
+  background: `${color}1e`, color,
+  border: `1px solid ${color}55`,
+});
+const chipTitle = {
+  fontSize: 11, fontWeight: 800, letterSpacing: 0.4,
+  color: "var(--text-muted, #9aa4bd)", textTransform: "uppercase",
+};
+const chipBadge = (color) => ({
+  marginLeft: "auto",
+  fontSize: 9, fontWeight: 800, letterSpacing: 0.6,
+  padding: "2px 6px", borderRadius: 4,
+  background: `${color}22`, color,
+  textTransform: "uppercase",
+});
+
+function iconHeaderBtn(t, { active = false, disabled = false } = {}) {
+  return {
+    width: 34, height: 34, borderRadius: 8, flexShrink: 0,
+    border: `1px solid ${active ? t.accent : t.border}`,
+    background: active ? "var(--accent-dim)" : "transparent",
+    color: active ? t.accent : (disabled ? t.textDim : t.textMuted),
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.5 : 1,
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    transition: "border-color 140ms ease, background 140ms ease",
+  };
+}
+
+/* ─────────── Smart action sheet ─────────── */
+
+function SmartActionSheet({ t, wallet, onClose, onAction }) {
+  const ACTIONS = [
+    { key: "send",     Icon: DollarSign, color: "#10b981", label: "Send token",       hint: "Transfer NEAR or tokens" },
+    { key: "chart",    Icon: BarChart3,  color: "#3b82f6", label: "Share chart",      hint: "Live price + 24h" },
+    { key: "port",     Icon: Briefcase,  color: "#60a5fa", label: "Share portfolio",  hint: "Your holdings snapshot" },
+    { key: "auto",     Icon: Zap,        color: "#a855f7", label: "Create automation",hint: "If/when trade rule" },
+    { key: "wallet",   Icon: Wallet,     color: "#f59e0b", label: "Share wallet",     hint: "Your address" },
+    { key: "remind",   Icon: Calendar,   color: "#f97316", label: "Schedule reminder",hint: "Ping later" },
+  ];
+  const onPick = (key) => {
+    if (key === "send") {
+      const amount = window.prompt("Amount to send:");
+      if (!amount) return;
+      const symbol = window.prompt("Token symbol (default NEAR):", "NEAR") || "NEAR";
+      onAction(CHIP_TYPES.TOKEN_SEND, {
+        amount, symbol, chain: "NEAR", to: "peer",
+      });
+    } else if (key === "wallet") {
+      onAction(CHIP_TYPES.WALLET_SHARE, { address: wallet, chain: "NEAR" });
+    } else if (key === "port") {
+      // Placeholder snapshot — real impl will pull from portfolioStore.
+      onAction(CHIP_TYPES.PORTFOLIO, {
+        total: 0, change24h: 0, holdings: [],
+      });
+    } else if (key === "chart") {
+      const symbol = window.prompt("Ticker to share (e.g. BTC, ETH, SOL):", "BTC");
+      if (!symbol) return;
+      onAction(CHIP_TYPES.CHART, { symbol: symbol.toUpperCase(), price: null, change24h: null });
+    } else if (key === "auto") {
+      const summary = window.prompt("Describe the trigger (e.g. 'buy BTC when price breaks 110k'):");
+      if (!summary) return;
+      onAction(CHIP_TYPES.AUTOMATION, { summary });
+    } else if (key === "remind") {
+      const label = window.prompt("Remind me to…");
+      if (!label) return;
+      const whenStr = window.prompt("When? (e.g. 2026-05-01 17:00):");
+      onAction(CHIP_TYPES.REMINDER, {
+        label,
+        when: whenStr ? new Date(whenStr).toISOString() : null,
+      });
+    }
+  };
+
+  return (
+    <div
+      style={{
+        flexShrink: 0, borderTop: `1px solid ${t.border}`,
+        background: "var(--bg-card)", padding: 12,
+        animation: "ix-sheet-up 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+      }}
+    >
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6, marginBottom: 10,
+      }}>
+        <Sparkles size={13} color="#c084fc" />
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: t.textMuted, textTransform: "uppercase" }}>
+          Smart actions
+        </div>
+        <div style={{ flex: 1 }} />
+        <button
+          type="button" onClick={onClose} aria-label="Close"
+          style={{
+            width: 26, height: 26, borderRadius: 6, border: "none",
+            background: "transparent", color: t.textMuted, cursor: "pointer",
+          }}
+        ><XIcon size={13} /></button>
+      </div>
+      <div style={{
+        display: "grid", gap: 8,
+        gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+      }}>
+        {ACTIONS.map((a) => (
+          <button
+            key={a.key}
+            type="button"
+            onClick={() => onPick(a.key)}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: 10, borderRadius: 10,
+              border: `1px solid ${t.border}`, background: "var(--bg-input)",
+              color: t.text, fontSize: 13, fontFamily: "inherit",
+              cursor: "pointer", textAlign: "left",
+              transition: "border-color 140ms ease, transform 140ms ease, background 140ms ease",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${a.color}66`; e.currentTarget.style.transform = "translateY(-1px)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = "translateY(0)"; }}
+          >
+            <span style={chipIcon(a.color)}><a.Icon size={14} /></span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.white }}>{a.label}</div>
+              <div style={{ fontSize: 10, color: t.textDim }}>{a.hint}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <style jsx global>{`
+        @keyframes ix-sheet-up {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ─────────── NL automation suggestion chip ─────────── */
+
+function AutomationSuggest({ t, intent, onAccept, onDismiss }) {
+  return (
+    <div
+      role="status"
+      style={{
+        display: "flex", alignItems: "center", gap: 10,
+        margin: "0 12px 8px", padding: "8px 12px",
+        borderRadius: 10,
+        border: `1px solid rgba(168,85,247,0.4)`,
+        background: "linear-gradient(180deg, rgba(168,85,247,0.1), transparent 65%), var(--bg-card)",
+        animation: "ix-sheet-up 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+      }}
+    >
+      <span style={chipIcon("#a855f7")}><Zap size={13} /></span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, letterSpacing: 0.4, color: "#c084fc", fontWeight: 800, textTransform: "uppercase" }}>
+          Looks like a trade rule
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: t.white, marginTop: 1 }}>
+          {intent.summary}
+        </div>
+      </div>
+      <button
+        type="button" onClick={onAccept}
+        style={{
+          padding: "6px 12px", borderRadius: 8, border: "none",
+          background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+          color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          boxShadow: "0 4px 10px rgba(168,85,247,0.3)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Create automation
+      </button>
+    </div>
+  );
+}
+
+/* ─────────── Context pane (right sidebar) ─────────── */
+
+function ContextPane({ t, conv, profile, prefs, onPref, onClose, open }) {
+  // Derive badges from what the profile endpoint gives us. This is the
+  // "wallet identity layer" surface — the badges here are the ones we
+  // can support today without schema changes; richer signals (whale
+  // via on-chain balance, governance participation) come when those
+  // pipelines ship. Each badge carries a color + icon + tooltip.
+  const badges = useMemo(() => {
+    const out = [];
+    if (profile?.verified) out.push({ key: "verified", label: "Verified", color: "#60a5fa", Icon: Check });
+    if (profile?.accountType === "pro" || profile?.accountType === "ironshield_pro") {
+      out.push({ key: "pro", label: "IronShield Pro", color: "#a855f7", Icon: Crown });
+    }
+    if ((profile?.followers ?? 0) >= 500) {
+      out.push({ key: "whale", label: "Top Trader", color: "#10b981", Icon: TrendingUp });
+    }
+    if ((profile?.posts ?? 0) >= 25) {
+      out.push({ key: "creator", label: "Creator", color: "#f97316", Icon: Star });
+    }
+    if (profile?.accountType === "og") {
+      out.push({ key: "og", label: "OG Member", color: "#f59e0b", Icon: Trophy });
+    }
+    return out;
+  }, [profile]);
+
+  // Direct conversations show the peer card; group conversations show
+  // the group card (out of scope for Tier-1 — we render a minimal
+  // placeholder so toggling the pane in a group doesn't blank out).
+  if (conv.kind !== "direct") {
+    return (
+      <aside
+        className="ix-msg-context"
+        data-open={open ? "true" : "false"}
+        style={contextShell(t, open)}
+      >
+        <ContextHeader t={t} title="Group details" onClose={onClose} />
+        <div style={{ padding: 18, color: t.textMuted, fontSize: 13, textAlign: "center" }}>
+          Group context pane coming soon.
+        </div>
+      </aside>
+    );
+  }
+
+  const peer = profile || {};
+  const displayName = peer.displayName || conv.peer?.displayName || conv.peer?.username || shortAddr(conv.peer?.wallet);
+  const handle = peer.username || conv.peer?.username;
+  const pfpUrl = peer.pfpUrl || conv.peer?.pfpUrl;
+  const short = shortAddr(peer.walletAddress || conv.peer?.wallet);
+
+  return (
+    <aside
+      className="ix-msg-context"
+      data-open={open ? "true" : "false"}
+      style={contextShell(t, open)}
+    >
+      <ContextHeader t={t} title="Details" onClose={onClose} />
+
+      <div style={{ padding: "20px 16px", textAlign: "center", borderBottom: `1px solid ${t.border}` }}>
+        <div style={{
+          width: 80, height: 80, borderRadius: "50%",
+          margin: "0 auto 10px",
+          background: pfpUrl ? `url("${pfpUrl}") center/cover no-repeat` : `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+          color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 28, fontWeight: 800,
+          boxShadow: "0 14px 34px rgba(168,85,247,0.25)",
+          border: `2px solid ${t.border}`,
+        }}>
+          {!pfpUrl && (displayName?.[0]?.toUpperCase() || "?")}
+        </div>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: t.white }}>{displayName}</div>
+          {peer.verified && <Check size={13} color="#60a5fa" strokeWidth={3} />}
+        </div>
+        {handle && (
+          <div style={{ fontSize: 12, color: t.textDim, marginTop: 2 }}>@{handle}</div>
+        )}
+        {peer.bio && (
+          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 10, lineHeight: 1.45 }}>
+            {peer.bio}
+          </div>
+        )}
+
+        {badges.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginTop: 12 }}>
+            {badges.map((b) => (
+              <span key={b.key} title={b.label} style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "3px 9px", borderRadius: 999,
+                background: `${b.color}1e`, color: b.color,
+                border: `1px solid ${b.color}44`,
+                fontSize: 11, fontWeight: 700,
+              }}>
+                <b.Icon size={11} />{b.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
+        borderBottom: `1px solid ${t.border}`,
+      }}>
+        <Stat t={t} n={peer.followers ?? 0} l="Followers" />
+        <Stat t={t} n={peer.following ?? 0} l="Following" />
+        <Stat t={t} n={peer.posts ?? 0} l="Posts" />
+      </div>
+
+      {/* Identity row */}
+      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${t.border}` }}>
+        <SectionLabel t={t}>Wallet</SectionLabel>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 10px", borderRadius: 8,
+          border: `1px solid ${t.border}`, background: "var(--bg-input)",
+        }}>
+          <Wallet size={13} color={t.accent} />
+          <span style={{ flex: 1, fontSize: 12, fontFamily: "var(--font-jetbrains-mono), monospace", color: t.text }}>
+            {short}
+          </span>
+          <a
+            href={`https://nearblocks.io/address/${encodeURIComponent(peer.walletAddress || conv.peer?.wallet || "")}`}
+            target="_blank" rel="noreferrer"
+            title="View on NEARBlocks"
+            style={{ color: t.textMuted, display: "inline-flex", alignItems: "center" }}
+          >
+            <ExternalLink size={12} />
+          </a>
+        </div>
+      </div>
+
+      {/* Options */}
+      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${t.border}` }}>
+        <SectionLabel t={t}>Options</SectionLabel>
+        <PaneToggle
+          t={t}
+          Icon={prefs.muted ? BellOff : Bell}
+          label="Mute notifications"
+          on={!!prefs.muted}
+          onToggle={() => onPref?.({ muted: !prefs.muted })}
+        />
+        <PaneToggle
+          t={t}
+          Icon={Pin}
+          label="Pin conversation"
+          on={!!prefs.pinned}
+          onToggle={() => onPref?.({ pinned: !prefs.pinned })}
+        />
+        <PaneButton t={t} Icon={UserX} color="#ef4444" label="Block user" />
+        <PaneButton t={t} Icon={Flag}   color="#ef4444" label="Report user" />
+      </div>
+
+      {/* Quick link to profile */}
+      <div style={{ padding: "12px 16px" }}>
+        <a
+          href={`/profile?address=${encodeURIComponent(peer.walletAddress || conv.peer?.wallet || "")}`}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "10px 12px", borderRadius: 8,
+            border: `1px solid ${t.border}`, background: "transparent",
+            color: t.text, fontSize: 13, textDecoration: "none",
+          }}
+        >
+          <User size={13} />
+          View full profile
+          <ChevronRight size={13} style={{ marginLeft: "auto", opacity: 0.6 }} />
+        </a>
+      </div>
+    </aside>
+  );
+}
+
+function ContextHeader({ t, title, onClose }) {
+  return (
+    <header style={{
+      height: 56, flexShrink: 0,
+      display: "flex", alignItems: "center", gap: 10,
+      padding: "0 14px", borderBottom: `1px solid ${t.border}`,
+      background: "var(--bg-card)",
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 800, flex: 1, color: t.white }}>{title}</div>
+      <button
+        type="button" onClick={onClose} aria-label="Close"
+        style={{
+          width: 30, height: 30, borderRadius: 6, border: "none",
+          background: "transparent", color: t.textMuted, cursor: "pointer",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+        }}
+      ><XIcon size={14} /></button>
+    </header>
+  );
+}
+
+function contextShell(t, open) {
+  return {
+    display: "flex", flexDirection: "column",
+    minHeight: 0, overflowY: "auto",
+    background: "var(--bg-card)",
+    borderLeft: `1px solid ${t.border}`,
+  };
+}
+
+function Stat({ t, n, l }) {
+  return (
+    <div style={{ padding: "12px 6px", textAlign: "center", borderRight: `1px solid ${t.border}` }}>
+      <div style={{ fontSize: 15, fontWeight: 800, color: t.white, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
+        {typeof n === "number" ? n.toLocaleString() : n}
+      </div>
+      <div style={{ fontSize: 10, color: t.textDim, letterSpacing: 0.4, marginTop: 2 }}>{l}</div>
+    </div>
+  );
+}
+
+function SectionLabel({ t, children }) {
+  return (
+    <div style={{
+      fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
+      color: t.textDim, textTransform: "uppercase", marginBottom: 8,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function PaneToggle({ t, Icon, label, on, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 10,
+        padding: "8px 4px", border: "none", background: "transparent",
+        color: t.text, cursor: "pointer", textAlign: "left",
+      }}
+    >
+      <Icon size={14} color={t.textMuted} />
+      <span style={{ flex: 1, fontSize: 13 }}>{label}</span>
+      <span
+        aria-hidden
+        style={{
+          width: 30, height: 18, borderRadius: 999,
+          background: on ? t.accent : "var(--bg-input)",
+          border: `1px solid ${on ? t.accent : t.border}`,
+          position: "relative",
+          transition: "background 160ms ease, border-color 160ms ease",
+        }}
+      >
+        <span style={{
+          position: "absolute", top: 1, left: on ? 13 : 1,
+          width: 14, height: 14, borderRadius: "50%",
+          background: "#fff",
+          transition: "left 160ms ease",
+        }} />
+      </span>
+    </button>
+  );
+}
+
+function PaneButton({ t, Icon, label, color }) {
+  return (
+    <button
+      type="button"
+      style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 10,
+        padding: "8px 4px", border: "none", background: "transparent",
+        color: color || t.text, cursor: "pointer", textAlign: "left",
+        fontSize: 13,
+      }}
+    >
+      <Icon size={14} />
+      {label}
+    </button>
   );
 }
 
