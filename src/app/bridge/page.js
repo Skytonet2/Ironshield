@@ -12,10 +12,25 @@ import { useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import { usePrices } from "@/lib/hooks/usePrices";
+import { API_BASE as API } from "@/lib/apiBase";
 import {
   ArrowLeftRight, ArrowDownUp, ChevronDown, Shield, Clock,
-  Zap, CheckCircle2, Loader2,
+  Zap, CheckCircle2, Loader2, Copy, Check, ExternalLink,
 } from "lucide-react";
+
+// Map our chain keys to the 1click-friendly asset identifiers the
+// backend /api/bridge/quote expects. 1click uses a `nep141:<token>` or
+// `native:<chain>` notation in its origin/destination fields; keeping
+// the mapping here (as opposed to inline) makes adding a new chain a
+// one-row change.
+const CHAIN_TO_ASSET = {
+  ethereum: "nep141:eth.omft.near",
+  arbitrum: "nep141:arb.omft.near",
+  base:     "nep141:base.omft.near",
+  near:     "nep141:wrap.near",
+  solana:   "nep141:sol.omft.near",
+  bnb:      "nep141:bnb.omft.near",
+};
 
 const CHAINS = [
   { key: "ethereum",  label: "Ethereum",      asset: "ETH",  balance: 2.48, price: 2580, gradient: "linear-gradient(135deg, #627eea, #3c5bb8)" },
@@ -52,11 +67,56 @@ export default function BridgePage() {
   const amountNum = Number(amount) || 0;
   const fromUsd   = amountNum * (from.price || 0);
   const toUsd     = amountNum * (to.price || 0);
-  // Flat MVP estimate — $4.21 at $2500 ETH is about the real current
-  // Arbitrum bridge range, keeps the UI honest while we wire the
-  // real quote endpoint.
-  const networkFeeUsd = 4.21;
-  const estTimeLabel  = "2-3 mins";
+
+  // Live quote via the backend's /api/bridge/quote proxy (NEAR Intents
+  // 1click API under the hood). Re-runs when chain or amount changes;
+  // debounced at 400ms so keystrokes in the amount field don't storm
+  // the endpoint. `quote` carries the real fee + destination amount.
+  const [quote, setQuote] = useState(null);
+  const [quoteErr, setQuoteErr] = useState(null);
+  useEffect(() => {
+    if (!amountNum || fromKey === toKey) { setQuote(null); return; }
+    const fromAsset = CHAIN_TO_ASSET[fromKey];
+    const toAsset   = CHAIN_TO_ASSET[toKey];
+    if (!fromAsset || !toAsset) { setQuote(null); return; }
+    const ctl = new AbortController();
+    setQuoteBusy(true);
+    setQuoteErr(null);
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/api/bridge/quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            originAsset: fromAsset,
+            destinationAsset: toAsset,
+            amount: String(amountNum),
+            // Use a placeholder recipient for the dry quote; the real
+            // destination address lands when the user hits Review.
+            recipient: "quote.ironshield.near",
+            dry: true,
+          }),
+          signal: ctl.signal,
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j?.error || `quote ${r.status}`);
+        setQuote(j?.quoteResponse || j);
+      } catch (e) {
+        if (e.name !== "AbortError") setQuoteErr(e.message);
+      } finally {
+        setQuoteBusy(false);
+      }
+    }, 400);
+    return () => { clearTimeout(timer); ctl.abort(); };
+  }, [fromKey, toKey, amountNum]);
+
+  const estFeeUsd = quote?.amountInUsd && quote?.amountOutUsd
+    ? Math.max(0, Number(quote.amountInUsd) - Number(quote.amountOutUsd))
+    : null;
+  const networkFeeUsd = estFeeUsd != null ? estFeeUsd : 0;
+  const estTimeLabel = quote?.timeEstimate
+    ? `~${quote.timeEstimate}s`
+    : "2-3 mins";
 
   function flip() {
     setFromKey(to.key);
@@ -323,12 +383,50 @@ function ChainPicker({ chains, onPick, onClose, t }) {
 }
 
 function ReviewModal({ from, to, amount, fromUsd, toUsd, networkFeeUsd, estTimeLabel, onClose, t }) {
-  const [stage, setStage] = useState("review"); // review | pending | done
+  const [stage, setStage] = useState("review"); // review | pending | done | error
+  const [submission, setSubmission] = useState(null);
+  const [err, setErr] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const { address } = useWallet();
+
   async function confirm() {
     setStage("pending");
-    // Placeholder delay until the real /api/bridge/execute lands.
-    await new Promise((r) => setTimeout(r, 1800));
-    setStage("done");
+    setErr(null);
+    try {
+      const fromAsset = CHAIN_TO_ASSET[from.key];
+      const toAsset   = CHAIN_TO_ASSET[to.key];
+      if (!fromAsset || !toAsset) throw new Error("Unsupported chain");
+      const r = await fetch(`${API}/api/bridge/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          originAsset: fromAsset,
+          destinationAsset: toAsset,
+          amount: String(amount),
+          // Recipient is the user's address — on EVM / Solana chains
+          // NEAR Intents takes the native address; if the user hasn't
+          // connected yet, the outer flow gated on showModal() already.
+          recipient: address || "ironshield.near",
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || `Submit failed (${r.status})`);
+      setSubmission(j);
+      setStage("done");
+    } catch (e) {
+      setErr(e.message || "Bridge submit failed");
+      setStage("error");
+    }
+  }
+
+  async function copyDeposit() {
+    const addr = submission?.depositAddress;
+    if (!addr) return;
+    try {
+      await navigator.clipboard.writeText(addr);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked */ }
   }
   return (
     <div
@@ -351,7 +449,8 @@ function ReviewModal({ from, to, amount, fromUsd, toUsd, networkFeeUsd, estTimeL
         <div style={{ fontSize: 15, fontWeight: 800, color: t.white, marginBottom: 14 }}>
           {stage === "review" && "Review Bridge"}
           {stage === "pending" && "Submitting to the bridge…"}
-          {stage === "done" && "Bridge initiated"}
+          {stage === "done" && "Send funds to complete"}
+          {stage === "error" && "Bridge failed"}
         </div>
 
         {stage === "review" && (
@@ -388,14 +487,40 @@ function ReviewModal({ from, to, amount, fromUsd, toUsd, networkFeeUsd, estTimeL
 
         {stage === "done" && (
           <>
-            <div style={{ textAlign: "center", padding: "8px 0 14px" }}>
-              <CheckCircle2 size={34} color="#10b981" />
-              <div style={{ fontSize: 14, fontWeight: 700, color: t.white, marginTop: 8 }}>
-                Bridge submitted
+            <div style={{ textAlign: "center", padding: "4px 0 10px" }}>
+              <CheckCircle2 size={28} color="#10b981" />
+              <div style={{ fontSize: 13, color: t.textDim, marginTop: 6, lineHeight: 1.5 }}>
+                Send exactly <strong style={{ color: t.white }}>{amount} {from.asset}</strong> on <strong style={{ color: t.white }}>{from.label}</strong> to the address below. Funds will route to <strong style={{ color: t.white }}>{to.label}</strong> in {estTimeLabel}.
               </div>
-              <div style={{ fontSize: 12, color: t.textDim, marginTop: 4, lineHeight: 1.5 }}>
-                Funds should arrive on {to.label} in {estTimeLabel}.
-              </div>
+            </div>
+            <div style={{
+              padding: 10, borderRadius: 10,
+              border: `1px solid ${t.border}`, background: "var(--bg-input)",
+              display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+            }}>
+              <span style={{
+                flex: 1, fontSize: 11,
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+                color: t.text, wordBreak: "break-all",
+              }}>
+                {submission?.depositAddress || "—"}
+              </span>
+              <button
+                type="button"
+                onClick={copyDeposit}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "6px 10px", borderRadius: 6,
+                  border: `1px solid ${t.border}`, background: "var(--bg-surface)",
+                  color: t.text, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: t.textDim, lineHeight: 1.5, marginBottom: 14 }}>
+              <Clock size={10} style={{ marginRight: 4, verticalAlign: -1 }} />
+              Deadline: {submission?.deadline ? new Date(submission.deadline).toLocaleTimeString() : "10 min from now"}. After the deadline, any deposit is refunded to your origin wallet.
             </div>
             <button
               type="button"
@@ -406,8 +531,45 @@ function ReviewModal({ from, to, amount, fromUsd, toUsd, networkFeeUsd, estTimeL
                 color: t.text, fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}
             >
-              Close
+              Done
             </button>
+          </>
+        )}
+
+        {stage === "error" && (
+          <>
+            <div style={{
+              padding: "8px 12px", borderRadius: 8, marginBottom: 12,
+              background: "rgba(239,68,68,0.08)", border: "1px solid var(--red)",
+              color: "var(--red)", fontSize: 12, lineHeight: 1.5,
+            }}>
+              {err || "Something went wrong."}
+            </div>
+            <div style={{ fontSize: 12, color: t.textDim, marginBottom: 14, lineHeight: 1.5 }}>
+              If this keeps happening you can also bridge directly via <a href="https://near.com/bridge" target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "none" }}>near.com/bridge <ExternalLink size={10} style={{ verticalAlign: -1 }} /></a> — IronShield uses the same underlying NEAR Intents protocol.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button" onClick={() => setStage("review")}
+                style={{
+                  flex: 1, padding: "10px 14px", borderRadius: 10, border: "none",
+                  background: t.accent, color: "#fff",
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                Try again
+              </button>
+              <button
+                type="button" onClick={onClose}
+                style={{
+                  padding: "10px 14px", borderRadius: 10,
+                  border: `1px solid ${t.border}`, background: "var(--bg-surface)",
+                  color: t.text, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
           </>
         )}
       </div>

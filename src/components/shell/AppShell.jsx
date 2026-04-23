@@ -23,6 +23,8 @@ import {
 } from "@/lib/motion";
 import { useNotifications } from "@/lib/hooks/useNotifications";
 import NotificationsDrawer from "@/components/notifications/NotificationsDrawer";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
@@ -167,15 +169,23 @@ function SidebarItem({ item, active, onAction, onClick, t }) {
     onClick?.(e);
   };
   if (item.href) {
+    // Use Next's <Link> for client-side navigation — previously
+    // bare <a href> forced a full-page reload on every sidebar click,
+    // which re-runs the whole provider tree (Privy, NEAR selector,
+    // Proposals) and makes cross-section hops feel sluggish. With
+    // <Link> the shell stays mounted and only the route segment
+    // swaps; prefetch kicks in on hover so the next page's JS + data
+    // start loading before the click completes.
     return (
-      <a
+      <Link
         href={item.href}
         onClick={handleClick}
+        prefetch
         className={active ? "sidebar-item active" : "sidebar-item"}
         style={base}
       >
         {content}
-      </a>
+      </Link>
     );
   }
   return (
@@ -448,18 +458,19 @@ function TopNav({ pathname, onAction, isMobile, onDrawer, unreadCount = 0 }) {
           <Menu size={16} />
         </button>
       )}
-      <a href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
+      <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
         <Shield size={18} style={{ color: t.accent }} />
         <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>IronShield</span>
-      </a>
+      </Link>
       {!isMobile && (
       <nav style={{ display: "flex", gap: 4, marginLeft: 20 }}>
         {TOP_PILLS.map((p) => {
           const active = pathname?.startsWith(p.href);
           return (
-            <a
+            <Link
               key={p.href}
               href={p.href}
+              prefetch
               style={{
                 ...pillBase,
                 color: active ? t.white : t.textMuted,
@@ -467,7 +478,7 @@ function TopNav({ pathname, onAction, isMobile, onDrawer, unreadCount = 0 }) {
               }}
             >
               {p.label}
-            </a>
+            </Link>
           );
         })}
       </nav>
@@ -687,7 +698,7 @@ function MobileBottomNav({ pathname, onAction, unreadCount = 0, dmUnread = 0 }) 
         };
         if (it.kind === "link") {
           return (
-            <a key={it.key} href={it.href} style={sharedStyle}>
+            <Link key={it.key} href={it.href} prefetch style={sharedStyle}>
               {active && (
                 <span style={{
                   position: "absolute", top: 0, left: "30%", right: "30%",
@@ -696,7 +707,7 @@ function MobileBottomNav({ pathname, onAction, unreadCount = 0, dmUnread = 0 }) 
                 }} />
               )}
               {content}
-            </a>
+            </Link>
           );
         }
         return (
@@ -808,6 +819,7 @@ function BottomBar() {
 export default function AppShell({ children, rightPanel = null, onAction }) {
   const t = useTheme();
   const pathname = usePathname();
+  const router = useRouter();
   const wallet = useCtxWallet();
   const walletAddress = wallet?.address || null;
   const [note, setNote] = useState(null);
@@ -865,7 +877,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
       // Bridge used to open as a modal; it's now a dedicated route
       // with chain pickers + amount + review flow. Deep-link over so
       // the modal state doesn't double-mount alongside the page.
-      if (typeof window !== "undefined") window.location.href = "/bridge";
+      if (typeof window !== "undefined") router.push("/bridge");
       return;
     }
     if (kind === "search") { setSearchOpen(true); return; }
@@ -878,7 +890,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
         if (pathname?.startsWith("/feed")) {
           window.dispatchEvent(new CustomEvent("ironshield:open-composer"));
         } else {
-          window.location.href = "/feed?compose=1";
+          router.push("/feed?compose=1");
         }
       }
       return;
@@ -896,7 +908,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
       return;
     }
     if (kind === "bookmarks") {
-      if (typeof window !== "undefined") window.location.href = "/profile?tab=bookmarks";
+      if (typeof window !== "undefined") router.push("/profile?tab=bookmarks");
       return;
     }
     if (kind === "notifications") {

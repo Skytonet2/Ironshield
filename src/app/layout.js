@@ -48,66 +48,162 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="apple-touch-icon" href="/mascot.png" />
         <style dangerouslySetInnerHTML={{ __html: `
-          /* Simple pre-React loader: pure CSS, no JS required */
+          /* Pre-React loader — pure CSS, no JS required for animation.
+             Designed to feel premium rather than "a spinner with a
+             progress bar": a pulsing shield crest, two concentric
+             rotating rings, and a subtle star-field bg. Dismissed by
+             the inline script below once the AppShell mounts. */
           #ic-pre-loader {
             position: fixed; inset: 0;
-            background: #080b12;
-            background-image: radial-gradient(rgba(59,130,246,0.09) 1px, transparent 1px);
-            background-size: 24px 24px;
+            background:
+              radial-gradient(ellipse 90% 70% at 50% 40%, rgba(168,85,247,0.10), transparent 70%),
+              radial-gradient(ellipse 60% 45% at 50% 100%, rgba(59,130,246,0.10), transparent 75%),
+              #050816;
             display: flex; align-items: center; justify-content: center;
             font-family: 'Outfit', -apple-system, sans-serif;
             z-index: 99999;
-          }
-          #ic-pre-loader .ic-wrap { width: 100%; max-width: 460px; padding: 24px; text-align: center; }
-          #ic-pre-loader .ic-brand { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.5px; margin-bottom: 28px; }
-          #ic-pre-loader .ic-brand span { color: #3b82f6; }
-          #ic-pre-loader .ic-track { position: relative; height: 64px; margin-bottom: 18px; }
-          #ic-pre-loader .ic-rail {
-            position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
-            height: 8px; border-radius: 999px;
-            background: rgba(59,130,246,0.12);
-            border: 1px solid rgba(59,130,246,0.25);
             overflow: hidden;
           }
-          #ic-pre-loader .ic-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #2563eb, #3b82f6, #0ea5e9);
-            box-shadow: 0 0 12px rgba(59,130,246,0.55);
-            animation: ic-fill 4.5s ease-out forwards;
+          /* Twinkling star-field via two layered radial-gradient tiles
+             with offset animations. Cheaper than SVG and doesn't touch
+             the main thread. */
+          #ic-pre-loader::before, #ic-pre-loader::after {
+            content: "";
+            position: absolute; inset: -10%;
+            background-image:
+              radial-gradient(rgba(255,255,255,0.42) 1px, transparent 1.4px),
+              radial-gradient(rgba(168,85,247,0.35) 1px, transparent 1.6px);
+            background-size: 120px 120px, 180px 180px;
+            background-position: 0 0, 60px 60px;
+            opacity: 0.5;
+            animation: ic-stars 30s linear infinite;
+            pointer-events: none;
           }
-          #ic-pre-loader .ic-mascot {
-            position: absolute; top: 50%;
-            width: 64px; height: 64px;
-            transform: translate(-50%, -50%);
-            filter: drop-shadow(0 4px 14px rgba(59,130,246,0.55));
-            animation: ic-slide 4.5s ease-out forwards, ic-bob 1.2s ease-in-out infinite;
+          #ic-pre-loader::after {
+            animation-duration: 50s;
+            animation-direction: reverse;
+            opacity: 0.3;
+            filter: blur(0.4px);
           }
-          #ic-pre-loader .ic-mascot img { width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
-          #ic-pre-loader .ic-status { color: #94a3b8; font-size: 14px; }
+          #ic-pre-loader .ic-wrap {
+            position: relative;
+            width: 100%; max-width: 480px; padding: 24px;
+            text-align: center; z-index: 1;
+          }
+          #ic-pre-loader .ic-crest {
+            position: relative;
+            width: 120px; height: 120px;
+            margin: 0 auto 30px;
+            animation: ic-float 3.6s ease-in-out infinite;
+          }
+          /* Two rings that counter-rotate around the crest */
+          #ic-pre-loader .ic-ring {
+            position: absolute; inset: -10px;
+            border-radius: 50%;
+            border: 1px solid rgba(168,85,247,0.35);
+            animation: ic-ring-spin 10s linear infinite;
+          }
+          #ic-pre-loader .ic-ring::before {
+            content: ""; position: absolute; top: -4px; left: 50%;
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #a855f7;
+            box-shadow: 0 0 14px #a855f7;
+            transform: translateX(-50%);
+          }
+          #ic-pre-loader .ic-ring.ic-ring-outer {
+            inset: -28px;
+            border: 1px dashed rgba(59,130,246,0.35);
+            animation-duration: 16s;
+            animation-direction: reverse;
+          }
+          #ic-pre-loader .ic-ring.ic-ring-outer::before {
+            background: #60a5fa;
+            box-shadow: 0 0 14px #60a5fa;
+            width: 5px; height: 5px; top: -3px;
+          }
+          /* Shield logo — uses the existing gradient palette. The glow
+             pulses with the same 3.6s cadence as the float. */
+          #ic-pre-loader .ic-shield {
+            position: absolute; inset: 0;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #a855f7, #3b82f6);
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 12px 44px rgba(168,85,247,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+            animation: ic-pulse 3.6s ease-in-out infinite;
+          }
+          #ic-pre-loader .ic-shield svg { width: 54px; height: 54px; color: #fff; }
+          #ic-pre-loader .ic-brand {
+            font-size: 26px; font-weight: 800; color: #fff;
+            letter-spacing: -0.7px; margin-bottom: 6px;
+          }
+          #ic-pre-loader .ic-brand span {
+            background: linear-gradient(90deg, #60a5fa, #a855f7);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: transparent;
+          }
+          #ic-pre-loader .ic-tag {
+            font-size: 13px; color: rgba(230,236,247,0.55);
+            letter-spacing: 0.2px; margin-bottom: 20px;
+          }
+          /* Progress bar — sits below the tag. Short indeterminate
+             sweep instead of a filling-percentage bar, which conveys
+             activity without implying we know how long loading will
+             take. */
+          #ic-pre-loader .ic-bar {
+            position: relative;
+            height: 3px; border-radius: 999px;
+            background: rgba(255,255,255,0.06);
+            overflow: hidden;
+            max-width: 220px; margin: 0 auto;
+          }
+          #ic-pre-loader .ic-bar::before {
+            content: ""; position: absolute; top: 0; height: 100%;
+            width: 40%; border-radius: 999px;
+            background: linear-gradient(90deg, transparent, #a855f7 45%, #60a5fa 55%, transparent);
+            animation: ic-sweep 1.4s ease-in-out infinite;
+          }
+          #ic-pre-loader .ic-status {
+            color: rgba(230,236,247,0.55); font-size: 12px;
+            margin-top: 14px; letter-spacing: 0.3px;
+          }
           #ic-pre-loader .ic-reload {
             display: inline-block;
             margin-top: 22px;
-            padding: 11px 24px;
-            border-radius: 12px;
-            border: 1px solid rgba(59,130,246,0.55);
-            background: linear-gradient(135deg, #2563eb, #0ea5e9);
-            color: #fff;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            font-family: inherit;
-            box-shadow: 0 4px 18px rgba(59,130,246,0.4);
+            padding: 11px 22px;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(135deg, #6d28d9, #3b82f6);
+            color: #fff; font-size: 13px; font-weight: 700;
+            cursor: pointer; font-family: inherit;
             text-decoration: none;
-            transition: transform .15s, box-shadow .15s;
+            box-shadow: 0 10px 28px rgba(109,40,217,0.45), inset 0 1px 0 rgba(255,255,255,0.18);
+            transition: transform .15s ease, box-shadow .15s ease;
           }
           #ic-pre-loader .ic-reload:hover {
             transform: translateY(-1px);
-            box-shadow: 0 6px 24px rgba(59,130,246,0.6);
+            box-shadow: 0 14px 32px rgba(109,40,217,0.6);
           }
-          #ic-pre-loader .ic-hint { color: #64748b; font-size: 11px; margin-top: 12px; }
-          @keyframes ic-fill  { 0% { width: 4%; } 100% { width: 92%; } }
-          @keyframes ic-slide { 0% { left: 4%; }  100% { left: 92%; } }
-          @keyframes ic-bob   { 0%,100% { transform: translate(-50%, -55%) rotate(-3deg); } 50% { transform: translate(-50%, -45%) rotate(3deg); } }
+          #ic-pre-loader .ic-hint { color: rgba(230,236,247,0.35); font-size: 11px; margin-top: 12px; }
+
+          @keyframes ic-stars   { to { background-position: 120px 120px, 240px 240px; } }
+          @keyframes ic-float   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+          @keyframes ic-pulse   {
+            0%, 100% { box-shadow: 0 12px 44px rgba(168,85,247,0.5), inset 0 1px 0 rgba(255,255,255,0.2); }
+            50%      { box-shadow: 0 16px 60px rgba(168,85,247,0.75), 0 0 44px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.25); }
+          }
+          @keyframes ic-ring-spin { to { transform: rotate(360deg); } }
+          @keyframes ic-sweep {
+            0%   { left: -40%; }
+            100% { left: 100%; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            #ic-pre-loader .ic-crest,
+            #ic-pre-loader .ic-shield,
+            #ic-pre-loader .ic-ring,
+            #ic-pre-loader::before,
+            #ic-pre-loader::after,
+            #ic-pre-loader .ic-bar::before { animation: none !important; }
+          }
         ` }} />
       </head>
       <body style={{ background: "#080b12", margin: 0 }}>
@@ -117,11 +213,18 @@ export default function RootLayout({ children }) {
             expected to mismatch here. Without this, every page throws a noisy console error. */}
         <div id="ic-pre-loader" aria-hidden="true" suppressHydrationWarning>
           <div className="ic-wrap">
-            <div className="ic-brand">Iron<span>Shield</span></div>
-            <div className="ic-track">
-              <div className="ic-rail"><div className="ic-fill" /></div>
-              <div className="ic-mascot"><img src="/mascot.png" alt="" /></div>
+            <div className="ic-crest">
+              <div className="ic-ring ic-ring-outer" />
+              <div className="ic-ring" />
+              <div className="ic-shield">
+                <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6l-9-4z" />
+                </svg>
+              </div>
             </div>
+            <div className="ic-brand">Iron<span>Shield</span></div>
+            <div className="ic-tag">Connect · Create · Automate · Govern</div>
+            <div className="ic-bar" />
             <div className="ic-status">Loading IronShield…</div>
             <a href="./" className="ic-reload" id="ic-reload-btn">Reload page</a>
             <div className="ic-hint">If this hangs, click reload.</div>
