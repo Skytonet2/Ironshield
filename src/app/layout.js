@@ -240,6 +240,50 @@ export default function RootLayout({ children }) {
               }
             } catch(e) {}
 
+            // ─── Stale-chunk auto-recovery ─────────────────────────
+            // Symptom we're guarding against: user clicks a nav link,
+            // page goes blank until they manually refresh. Root cause
+            // in a Next.js static export behind a CDN is almost always
+            // that the browser has old JS chunks cached from before a
+            // deploy, so the new route's dynamic import fails and
+            // React silently blanks the page. The Next client already
+            // catches some ChunkLoadErrors but the v3→v4 SW transition
+            // left a long tail of users with stale responses in HTTP
+            // cache. One hard reload to the same URL refills the cache
+            // with the current manifest and the page renders.
+            //
+            // Guarded by sessionStorage so a genuinely broken build
+            // never infinite-loops the user.
+            try {
+              var recoverOnce = function(reason) {
+                if (sessionStorage.getItem('ic-chunk-reloaded') === '1') return;
+                sessionStorage.setItem('ic-chunk-reloaded', '1');
+                console.warn('[ic] stale chunk — reloading ('+ reason +')');
+                location.reload();
+              };
+              var isChunkErr = function(msg) {
+                return /Loading chunk |ChunkLoadError|Loading CSS chunk |error loading dynamically imported module|Failed to fetch dynamically imported module/i.test(String(msg || ''));
+              };
+              window.addEventListener('error', function(e) {
+                if (isChunkErr(e && (e.message || e.error && e.error.message))) {
+                  recoverOnce('window.error');
+                }
+              });
+              window.addEventListener('unhandledrejection', function(e) {
+                var r = e && e.reason;
+                if (isChunkErr(r && (r.message || r))) recoverOnce('unhandledrejection');
+              });
+              // Clear the guard after a successful render — if the
+              // app rehydrates cleanly, we trust the next nav.
+              window.addEventListener('load', function() {
+                setTimeout(function() {
+                  if (document.querySelector('[data-app-shell="ready"]')) {
+                    sessionStorage.removeItem('ic-chunk-reloaded');
+                  }
+                }, 2000);
+              });
+            } catch(e) {}
+
             // Make the Reload button a clean reload (strip query string).
             // The button lives inside React's PreLoader; bind lazily via
             // delegation so we don't race its mount.

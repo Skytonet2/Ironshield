@@ -56,15 +56,20 @@ router.get("/status", async (req, res) => {
       [wallet]
     );
     if (!u.rows.length) return res.json({ linked: false });
+    // Include tg_id + settings so the Settings → Telegram tab on the
+    // web frontend can render + edit prefs in one round-trip instead
+    // of chaining status → settings/:tgId.
     const t = await db.query(
-      "SELECT tg_username, wallets FROM feed_tg_links WHERE user_id=$1 LIMIT 1",
+      "SELECT tg_id, tg_username, wallets, settings FROM feed_tg_links WHERE user_id=$1 LIMIT 1",
       [u.rows[0].id]
     );
     if (!t.rows.length) return res.json({ linked: false });
     res.json({
       linked: true,
+      tgId:     String(t.rows[0].tg_id),
       username: t.rows[0].tg_username,
-      wallets: t.rows[0].wallets || [],
+      wallets:  t.rows[0].wallets || [],
+      settings: t.rows[0].settings || {},
     });
   } catch (e) {
     res.json({ linked: false });
