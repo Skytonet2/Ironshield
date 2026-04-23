@@ -609,12 +609,17 @@ function fmtUsd(n) {
  * Active route shows an accent tint + top-edge bar. */
 function MobileBottomNav({ pathname, onAction, unreadCount = 0, dmUnread = 0 }) {
   const t = useTheme();
+  // Notifications sits in slot 2 (was Search) so users have the same
+  // bell affordance mobile as desktop — it's the only way for mobile
+  // users to open the NotificationsDrawer. Search stays reachable via
+  // the \`/\` hotkey and the hamburger drawer. The badge reads the
+  // shared unread count polled by useNotifications in AppShell.
   const items = [
-    { key: "home",     label: "Home",     Icon: Home,          kind: "link",   href: "/"        },
-    { key: "search",   label: "Search",   Icon: Search,        kind: "action", action: "search" },
-    { key: "post",     label: "",         Icon: Plus,          kind: "fab",    action: "post"   },
-    { key: "messages", label: "Messages", Icon: MessageCircle, kind: "link",   href: "/messages", badge: dmUnread },
-    { key: "profile",  label: "Profile",  Icon: User,          kind: "link",   href: "/profile" },
+    { key: "home",      label: "Home",   Icon: Home,          kind: "link",   href: "/"        },
+    { key: "alerts",    label: "Alerts", Icon: Bell,          kind: "action", action: "notifications", badge: unreadCount },
+    { key: "post",      label: "",       Icon: Plus,          kind: "fab",    action: "post"   },
+    { key: "messages",  label: "Chat",   Icon: MessageCircle, kind: "link",   href: "/messages", badge: dmUnread },
+    { key: "profile",   label: "Profile",Icon: User,          kind: "link",   href: "/profile" },
   ];
   const activeKey = (() => {
     if (pathname?.startsWith("/profile"))  return "profile";

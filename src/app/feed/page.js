@@ -24,6 +24,29 @@ const BACKEND_BASE = (() => {
   return "https://ironclaw-backend.onrender.com";
 })();
 
+// Read Voices preferences from localStorage and serialize them into
+// the query-string format the /api/feed/voices endpoint accepts. When
+// the user hasn't set any prefs yet (returns DEFAULTS from VoicesTab),
+// only the enabled categories go on the wire — empty = all categories
+// on the backend side.
+function voicesQuery() {
+  if (typeof window === "undefined") return "";
+  try {
+    const v = JSON.parse(localStorage.getItem("ironshield:voices-prefs") || "null");
+    if (!v) return "";
+    const cats = v.categories || {};
+    const enabled = Object.keys(cats).filter((k) => cats[k]);
+    const parts = [];
+    // Always attach `categories=` (even empty) so users can explicitly
+    // opt out of all preset categories and only pull their customs.
+    parts.push(`categories=${encodeURIComponent(enabled.join(","))}`);
+    if (Array.isArray(v.customHandles) && v.customHandles.length) {
+      parts.push(`handles=${encodeURIComponent(v.customHandles.join(","))}`);
+    }
+    return parts.join("&");
+  } catch { return ""; }
+}
+
 const TABS = [
   { key: "foryou",          label: "For You",         endpoint: "/api/feed/foryou"          },
   { key: "following",       label: "Following",       endpoint: "/api/feed/following"       },
@@ -102,7 +125,7 @@ export default function FeedPage() {
               headers: wallet ? { "x-wallet": wallet } : {},
               signal: ctl.signal,
             }).then(r => r.ok ? r.json() : { posts: [] }).catch(() => ({ posts: [] })),
-            fetch(`${BACKEND_BASE}/api/feed/voices?limit=15`, {
+            fetch(`${BACKEND_BASE}/api/feed/voices?limit=15${voicesQuery() ? `&${voicesQuery()}` : ""}`, {
               headers: wallet ? { "x-wallet": wallet } : {},
               signal: ctl.signal,
             }).then(r => r.ok ? r.json() : { posts: [] }).catch(() => ({ posts: [] })),
@@ -121,7 +144,10 @@ export default function FeedPage() {
           });
           setPosts(merged);
         } else {
-          const res = await fetch(`${BACKEND_BASE}${target.endpoint}?limit=30`, {
+          // Voices tab: append the user's category/handle prefs so the
+          // endpoint returns only the mix they configured in Settings.
+          const extra = tab === "voices" && voicesQuery() ? `&${voicesQuery()}` : "";
+          const res = await fetch(`${BACKEND_BASE}${target.endpoint}?limit=30${extra}`, {
             headers: wallet ? { "x-wallet": wallet } : {},
             signal: ctl.signal,
           });

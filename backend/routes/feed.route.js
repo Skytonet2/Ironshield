@@ -99,6 +99,21 @@ router.get("/voices", async (req, res, next) => {
     const limit  = Math.min(parseInt(req.query.limit) || 30, 100);
     const filterCategory = String(req.query.category || "").toLowerCase() || null;
 
+    // `?categories=` is the multi-select version the Settings → Voices
+    // tab uses. Falls back to all categories when unspecified so
+    // backward compat is preserved for older frontends. `?handles=` is
+    // the user's custom add-list — always included regardless of
+    // categories.
+    const { VOICES_CATEGORIES } = require("../data/voicesPreset");
+    const rawCats = String(req.query.categories || "").toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+    const catSet = rawCats.length
+      ? new Set(rawCats.filter((c) => Object.hasOwn(VOICES_CATEGORIES, c)))
+      : null; // null = all
+    const customHandlesRaw = String(req.query.handles || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const customHandles = customHandlesRaw
+      .filter((h) => /^[A-Za-z0-9_]{1,15}$/.test(h))
+      .slice(0, 20);
+
     // 1. Native voice posts.
     const nativeQ = await db.query(
       `SELECT p.* FROM feed_posts p
@@ -118,19 +133,30 @@ router.get("/voices", async (req, res, next) => {
     let external = [];
     try {
       const xfeed = require("./xfeed.route");
-      // The route module doesn't export fetchHandleTweets directly —
-      // it's internal. Call via the timeline handler's logic by
-      // reading the preset from our own data module and invoking the
-      // same fetch helper. We re-require the fetch helper indirectly
-      // by going through the cached version xfeed maintains.
       const { fetchHandleTweets } = xfeed.__internal || {};
       if (fetchHandleTweets) {
-        const handles = VOICES_PRESET_HANDLES.slice(0, 40);  // throttle per request
-        const perHandle = Math.max(1, Math.ceil(limit / handles.length));
-        const results = await Promise.all(handles.map((h) =>
-          fetchHandleTweets(h, perHandle).catch(() => [])
-        ));
-        external = results.flat().filter((t) => t && t.id);
+        // Build the handle list from the category filter + user custom
+        // adds. If the caller explicitly filtered to zero categories
+        // (empty ?categories=) we still honor their custom handles so
+        // the Voices tab doesn't go completely empty.
+        let handleSource;
+        if (catSet === null) {
+          handleSource = VOICES_PRESET_HANDLES;
+        } else {
+          handleSource = [];
+          for (const c of catSet) {
+            const list = VOICES_CATEGORIES[c] || [];
+            for (const h of list) handleSource.push(h);
+          }
+        }
+        const handles = [...new Set([...handleSource, ...customHandles])].slice(0, 40);
+        if (handles.length > 0) {
+          const perHandle = Math.max(1, Math.ceil(limit / handles.length));
+          const results = await Promise.all(handles.map((h) =>
+            fetchHandleTweets(h, perHandle).catch(() => [])
+          ));
+          external = results.flat().filter((t) => t && t.id);
+        }
       }
     } catch { /* xfeed not loaded — skip */ }
 

@@ -1098,8 +1098,12 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
         .ix-msg-grid { position: relative; }
 
         @media (max-width: 899px) {
-          .ix-msg-list[data-hidden-on-mobile="true"]   { display: none; }
-          .ix-msg-thread[data-hidden-on-mobile="true"] { display: none; }
+          /* !important is load-bearing — both panes render with inline
+             \`display: flex\` in their JSX style prop, and inline styles
+             win over external CSS without it. Without the override,
+             the thread stacks on top of the list on phones. */
+          .ix-msg-list[data-hidden-on-mobile="true"]   { display: none !important; }
+          .ix-msg-thread[data-hidden-on-mobile="true"] { display: none !important; }
           .ix-msg-back { display: inline-flex !important; }
 
           /* Composer: hide the image/chart/emoji shortcut icons on
