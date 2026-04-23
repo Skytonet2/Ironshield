@@ -11,12 +11,14 @@
 // program wiring lands, all the `stats.*` fields read from the
 // /api/rewards/me endpoint.
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
+import { API_BASE as API } from "@/lib/apiBase";
 import {
   Award, Rocket, Activity, Crosshair, Users, Store, Trophy, Flame,
-  Medal, ChevronDown, Info, Copy as CopyIcon, BarChart3,
+  Medal, ChevronDown, Info, Copy as CopyIcon, Check, Pencil, Share2,
+  BarChart3, Link2,
 } from "lucide-react";
 
 const CHAINS = [
@@ -82,21 +84,35 @@ export default function RewardsPage() {
   const [chain, setChain] = useState("sol");
   const [tab, setTab] = useState("points");
 
-  // Placeholder stats — the backend rewards endpoint lands alongside
-  // the governance vote on the reward program. Zeros keep the UI
-  // coherent (no NaN / undefined leaks) until then.
-  const stats = useMemo(() => ({
-    rank: 0,
-    volume: 0,
-    totalPoints: 0,
-    creation: 0,
-    tracker: 0,
-    volumePoints: 0,
-    referrals: 0,
-    tier: TIERS[0],
-    nextTier: TIERS[1],
-    nextTierProgress: 0, // current volume counted toward tier threshold
-  }), []);
+  // Pull the real rewards snapshot from the backend. All numbers start
+  // at zero until the accrual pipeline lands (per a governance vote),
+  // but `refCode` is authoritative even today.
+  const [rewards, setRewards] = useState(null);
+  useEffect(() => {
+    if (!address) return;
+    const ctl = new AbortController();
+    fetch(`${API}/api/rewards/me`, {
+      headers: { "x-wallet": address }, signal: ctl.signal,
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => setRewards(j?.rewards || null))
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [address]);
+
+  const stats = useMemo(() => {
+    if (!rewards) {
+      return {
+        rank: 0, volume: 0, totalPoints: 0,
+        creation: 0, tracker: 0, volumePoints: 0, referrals: 0,
+        tier: TIERS[0], nextTier: TIERS[1], nextTierProgress: 0,
+        refCode: null,
+      };
+    }
+    const tier = TIERS.find((x) => x.key === rewards.tier?.key) || TIERS[0];
+    const nextTier = TIERS.find((x) => x.key === rewards.nextTier?.key) || TIERS[1];
+    return { ...rewards, tier, nextTier };
+  }, [rewards]);
 
   const short = useMemo(() => {
     if (!address) return "user-guest";
@@ -294,7 +310,11 @@ export default function RewardsPage() {
           <PointsTab stats={stats} t={t} />
         )}
 
-        {tab !== "points" && (
+        {tab === "referrals" && (
+          <ReferralsTab t={t} address={address} stats={stats} onCode={(code) => setRewards((r) => r ? { ...r, refCode: code } : r)} />
+        )}
+
+        {tab !== "points" && tab !== "referrals" && (
           <div style={{
             padding: 40, color: t.textDim, fontSize: 13, textAlign: "center",
             border: `1px dashed ${t.border}`, borderRadius: 10,
@@ -588,4 +608,205 @@ function DonutBreakdown({ segments, total, t }) {
       </div>
     </div>
   );
+}
+
+/* ─────────── Referrals tab ─────────── */
+
+// Full referral surface: shareable link, in-place code customization,
+// stats for how many people have joined via the link. The rewards
+// accrual pipeline writes to these numbers once it lands — we already
+// pull a real referral count (0 for new users) from /api/rewards/me.
+function ReferralsTab({ t, address, stats, onCode }) {
+  const [code, setCode] = useState(stats.refCode || "");
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  // Keep local state in sync when the parent's snapshot hydrates.
+  useEffect(() => { setCode(stats.refCode || ""); }, [stats.refCode]);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://ironshield.pages.dev";
+  const link = code ? `${origin}/?ref=${encodeURIComponent(code)}` : "";
+
+  const startEdit = () => {
+    setDraft(code || "");
+    setEditing(true);
+    setErr(null);
+  };
+  const cancel = () => { setEditing(false); setErr(null); };
+  const save = async () => {
+    const v = draft.trim().toLowerCase();
+    if (!/^[a-z0-9_]{4,20}$/.test(v)) {
+      setErr("Use 4–20 characters: a–z, 0–9, underscore.");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const r = await fetch(`${API}/api/rewards/ref-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-wallet": address || "" },
+        body: JSON.stringify({ code: v }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || `Save failed (${r.status})`);
+      setCode(j.refCode || v);
+      onCode?.(j.refCode || v);
+      setEditing(false);
+    } catch (e) {
+      setErr(e.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* ignore */ }
+  };
+
+  const share = async () => {
+    if (!link) return;
+    const text = `I'm on IronShield — connect, create, automate, and earn. Use my link:`;
+    if (navigator.share) {
+      try { await navigator.share({ title: "IronShield", text, url: link }); return; } catch { /* fall through */ }
+    }
+    copy();
+  };
+
+  if (!address) {
+    return (
+      <div style={{
+        padding: 40, color: t.textDim, fontSize: 13, textAlign: "center",
+        border: `1px dashed ${t.border}`, borderRadius: 10,
+      }}>
+        Connect a wallet to get your referral link.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Hero card */}
+      <div style={{
+        padding: 16, borderRadius: 14,
+        border: `1px solid ${t.border}`,
+        background: "linear-gradient(180deg, rgba(168,85,247,0.08), transparent 60%), var(--bg-card)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <Link2 size={14} color={t.accent} />
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.6, color: t.textMuted, textTransform: "uppercase" }}>
+            Your referral link
+          </div>
+        </div>
+
+        {editing ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{
+              flex: 1,
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "8px 10px", borderRadius: 8,
+              border: `1px solid ${err ? "var(--red)" : t.border}`,
+              background: "var(--bg-input)",
+            }}>
+              <span style={{ fontSize: 13, color: t.textDim, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
+                {origin}/?ref=
+              </span>
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value.replace(/[^a-z0-9_]/gi, "").slice(0, 20).toLowerCase())}
+                placeholder="mycode"
+                autoFocus
+                maxLength={20}
+                style={{
+                  flex: 1, border: "none", outline: "none",
+                  background: "transparent", color: t.text, fontSize: 13,
+                  fontFamily: "var(--font-jetbrains-mono), monospace",
+                }}
+              />
+            </div>
+            <button type="button" onClick={save} disabled={saving} style={pillBtn(t, true)}>
+              {saving ? "Saving…" : <><Check size={13} /> Save</>}
+            </button>
+            <button type="button" onClick={cancel} style={pillBtn(t)}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{
+              flex: 1, minWidth: 0,
+              padding: "10px 12px", borderRadius: 8,
+              border: `1px solid ${t.border}`, background: "var(--bg-input)",
+              fontFamily: "var(--font-jetbrains-mono), monospace",
+              fontSize: 13, color: t.text,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {link || "…"}
+            </div>
+            <button type="button" onClick={copy} style={pillBtn(t)}>
+              {copied ? <><Check size={13} /> Copied</> : <><CopyIcon size={13} /> Copy</>}
+            </button>
+            <button type="button" onClick={share} style={pillBtn(t)}>
+              <Share2 size={13} /> Share
+            </button>
+            <button type="button" onClick={startEdit} style={pillBtn(t, true)}>
+              <Pencil size={13} /> Customize
+            </button>
+          </div>
+        )}
+
+        {err && (
+          <div style={{
+            marginTop: 8, padding: "6px 10px", borderRadius: 6,
+            background: "rgba(239,68,68,0.08)", border: "1px solid var(--red)",
+            color: "var(--red)", fontSize: 12,
+          }}>
+            {err}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: t.textDim, marginTop: 10, lineHeight: 1.55 }}>
+          Your code is auto-generated. Customize it to anything 4–20 characters (a–z, 0–9, underscore). Others can use this link to sign up and you'll earn a share of their points.
+        </div>
+      </div>
+
+      {/* Stats tiles */}
+      <div style={{
+        display: "grid", gap: 10,
+        gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+      }}>
+        <StatTile label="Referrals"        value={stats.referrals || 0} Icon={Users}    color="var(--green)" t={t} />
+        <StatTile label="Earnings (uPts)"  value={Math.round((stats.referrals || 0) * 5)} Icon={Award}  color="#f59e0b" t={t} />
+        <StatTile label="Pending payouts"  value="0"                     Icon={Activity} color="#60a5fa" t={t} />
+      </div>
+
+      <div style={{
+        padding: 14, borderRadius: 12,
+        border: `1px solid ${t.border}`, background: "var(--bg-card)",
+        fontSize: 12, color: t.textDim, lineHeight: 1.55,
+      }}>
+        <strong style={{ color: t.text }}>How it works.</strong> When someone signs up
+        using your link, we tag them as your referral. You'll earn uPoints for every
+        launch, trade, or tracker claim they make — the exact split is set by
+        governance and will be surfaced here when it's live.
+      </div>
+    </div>
+  );
+}
+
+function pillBtn(t, primary) {
+  return {
+    padding: "8px 14px", borderRadius: 999,
+    border: primary ? "none" : `1px solid ${t.border}`,
+    background: primary ? t.accent : "var(--bg-surface)",
+    color: primary ? "#fff" : t.text,
+    fontSize: 12, fontWeight: 700, cursor: "pointer",
+    display: "inline-flex", alignItems: "center", gap: 6,
+    whiteSpace: "nowrap",
+  };
 }

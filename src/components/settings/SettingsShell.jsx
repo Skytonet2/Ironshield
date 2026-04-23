@@ -11,25 +11,38 @@ import AppShell from "@/components/shell/AppShell";
 import AppearanceTab from "./AppearanceTab";
 import SecurityTab  from "./SecurityTab";
 import TrackersTab  from "./TrackersTab";
+import NotificationsTab from "./NotificationsTab";
+import KeywordsTab from "./KeywordsTab";
+import KeybindsTab from "./KeybindsTab";
+import WalletsTab from "./WalletsTab";
+import TransactionsTab from "./TransactionsTab";
+import ExportDataTab from "./ExportDataTab";
+import ResetTab from "./ResetTab";
+import DisconnectTab from "./DisconnectTab";
 
+// Most "soon" items are now implemented. The remaining stubs surface
+// routes that exist elsewhere in the app (Feed Accounts → /profile edit,
+// Earnings → /rewards, Metadata → profile tags) rather than duplicating
+// those surfaces here. When any of them graduates into a full settings
+// tab, just swap the entry over.
 const GROUPS = [
   {
     label: "Commands",
     items: [
-      { key: "export",     label: "Export Data",         disabled: true },
-      { key: "reset",      label: "Reset to Defaults",   disabled: true },
-      { key: "disconnect", label: "Disconnect Wallets",  disabled: true },
+      { key: "export",     label: "Export Data" },
+      { key: "reset",      label: "Reset to Defaults" },
+      { key: "disconnect", label: "Disconnect Wallets" },
     ],
   },
   {
     label: "Platform",
     items: [
-      { key: "trackers",    label: "Trackers" },
-      { key: "feed",        label: "Feed Accounts", disabled: true },
-      { key: "notifications", label: "Notifications", disabled: true },
-      { key: "keywords",    label: "Keywords",     disabled: true },
-      { key: "pins",        label: "Pins & Tags",  disabled: true },
-      { key: "auto-shield", label: "Auto Shield",  disabled: true },
+      { key: "trackers",      label: "Trackers" },
+      { key: "notifications", label: "Notifications" },
+      { key: "keywords",      label: "Keywords" },
+      { key: "feed",          label: "Feed Accounts", disabled: true },
+      { key: "pins",          label: "Pins & Tags",   disabled: true },
+      { key: "auto-shield",   label: "Auto Shield",   disabled: true },
     ],
   },
   {
@@ -37,9 +50,9 @@ const GROUPS = [
     items: [
       { key: "appearance",   label: "Appearance" },
       { key: "security",     label: "Security" },
-      { key: "wallets",      label: "Wallets",      disabled: true },
-      { key: "transactions", label: "Transactions", disabled: true },
-      { key: "keybinds",     label: "Keybinds",     disabled: true },
+      { key: "wallets",      label: "Wallets" },
+      { key: "transactions", label: "Transactions" },
+      { key: "keybinds",     label: "Keybinds" },
       { key: "earnings",     label: "Earnings",     disabled: true },
       { key: "metadata",     label: "Metadata",     disabled: true },
     ],
@@ -162,9 +175,17 @@ function SettingsNav({ groups, activeTab, onPick, t }) {
 }
 
 function TabContent({ tab }) {
-  if (tab === "appearance") return <AppearanceTab />;
-  if (tab === "security")   return <SecurityTab />;
-  if (tab === "trackers")   return <TrackersTab />;
+  if (tab === "appearance")    return <AppearanceTab />;
+  if (tab === "security")      return <SecurityTab />;
+  if (tab === "trackers")      return <TrackersTab />;
+  if (tab === "notifications") return <NotificationsTab />;
+  if (tab === "keywords")      return <KeywordsTab />;
+  if (tab === "keybinds")      return <KeybindsTab />;
+  if (tab === "wallets")       return <WalletsTab />;
+  if (tab === "transactions")  return <TransactionsTab />;
+  if (tab === "export")        return <ExportDataTab />;
+  if (tab === "reset")         return <ResetTab />;
+  if (tab === "disconnect")    return <DisconnectTab />;
   // Fallback — shouldn't be reachable since disabled items don't mutate tab.
   return null;
 }
