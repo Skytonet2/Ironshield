@@ -1,5 +1,6 @@
 import { ThemeProvider, WalletProvider, ProposalsProvider } from "@/lib/contexts";
 import PrivyWrapper from "@/components/auth/PrivyWrapper";
+import PreLoader from "@/components/boot/PreLoader";
 import { Outfit, JetBrains_Mono } from "next/font/google";
 // tokens.css ships CSS variables for the 6 theme presets. It's imported
 // before globals.css so per-element overrides in globals take precedence —
@@ -217,63 +218,20 @@ export default function RootLayout({ children }) {
         ` }} />
       </head>
       <body style={{ background: "#080b12", margin: 0 }}>
-        {/* Pre-React loader: visible immediately on first paint, removed when React mounts.
-            suppressHydrationWarning because the inline script below mutates the DOM *before*
-            React hydrates (fading + removing this subtree), so React's SSR-vs-client diff is
-            expected to mismatch here. Without this, every page throws a noisy console error. */}
-        <div id="ic-pre-loader" aria-hidden="true" suppressHydrationWarning>
-          <div className="ic-wrap">
-            <div className="ic-crest">
-              <div className="ic-ring ic-ring-outer" />
-              <div className="ic-ring" />
-              <div className="ic-shield">
-                {/* Inline SVG so it paints on first byte — <img> would
-                    load async and flash empty. Geometry matches the
-                    brand-system shield (public/brand/shield-*.svg). */}
-                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
-                  <path
-                    d="M32 4 L54 10 C55.5 10.4 56.5 11.8 56.5 13.4 L56.5 32 C56.5 44.3 48 54.3 32 60 C16 54.3 7.5 44.3 7.5 32 L7.5 13.4 C7.5 11.8 8.5 10.4 10 10 Z"
-                    fill="#0b0e1c"
-                    stroke="rgba(255,255,255,0.85)"
-                    strokeWidth="1.8"
-                    strokeLinejoin="round"
-                  />
-                  <g transform="translate(32, 34)" fill="rgba(255,255,255,0.95)">
-                    <rect x="-6" y="-8" width="12" height="12" rx="2.4" />
-                    <rect x="-4.5" y="-6" width="9" height="2.5" rx="0.8" fill="#1a1d2e" />
-                    <circle cx="-2.5" cy="1.2" r="1.4" fill="#1a1d2e" />
-                    <circle cx="2.5"  cy="1.2" r="1.4" fill="#1a1d2e" />
-                  </g>
-                </svg>
-              </div>
-            </div>
-            <div className="ic-brand">Iron<span>Shield</span></div>
-            <div className="ic-tag">Connect · Create · Automate · Govern</div>
-            <div className="ic-bar" />
-            <div className="ic-status">Loading IronShield…</div>
-            <a href="./" className="ic-reload" id="ic-reload-btn">Reload page</a>
-            <div className="ic-hint">If this hangs, click reload.</div>
-          </div>
-        </div>
-        {/* Tiny inline script: hides the loader once React renders the
-            AppShell (detected via [data-app-shell="ready"]). Two dismissal
-            paths: an upfront check for the SSR case where the marker is
-            already in the DOM, and a MutationObserver for the hydration
-            case where it appears later. If neither fires within 12 seconds,
-            we assume a stale service-worker cache or a failed chunk is
-            keeping React from mounting — kill the SW, purge caches, and
-            hard-reload once with ?fresh=1. The query param is a guard so
-            we never loop. */}
+        {/* Pre-React loader: visible on first paint, unmounted by
+            React when AppShell signals ready. See PreLoader for why
+            we can't use raw `removeChild` here — it fights React for
+            ownership of the subtree and crashes hydration with
+            `NotFoundError: insertBefore`. */}
+        <PreLoader />
+        {/* Tiny inline script: query-strip, reload-button wiring, and
+            the 12-second recovery that fires when React failed to
+            mount at all. This script must NOT mutate the #ic-pre-loader
+            subtree — React owns it now (see PreLoader). Doing so
+            would recreate the hydration crash this file was written
+            to avoid. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
-            // The SW is now registered (v4, push-only, no fetch handler)
-            // by usePWA on mount, so we MUST NOT blanket-unregister here —
-            // that would race our own registration on every boot. The v3
-            // self-uninstaller and any older caches get cleaned by v4's
-            // activate hook on the first transition, and the 12-second
-            // auto-recover below is still the escape hatch if boot
-            // actually gets stuck.
-
             // Strip stale ?_r= cache-busters that may have been added by old loader versions
             // (the near.page web4 gateway 404s on query strings)
             try {
@@ -282,55 +240,23 @@ export default function RootLayout({ children }) {
               }
             } catch(e) {}
 
-            // Make the Reload button a clean reload (strip query string)
-            var btn = document.getElementById('ic-reload-btn');
-            if (btn) {
-              btn.addEventListener('click', function(ev){
-                ev.preventDefault();
-                btn.textContent = 'Reloading…';
-                location.replace(location.origin + location.pathname + location.hash);
-              });
-            }
-
-            // When React renders the AppShell, remove the loader. We re-
-            // query by ID inside hide() because React's hydration can replace
-            // the SSR'd loader node with a freshly-mounted one — any element
-            // reference captured at script-boot time may be detached by then.
-            var done = false;
-            function hide(){
-              if (done) return;
-              done = true;
-              var el = document.getElementById('ic-pre-loader');
-              if (!el) return;
-              el.style.transition = 'opacity .25s ease';
-              el.style.opacity = '0';
-              setTimeout(function(){
-                var live = document.getElementById('ic-pre-loader');
-                if (live && live.parentNode) live.parentNode.removeChild(live);
-              }, 260);
-            }
-            // Dismiss paths, in priority order:
-            //   1. Upfront check — the SSR'd AppShell marker is already in DOM
-            //      (static-export case).
-            //   2. DOMContentLoaded — covers the case where the inline script
-            //      runs before the rest of the body is parsed.
-            //   3. MutationObserver — dev/dynamic mounts where the shell
-            //      appears after hydration.
-            function check(){ if (document.querySelector('[data-app-shell="ready"]')) { hide(); return true; } return false; }
-            if (check()) return;
-            document.addEventListener('DOMContentLoaded', check, { once: true });
-            window.addEventListener('load', check, { once: true });
-            var obs = new MutationObserver(function(){
-              if (check()) obs.disconnect();
+            // Make the Reload button a clean reload (strip query string).
+            // The button lives inside React's PreLoader; bind lazily via
+            // delegation so we don't race its mount.
+            document.addEventListener('click', function(ev){
+              var t = ev.target;
+              if (!t || t.id !== 'ic-reload-btn') return;
+              ev.preventDefault();
+              try { t.textContent = 'Reloading…'; } catch(e) {}
+              location.replace(location.origin + location.pathname + location.hash);
             });
-            obs.observe(document.body, { childList: true, subtree: true });
 
-            // Auto-recover: if nothing rendered after 12s, assume a stale SW /
-            // chunk is the culprit and nuke + reload. Guard with ?fresh=1 so a
-            // genuinely broken build doesn't infinite-loop the user.
+            // Auto-recover: if nothing rendered after 12s, assume a stale
+            // chunk kept React from mounting — nuke caches + SW and
+            // hard-reload once with ?fresh=1 as a loop guard.
             var alreadyFreshed = /[?&]fresh=1/.test(location.search);
             setTimeout(function(){
-              if (done || document.querySelector('[data-app-shell="ready"]')) return;
+              if (document.querySelector('[data-app-shell="ready"]')) return;
               if (alreadyFreshed) return;
               try {
                 var live = document.getElementById('ic-pre-loader');
