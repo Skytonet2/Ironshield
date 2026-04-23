@@ -23,7 +23,8 @@ import {
   Phone, Plus, X as XIcon, CheckCheck, Info, Bell, BellOff, Pin,
   UserX, Flag, Sparkles, DollarSign, Briefcase, BarChart3, Zap,
   Calendar, Wallet, ExternalLink, Hash, TrendingUp, Check,
-  ChevronRight, Star, Trophy, Crown,
+  ChevronRight, Star, Trophy, Crown, Video, MoreHorizontal,
+  Image as ImageIcon, Smile, AtSign,
 } from "lucide-react";
 import {
   getOrCreateKeypair, exportPublicKey,
@@ -319,7 +320,8 @@ export default function MessagesPage() {
 
 function MessageList({ t, loading, convs, groups, activeKey, onOpen, onNewConv, showThread }) {
   const [q, setQ] = useState("");
-  const items = useMemo(() => {
+  const [filter, setFilter] = useState("all"); // all | unread | groups | mentions
+  const rowsAll = useMemo(() => {
     const rows = [
       ...convs.map((c) => ({
         kind: "direct", id: c.id, unread: c.unread,
@@ -327,6 +329,9 @@ function MessageList({ t, loading, convs, groups, activeKey, onOpen, onNewConv, 
         sub:   c.peer?.username ? `@${c.peer.username}` : shortAddr(c.peer?.wallet),
         pfp:   c.peer?.pfpUrl,
         ts:    c.lastMessageAt,
+        muted: !!c.muted,
+        verified: c.peer?.verified,
+        online: c.peer?.online,
         raw:   c,
       })),
       ...groups.map((g) => ({
@@ -335,14 +340,40 @@ function MessageList({ t, loading, convs, groups, activeKey, onOpen, onNewConv, 
         sub:   g.handle ? `@${g.handle}` : `${g.memberCount} members`,
         pfp:   g.pfpUrl,
         ts:    g.lastMessageAt,
+        muted: !!g.muted,
+        verified: false,
         raw:   g,
       })),
     ];
     rows.sort((a, b) => (b.ts || 0) > (a.ts || 0) ? 1 : -1);
+    return rows;
+  }, [convs, groups]);
+
+  const unreadTotal = useMemo(
+    () => rowsAll.reduce((n, r) => n + (r.unread || 0), 0),
+    [rowsAll]
+  );
+  const groupCount = useMemo(
+    () => rowsAll.filter((r) => r.kind === "group").length,
+    [rowsAll]
+  );
+
+  const items = useMemo(() => {
+    let rows = rowsAll;
+    if (filter === "unread")   rows = rows.filter((r) => (r.unread || 0) > 0);
+    if (filter === "groups")   rows = rows.filter((r) => r.kind === "group");
+    if (filter === "mentions") rows = rows.filter((r) => r.hasMention); // reserved for future flag
     if (!q.trim()) return rows;
     const s = q.toLowerCase();
     return rows.filter((r) => r.title?.toLowerCase().includes(s) || r.sub?.toLowerCase().includes(s));
-  }, [convs, groups, q]);
+  }, [rowsAll, filter, q]);
+
+  const FILTERS = [
+    { key: "all",      label: "All" },
+    { key: "unread",   label: "Unread",   count: unreadTotal || 0 },
+    { key: "groups",   label: "Groups",   count: groupCount || 0 },
+    { key: "mentions", label: "Mentions" },
+  ];
 
   return (
     <aside
@@ -356,10 +387,9 @@ function MessageList({ t, loading, convs, groups, activeKey, onOpen, onNewConv, 
       }}
     >
       <div style={{
-        padding: "12px 14px", display: "flex", alignItems: "center", gap: 10,
-        borderBottom: `1px solid ${t.border}`,
+        padding: "14px 16px 10px", display: "flex", alignItems: "center", gap: 10,
       }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: t.white, flex: 1 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: t.white, flex: 1, letterSpacing: -0.4 }}>
           Messages
         </div>
         <button
@@ -379,7 +409,48 @@ function MessageList({ t, loading, convs, groups, activeKey, onOpen, onNewConv, 
         </button>
       </div>
 
-      <div style={{ padding: "10px 12px", borderBottom: `1px solid ${t.border}` }}>
+      {/* Filter tabs — All · Unread (n) · Groups (n) · Mentions. The
+          counts update live from rowsAll; the Mentions filter is
+          reserved for a future `hasMention` flag on conversation rows. */}
+      <div style={{
+        display: "flex", gap: 4, padding: "0 12px 8px",
+        overflowX: "auto",
+      }}>
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 12px", borderRadius: 999,
+                border: "none",
+                background: active ? "var(--accent-dim)" : "transparent",
+                color: active ? t.accent : t.textMuted,
+                fontSize: 12, fontWeight: 600,
+                cursor: "pointer", whiteSpace: "nowrap",
+                transition: "background 120ms ease, color 120ms ease",
+              }}
+            >
+              {f.label}
+              {f.count > 0 && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700,
+                  minWidth: 16, height: 16, padding: "0 5px",
+                  borderRadius: 999,
+                  background: active ? t.accent : "var(--bg-input)",
+                  color: active ? "#fff" : t.textMuted,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                }}>{f.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: "0 12px 10px", borderBottom: `1px solid ${t.border}` }}>
         <div style={{
           display: "flex", alignItems: "center", gap: 8,
           padding: "7px 10px", borderRadius: 8,
@@ -442,56 +513,77 @@ function MessageList({ t, loading, convs, groups, activeKey, onOpen, onNewConv, 
               onClick={() => onOpen(row.raw)}
               style={{
                 width: "100%", textAlign: "left",
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "10px 14px", border: "none",
+                display: "flex", alignItems: "flex-start", gap: 10,
+                padding: "12px 16px", border: "none",
                 background: isActive ? "var(--accent-dim)" : "transparent",
                 borderLeft: `2px solid ${isActive ? t.accent : "transparent"}`,
                 cursor: "pointer",
-                borderBottom: `1px solid rgba(255,255,255,0.03)`,
               }}
               onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-card-hover)"; }}
               onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
             >
-              <div style={{
-                width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-                background: row.pfp
-                  ? `url("${row.pfp}") center/cover no-repeat`
-                  : `linear-gradient(135deg, ${t.accent}, #a855f7)`,
-                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 14, fontWeight: 800,
-              }}>
-                {!row.pfp && (row.title?.[0]?.toUpperCase() || "?")}
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: "50%",
+                  background: row.pfp
+                    ? `url("${row.pfp}") center/cover no-repeat`
+                    : `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+                  color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 14, fontWeight: 800,
+                }}>
+                  {!row.pfp && (row.title?.[0]?.toUpperCase() || "?")}
+                </div>
+                {row.kind === "group" && (
+                  <span style={{
+                    position: "absolute", bottom: -2, right: -2,
+                    width: 16, height: 16, borderRadius: "50%",
+                    background: "rgba(59,130,246,0.2)",
+                    border: `2px solid ${isActive ? "var(--accent-dim)" : "var(--bg-card)"}`,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="3">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                      <circle cx="9" cy="7" r="4" />
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                  </span>
+                )}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 13, fontWeight: 700, color: t.white,
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                }}>
-                  {row.title || "anon"}
-                  {row.kind === "group" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <span style={{
+                    fontSize: 13, fontWeight: 700, color: t.white,
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
+                  }}>
+                    {row.title || "anon"}
+                  </span>
+                  {row.verified && <Check size={11} color="#60a5fa" strokeWidth={3} style={{ flexShrink: 0 }} />}
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontSize: 11, color: t.textDim, flexShrink: 0 }}>
+                    {shortTime(row.ts)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{
+                    flex: 1,
+                    fontSize: 12, color: t.textDim,
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
+                  }}>
+                    {row.sub}
+                  </span>
+                  {row.muted && <BellOff size={11} color={t.textDim} style={{ flexShrink: 0 }} />}
+                  {row.unread > 0 && (
                     <span style={{
-                      marginLeft: 6, fontSize: 9, fontWeight: 800,
-                      padding: "1px 5px", borderRadius: 4,
-                      background: "rgba(59,130,246,0.15)", color: "#60a5fa",
-                      letterSpacing: 0.4,
-                    }}>GROUP</span>
+                      minWidth: 18, height: 18, padding: "0 6px", borderRadius: 999,
+                      background: "linear-gradient(135deg, #a855f7, #6d28d9)",
+                      color: "#fff", fontSize: 10, fontWeight: 800,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      flexShrink: 0,
+                    }}>{row.unread}</span>
                   )}
                 </div>
-                <div style={{
-                  fontSize: 11, color: t.textDim,
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                }}>
-                  {row.sub}
-                </div>
               </div>
-              {row.unread > 0 && (
-                <span style={{
-                  minWidth: 18, height: 18, padding: "0 6px", borderRadius: 999,
-                  background: "linear-gradient(135deg, #ef4444, #f97316)",
-                  color: "#fff", fontSize: 10, fontWeight: 800,
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                }}>{row.unread}</span>
-              )}
             </button>
           );
         })}
@@ -679,42 +771,65 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
         >
           <ArrowLeft size={15} />
         </button>
-        <div style={{
-          width: 36, height: 36, borderRadius: "50%",
-          background: conv.peer?.pfpUrl || conv.pfpUrl
-            ? `url("${conv.peer?.pfpUrl || conv.pfpUrl}") center/cover no-repeat`
-            : `linear-gradient(135deg, ${t.accent}, #a855f7)`,
-          color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 13, fontWeight: 800, flexShrink: 0,
-        }}>
-          {!(conv.peer?.pfpUrl || conv.pfpUrl) && (peerName?.[0]?.toUpperCase() || "?")}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: "50%",
+            background: conv.peer?.pfpUrl || conv.pfpUrl
+              ? `url("${conv.peer?.pfpUrl || conv.pfpUrl}") center/cover no-repeat`
+              : `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 13, fontWeight: 800,
+          }}>
+            {!(conv.peer?.pfpUrl || conv.pfpUrl) && (peerName?.[0]?.toUpperCase() || "?")}
+          </div>
+          {conv.peer?.online && (
+            <span style={{
+              position: "absolute", bottom: -1, right: -1,
+              width: 12, height: 12, borderRadius: "50%",
+              background: "#10b981",
+              border: `2px solid var(--bg-card)`,
+            }} aria-label="Online" />
+          )}
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{
             fontSize: 14, fontWeight: 800, color: t.white,
+            display: "flex", alignItems: "center", gap: 4,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           }}>
-            {peerName}
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{peerName}</span>
+            {conv.peer?.verified && <Check size={12} color="#60a5fa" strokeWidth={3} />}
           </div>
           <div style={{ fontSize: 11, color: t.textDim, display: "flex", alignItems: "center", gap: 6 }}>
-            {conv.kind === "direct" && <Shield size={10} color="#10b981" />}
-            {conv.kind === "direct" ? "End-to-end encrypted · " : ""}{peerSub}
+            {conv.peer?.online ? (
+              <>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", boxShadow: "0 0 6px #10b981" }} />
+                Online
+              </>
+            ) : conv.kind === "direct" ? (
+              <>
+                <Shield size={10} color="#10b981" />
+                End-to-end encrypted · {peerSub}
+              </>
+            ) : (
+              peerSub
+            )}
           </div>
         </div>
 
-        {/* Header actions — voice placeholder + info/context toggle.
-            The phone icon is intentionally here so the motion pattern
-            matches the reference screenshot, but the actual call
-            handshake lives in the global callContext (out of scope for
-            Tier-1 — wired up under feature flag later). */}
-        <button
-          type="button"
-          title="Voice call — coming soon"
-          aria-label="Voice call"
-          disabled
-          style={iconHeaderBtn(t, { disabled: true })}
+        {/* Header actions — voice + video placeholders, then info / kebab.
+            Both call buttons hook into the global callContext when the
+            LiveKit room flow is wired up; for now they're disabled
+            placeholders so the layout matches the reference. */}
+        <button type="button" title="Voice call — coming soon" aria-label="Voice call"
+          disabled style={iconHeaderBtn(t, { disabled: true })}
         >
           <Phone size={15} />
+        </button>
+        <button type="button" title="Video call — coming soon" aria-label="Video call"
+          disabled style={iconHeaderBtn(t, { disabled: true })}
+        >
+          <Video size={15} />
         </button>
         <button
           type="button"
@@ -725,6 +840,15 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           style={iconHeaderBtn(t, { active: contextOpen })}
         >
           <Info size={15} />
+        </button>
+        <button
+          type="button"
+          title="More actions — coming soon"
+          aria-label="More actions"
+          disabled
+          style={iconHeaderBtn(t, { disabled: true })}
+        >
+          <MoreHorizontal size={15} />
         </button>
       </header>
 
@@ -751,15 +875,58 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           </div>
         )}
 
-        {messages.map((m) => {
-          const key = m.id ?? `tmp-${m.created_at || ""}`;
-          return (
-            <MessageBubble
-              key={key} m={m} t={t} wallet={wallet} conv={conv} keypair={keypair}
-              fresh={freshIds.has(key)}
-            />
-          );
-        })}
+        {/* Render messages interleaved with date dividers and an
+            "N unread messages" separator at the first unread boundary.
+            Groups use m.from_wallet for ownership; direct DMs rely on
+            m.from_id !== peer.id. Both shapes go through the helper
+            buildSeparators below to pick the correct flag. */}
+        {(() => {
+          const segs = buildSeparators(messages, conv, wallet);
+          return segs.map((seg) => {
+            if (seg.kind === "date-divider") {
+              return (
+                <div
+                  key={`date-${seg.label}-${seg.at}`}
+                  style={{
+                    textAlign: "center",
+                    padding: "12px 0 4px",
+                    fontSize: 11, color: t.textDim, letterSpacing: 0.6,
+                    textTransform: "uppercase", fontWeight: 600,
+                  }}
+                >
+                  {seg.label}
+                </div>
+              );
+            }
+            if (seg.kind === "unread-divider") {
+              return (
+                <div
+                  key={`unread-${seg.count}`}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "8px 0",
+                  }}
+                >
+                  <span style={{ flex: 1, height: 1, background: "rgba(168,85,247,0.25)" }} />
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, color: "#c084fc",
+                    letterSpacing: 0.4,
+                  }}>
+                    {seg.count} unread message{seg.count > 1 ? "s" : ""}
+                  </span>
+                  <span style={{ flex: 1, height: 1, background: "rgba(168,85,247,0.25)" }} />
+                </div>
+              );
+            }
+            const key = seg.m.id ?? `tmp-${seg.m.created_at || ""}`;
+            return (
+              <MessageBubble
+                key={key} m={seg.m} t={t} wallet={wallet} conv={conv} keypair={keypair}
+                fresh={freshIds.has(key)}
+              />
+            );
+          });
+        })()}
       </div>
 
       {/* Automation suggestion chip — fires when the composer text
@@ -807,51 +974,89 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
         onSubmit={(e) => { e.preventDefault(); send(); }}
         style={{
           flexShrink: 0,
-          display: "flex", alignItems: "flex-end", gap: 8,
+          display: "flex", alignItems: "center", gap: 8,
           padding: 12, borderTop: `1px solid ${t.border}`,
           background: "var(--bg-card)",
         }}
       >
+        {/* Composer actions — match the reference: round + button that
+            expands the smart-action sheet (Send token, Share chart,
+            etc.), inline quick-icons for Image / Chart / Emoji that
+            call straight into those actions without opening the sheet.
+            Input is pill-shaped; send is the gradient circle at the
+            right end. */}
         <button
           type="button"
           onClick={() => setActionOpen((v) => !v)}
-          aria-label="Attach or act"
+          aria-label="Smart actions"
           aria-pressed={actionOpen}
           title="Smart actions"
-          style={{
-            width: 40, height: 40, borderRadius: 10,
-            border: `1px solid ${actionOpen ? t.accent : t.border}`,
-            background: actionOpen ? "var(--accent-dim)" : "var(--bg-input)",
-            color: actionOpen ? t.accent : t.textMuted,
-            cursor: "pointer", display: "inline-flex",
-            alignItems: "center", justifyContent: "center", flexShrink: 0,
-            transition: "border-color 140ms ease, background 140ms ease, transform 160ms ease",
-            transform: actionOpen ? "rotate(45deg)" : "rotate(0deg)",
-          }}
+          style={composerIconBtn(t, actionOpen)}
         >
-          <Plus size={16} />
+          <Plus
+            size={16}
+            style={{ transition: "transform 160ms ease", transform: actionOpen ? "rotate(45deg)" : "none" }}
+          />
         </button>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value.slice(0, 4000))}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+        <button
+          type="button"
+          onClick={() => alert("Attach an image — comes with the media upload pass in the next build.")}
+          aria-label="Attach image"
+          title="Attach image"
+          style={composerIconBtn(t)}
+        >
+          <ImageIcon size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const symbol = window.prompt("Share a chart for which ticker?", "BTC");
+            if (!symbol) return;
+            insertChip(CHIP_TYPES.CHART, { symbol: symbol.toUpperCase(), price: null, change24h: null });
           }}
-          placeholder={conv.kind === "direct" ? "Encrypted message…" : "Message the group…"}
-          rows={1}
-          style={{
-            flex: 1, resize: "none", maxHeight: 160,
-            padding: "10px 12px", borderRadius: 10,
-            border: `1px solid ${t.border}`, background: "var(--bg-input)",
-            color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none",
-          }}
-        />
+          aria-label="Share chart"
+          title="Share chart"
+          style={composerIconBtn(t)}
+        >
+          <BarChart3 size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setText((p) => `${p}${p.endsWith(" ") || !p ? "" : " "}🙂 `)}
+          aria-label="Emoji"
+          title="Emoji — quick insert"
+          style={composerIconBtn(t)}
+        >
+          <Smile size={16} />
+        </button>
+        <div style={{
+          flex: 1, display: "flex", alignItems: "center",
+          padding: "6px 14px", borderRadius: 999,
+          background: "var(--bg-input)", border: `1px solid ${t.border}`,
+        }}>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value.slice(0, 4000))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+            }}
+            placeholder={conv.kind === "direct" ? "Type a message…" : "Message the group…"}
+            rows={1}
+            style={{
+              flex: 1, resize: "none", maxHeight: 140,
+              padding: "6px 0", border: "none", outline: "none",
+              background: "transparent",
+              color: t.text, fontSize: 14, fontFamily: "inherit",
+              lineHeight: 1.5,
+            }}
+          />
+        </div>
         <button
           type="submit"
           disabled={sending || !text.trim()}
           aria-label="Send"
           style={{
-            width: 40, height: 40, borderRadius: 10, border: "none",
+            width: 40, height: 40, borderRadius: "50%", border: "none",
             background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
             color: "#fff", cursor: sending ? "wait" : "pointer",
             display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -1223,6 +1428,21 @@ function iconHeaderBtn(t, { active = false, disabled = false } = {}) {
   };
 }
 
+// Compact button for the composer action strip (+ · image · chart ·
+// emoji). Borderless, hover-tinted; active state highlights when the
+// attached sheet is open.
+function composerIconBtn(t, active = false) {
+  return {
+    width: 36, height: 36, borderRadius: 10,
+    border: "none",
+    background: active ? "var(--accent-dim)" : "transparent",
+    color: active ? t.accent : t.textMuted,
+    cursor: "pointer", flexShrink: 0,
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    transition: "background 140ms ease, color 140ms ease",
+  };
+}
+
 /* ─────────── Smart action sheet ─────────── */
 
 function SmartActionSheet({ t, wallet, onClose, onAction }) {
@@ -1470,41 +1690,44 @@ function ContextPane({ t, conv, profile, prefs, onPref, onClose, open }) {
         )}
       </div>
 
-      {/* Stats */}
+      {/* Stats — Followers / Following / Points to match the reference.
+          Posts count isn't surfaced here anymore; it's visible on the
+          profile page proper. "Points" pulls from the rewards endpoint
+          via the peer user row (accountType + verified + dmPubkey
+          already come back; points piggybacks there once backend
+          lands). Falls back to 0 so the row never shows NaN. */}
       <div style={{
         display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
         borderBottom: `1px solid ${t.border}`,
       }}>
         <Stat t={t} n={peer.followers ?? 0} l="Followers" />
         <Stat t={t} n={peer.following ?? 0} l="Following" />
-        <Stat t={t} n={peer.posts ?? 0} l="Posts" />
+        <Stat t={t} n={peer.points ?? peer.posts ?? 0} l="Points" last />
       </div>
 
-      {/* Identity row */}
-      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${t.border}` }}>
-        <SectionLabel t={t}>Wallet</SectionLabel>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 10px", borderRadius: 8,
-          border: `1px solid ${t.border}`, background: "var(--bg-input)",
-        }}>
-          <Wallet size={13} color={t.accent} />
-          <span style={{ flex: 1, fontSize: 12, fontFamily: "var(--font-jetbrains-mono), monospace", color: t.text }}>
-            {short}
-          </span>
-          <a
-            href={`https://nearblocks.io/address/${encodeURIComponent(peer.walletAddress || conv.peer?.wallet || "")}`}
-            target="_blank" rel="noreferrer"
-            title="View on NEARBlocks"
-            style={{ color: t.textMuted, display: "inline-flex", alignItems: "center" }}
-          >
-            <ExternalLink size={12} />
-          </a>
+      {/* About — mirrors the reference's "On-chain analyst and trader.
+          Breaking down markets so you can build wealth." block. Renders
+          the user's actual bio when present; skipped entirely when
+          empty so the pane doesn't show an empty section. */}
+      {peer.bio && (
+        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${t.border}` }}>
+          <SectionLabel t={t}>About</SectionLabel>
+          <div style={{ fontSize: 13, color: t.text, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+            {peer.bio}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Options */}
-      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${t.border}` }}>
+      {/* Shared Media — the last few media attachments this peer has
+          sent to *any* feed (not just this DM, since DMs are E2E
+          encrypted — their bodies aren't readable server-side). Pulls
+          from /api/users/:key/posts which we just added. Hidden when
+          the peer has no media. */}
+      <SharedMediaGrid t={t} wallet={peer.walletAddress || conv.peer?.wallet} />
+
+      {/* Options — mute / pin toggles, block / report / clear chat
+          destructive actions, then View full profile CTA. */}
+      <div style={{ padding: "14px 16px" }}>
         <SectionLabel t={t}>Options</SectionLabel>
         <PaneToggle
           t={t}
@@ -1520,12 +1743,19 @@ function ContextPane({ t, conv, profile, prefs, onPref, onClose, open }) {
           on={!!prefs.pinned}
           onToggle={() => onPref?.({ pinned: !prefs.pinned })}
         />
+        <div style={{ height: 8 }} />
         <PaneButton t={t} Icon={UserX} color="#ef4444" label="Block user" />
         <PaneButton t={t} Icon={Flag}   color="#ef4444" label="Report user" />
-      </div>
-
-      {/* Quick link to profile */}
-      <div style={{ padding: "12px 16px" }}>
+        <PaneButton
+          t={t} Icon={MessageCircle}
+          label="Clear chat"
+          onClick={() => {
+            if (window.confirm("Clear this conversation locally? The peer's copy is unaffected.")) {
+              alert("Local clear coming with the next build.");
+            }
+          }}
+        />
+        <div style={{ height: 10 }} />
         <a
           href={`/profile?address=${encodeURIComponent(peer.walletAddress || conv.peer?.wallet || "")}`}
           style={{
@@ -1541,6 +1771,70 @@ function ContextPane({ t, conv, profile, prefs, onPref, onClose, open }) {
         </a>
       </div>
     </aside>
+  );
+}
+
+// Pulls the peer's last few posts and renders any media_urls as a 2x2
+// thumbnail grid. If none have media, renders nothing. Cached briefly
+// to avoid hammering /api/users on every thread switch.
+function SharedMediaGrid({ t, wallet }) {
+  const [images, setImages] = useState([]);
+  useEffect(() => {
+    if (!wallet) { setImages([]); return; }
+    const ctl = new AbortController();
+    fetch(`${API}/api/users/${encodeURIComponent(wallet)}/posts?limit=20`, { signal: ctl.signal })
+      .then((r) => r.ok ? r.json() : { posts: [] })
+      .then((j) => {
+        const urls = [];
+        for (const p of (j?.posts || [])) {
+          for (const u of (p.mediaUrls || [])) {
+            if (typeof u === "string" && /^https?:\/\//.test(u)) urls.push(u);
+            if (urls.length >= 4) break;
+          }
+          if (urls.length >= 4) break;
+        }
+        setImages(urls);
+      })
+      .catch(() => setImages([]));
+    return () => ctl.abort();
+  }, [wallet]);
+
+  if (!images.length) return null;
+  return (
+    <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ flex: 1 }}>
+          <SectionLabel t={t}>Shared Media</SectionLabel>
+        </div>
+        <a
+          href={`/profile?address=${encodeURIComponent(wallet)}`}
+          style={{ fontSize: 11, color: t.accent, fontWeight: 700, textDecoration: "none" }}
+        >
+          View all
+        </a>
+      </div>
+      <div style={{
+        display: "grid", gap: 6,
+        gridTemplateColumns: "1fr 1fr",
+      }}>
+        {images.slice(0, 4).map((u, i) => (
+          <a
+            key={i}
+            href={u}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "block",
+              aspectRatio: "1 / 1", borderRadius: 10,
+              background: `url("${u}") center/cover no-repeat, var(--bg-input)`,
+              border: `1px solid ${t.border}`,
+              textDecoration: "none",
+            }}
+            aria-label={`Shared media ${i + 1}`}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1574,13 +1868,20 @@ function contextShell(t, open) {
   };
 }
 
-function Stat({ t, n, l }) {
+function Stat({ t, n, l, last }) {
   return (
-    <div style={{ padding: "12px 6px", textAlign: "center", borderRight: `1px solid ${t.border}` }}>
-      <div style={{ fontSize: 15, fontWeight: 800, color: t.white, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
-        {typeof n === "number" ? n.toLocaleString() : n}
+    <div style={{
+      padding: "14px 6px", textAlign: "center",
+      borderRight: last ? "none" : `1px solid ${t.border}`,
+    }}>
+      <div style={{
+        fontSize: 17, fontWeight: 800, color: t.white,
+        letterSpacing: -0.2,
+        fontFamily: "var(--font-jetbrains-mono), monospace",
+      }}>
+        {typeof n === "number" ? (n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}K` : n.toLocaleString()) : n}
       </div>
-      <div style={{ fontSize: 10, color: t.textDim, letterSpacing: 0.4, marginTop: 2 }}>{l}</div>
+      <div style={{ fontSize: 10, color: t.textDim, letterSpacing: 0.4, marginTop: 3 }}>{l}</div>
     </div>
   );
 }
@@ -1630,10 +1931,11 @@ function PaneToggle({ t, Icon, label, on, onToggle }) {
   );
 }
 
-function PaneButton({ t, Icon, label, color }) {
+function PaneButton({ t, Icon, label, color, onClick }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       style={{
         width: "100%", display: "flex", alignItems: "center", gap: 10,
         padding: "8px 4px", border: "none", background: "transparent",
@@ -1794,6 +2096,75 @@ function NewConversationModal({ t, wallet, onClose, onPicked }) {
 }
 
 /* ─────────── utils ─────────── */
+
+// Walks a chronological message list and emits a mixed list of
+// segments: date dividers (Today / Yesterday / Jan 2), an "N unread
+// messages" divider at the first unread boundary, and the messages
+// themselves. Keeps the thread renderer free of date-grouping logic
+// so the map stays readable.
+function buildSeparators(messages, conv, wallet) {
+  if (!messages || !messages.length) return [];
+  const segs = [];
+  let lastDay = null;
+  let unreadInserted = false;
+
+  // Count unread incoming messages. Ownership logic matches
+  // MessageBubble: groups use from_wallet, direct DMs use from_id.
+  const peerId = conv?.peer?.id;
+  const myWallet = (wallet || "").toLowerCase();
+  const isMine = (m) => {
+    if (conv?.kind === "group") {
+      return m.from_wallet && myWallet && m.from_wallet.toLowerCase() === myWallet;
+    }
+    if (m._decrypted) return true; // optimistic send
+    return peerId != null ? m.from_id !== peerId : false;
+  };
+  const totalUnread = messages.reduce((n, m) => {
+    if (!isMine(m) && m.read_at == null) return n + 1;
+    return n;
+  }, 0);
+
+  for (const m of messages) {
+    const d = new Date(m.created_at || m.createdAt || Date.now());
+    const day = d.toDateString();
+    if (day !== lastDay) {
+      const today = new Date().toDateString();
+      const yesterday = new Date(Date.now() - 86_400_000).toDateString();
+      let label = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      if (day === today) label = "Today";
+      else if (day === yesterday) label = "Yesterday";
+      segs.push({ kind: "date-divider", label, at: d.getTime() });
+      lastDay = day;
+    }
+    if (!unreadInserted && totalUnread > 0 && !isMine(m) && m.read_at == null) {
+      segs.push({ kind: "unread-divider", count: totalUnread });
+      unreadInserted = true;
+    }
+    segs.push({ kind: "message", m });
+  }
+  return segs;
+}
+
+// Compact time label for the conversation-list row ("2m", "1h", "3d").
+// Uses the same thresholds as the feed's timeAgo; kept separate here to
+// keep the messages page self-contained.
+function shortTime(iso) {
+  if (!iso) return "";
+  try {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (ms < 0) return "";
+    const m = Math.floor(ms / 60_000);
+    if (m < 1) return "now";
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d}d`;
+    const w = Math.floor(d / 7);
+    if (w < 5) return `${w}w`;
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch { return ""; }
+}
 
 function shortAddr(a) {
   if (!a) return "anon";
