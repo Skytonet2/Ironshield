@@ -56,6 +56,11 @@ const COMMANDS = {
   "/balance":   custodial.handleBalance,
   "/activate":  custodial.handleActivate,
   "/swap":      custodial.handleSwap,
+  // /buy is an ergonomic alias for /swap — users instinctively type
+  // /buy when they want to acquire a token, /swap when they want to
+  // rebalance. Both paths go to the same intent parser which reads
+  // "buy 0.1 sol" and "swap usdc for sol" identically.
+  "/buy":       custodial.handleSwap,
   "/send":      custodial.handleSend,
   "/withdraw":  custodial.handleWithdraw,
 };
@@ -68,6 +73,15 @@ async function helpHandler(bot, msg) {
 • /wallets — switch between linked wallets
 • /addwallet <address>
 • /settings — toggle alert types
+
+💰 *Trading account (custodial)*
+• /activate — one-time setup ($5 NEAR)
+• /balance — what's in your trading account
+• /deposit — deposit to trade fast
+• /buy 0.1 sol — buy a token
+• /swap 10 usdc for near — swap tokens
+• /send 1 near to alice.near — send tokens
+• /withdraw — pull everything to your main wallet
 
 💼 *Top features*
 • /portfolio — instant overview

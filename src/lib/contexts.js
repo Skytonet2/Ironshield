@@ -152,6 +152,44 @@ export function WalletProvider({ children }) {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Referral claim: once a wallet connects, see if the visitor arrived
+  // via a /?ref=<code> link (stashed in localStorage by the inline
+  // script in layout.js). If so, POST it to claim-referrer so the
+  // inviter gets credit, and set a follow-prompt flag so the feed
+  // page can nudge them to follow their inviter. Only fires once per
+  // claim — the backend rejects repeats and we clear the pending
+  // value either way to avoid retrying forever.
+  useEffect(() => {
+    if (!address || typeof window === "undefined") return;
+    let ref;
+    try { ref = localStorage.getItem("ironshield:ref-pending"); } catch {}
+    if (!ref) return;
+    const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL
+      ? process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/+$/, "")
+      : (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+        ? "http://localhost:3001"
+        : "https://ironclaw-backend.onrender.com";
+    (async () => {
+      try {
+        const r = await fetch(`${apiBase}/api/rewards/claim-referrer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-wallet": address },
+          body: JSON.stringify({ code: ref }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.claimed && j.referrer) {
+          // Stash the referrer so the feed can render a "follow your
+          // inviter" prompt on the next load.
+          try {
+            localStorage.setItem("ironshield:ref-prompt", JSON.stringify(j.referrer));
+          } catch {}
+        }
+      } catch { /* silent — claim is best-effort */ } finally {
+        try { localStorage.removeItem("ironshield:ref-pending"); } catch {}
+      }
+    })();
+  }, [address]);
+
   // Lazy wallet init: only loads heavy NEAR libs when needed
   const initWallet = useCallback(async () => {
     if (initStarted || selector) return;

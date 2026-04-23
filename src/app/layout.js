@@ -240,6 +240,25 @@ export default function RootLayout({ children }) {
               }
             } catch(e) {}
 
+            // Capture ?ref=<code> on first hit so the referrer gets
+            // credit when the visitor later connects a wallet. Store
+            // in localStorage under \`ironshield:ref-pending\`. On
+            // wallet connect, src/lib/contexts.js claims it via
+            // POST /api/rewards/claim-referrer and clears the flag.
+            try {
+              var q = new URLSearchParams(location.search);
+              var ref = (q.get('ref') || '').trim().toLowerCase();
+              if (/^[a-z0-9_]{4,20}$/.test(ref)) {
+                localStorage.setItem('ironshield:ref-pending', ref);
+                // Strip the query param so share links don't follow
+                // the user around the app. Use replaceState to avoid
+                // a history entry.
+                q.delete('ref');
+                var search = q.toString();
+                history.replaceState(null, '', location.pathname + (search ? '?' + search : '') + location.hash);
+              }
+            } catch(e) {}
+
             // ─── Stale-chunk auto-recovery ─────────────────────────
             // Symptom we're guarding against: user clicks a nav link,
             // page goes blank until they manually refresh. Root cause
