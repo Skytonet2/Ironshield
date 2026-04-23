@@ -21,7 +21,7 @@ import {
 import { useTheme, useWallet } from "@/lib/contexts";
 import { sendTx, functionCallAction } from "@/lib/walletActions";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 const ORANGE = "#f97316";
 
 // ── Formatting helpers (kept local to avoid coupling) ────────────────

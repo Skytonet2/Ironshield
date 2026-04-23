@@ -11,7 +11,7 @@ import { functionCallAction, sendTx, extractTxHash } from "@/lib/walletActions";
 import NewsCoinTerminal from "@/components/NewsCoinTerminal";
 import { lifecycleFor } from "@/lib/newscoinLifecycle";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 const FACTORY = "newscoin-factory.ironshield.near";
 const ORANGE = "#f97316";
 

@@ -14,7 +14,7 @@ import {
 import { useTheme, useWallet } from "@/lib/contexts";
 import LiveStage from "@/components/LiveStage";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 
 function shortWallet(w = "") { return w?.length > 18 ? `${w.slice(0, 8)}…${w.slice(-6)}` : (w || ""); }
 function timeLeft(endsAt) {

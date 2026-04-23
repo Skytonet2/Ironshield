@@ -289,6 +289,11 @@ export default function FeedRightRail() {
         </div>
       </section>
 
+      {/* Your Deploys — renders when the viewer has launched coins.
+          Silent (returns null) when none exist or wallet isn't connected,
+          so the rail stays tidy for new users. */}
+      <YourDeploysCard t={t} glass={glassCard(t)} address={address} />
+
       {/* IronShield Tips */}
       <section style={{
         ...glassCard(t),
@@ -592,5 +597,84 @@ function SentimentGauge({ score, color }) {
       />
       <circle cx={cx} cy={cy} r="3" fill={color} />
     </svg>
+  );
+}
+
+// Your Deploys card — reuses the /api/newscoin/by-creator endpoint the
+// profile page already queries. Silently renders nothing when the
+// wallet has no launches so the rail doesn't show an empty card to
+// non-creators.
+function YourDeploysCard({ t, glass, address }) {
+  const [coins, setCoins] = useState([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!address) { setCoins([]); return; }
+    const ctl = new AbortController();
+    setLoading(true);
+    fetch(`${BACKEND_BASE}/api/newscoin/by-creator?creator=${encodeURIComponent(address)}`, { signal: ctl.signal })
+      .then(r => r.ok ? r.json() : { coins: [] })
+      .then(j => setCoins(Array.isArray(j.coins) ? j.coins : []))
+      .catch(() => setCoins([]))
+      .finally(() => setLoading(false));
+    return () => ctl.abort();
+  }, [address]);
+
+  if (!address) return null;
+  if (!loading && coins.length === 0) return null;
+
+  return (
+    <section style={glass}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <Coins size={13} color={t.accent} />
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.4, color: t.textMuted, textTransform: "uppercase", flex: 1 }}>
+          Your Deploys
+        </div>
+        <a href="/profile?tab=deployed" style={{ fontSize: 11, color: t.accent, fontWeight: 600, textDecoration: "none" }}>
+          View all
+        </a>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {loading && coins.length === 0 && (
+          <>
+            <div style={{ height: 38, borderRadius: 8, background: "rgba(255,255,255,0.04)" }} />
+            <div style={{ height: 38, borderRadius: 8, background: "rgba(255,255,255,0.04)" }} />
+          </>
+        )}
+        {coins.slice(0, 4).map((c) => (
+          <a
+            key={c.id || c.ticker}
+            href={`/newscoin?token=${encodeURIComponent(c.ticker || c.id)}`}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "8px 10px", borderRadius: 8,
+              border: `1px solid ${t.border}`, background: "var(--bg-input)",
+              textDecoration: "none", color: t.text,
+            }}
+          >
+            <div style={{
+              width: 26, height: 26, borderRadius: 6,
+              background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+              color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 800, flexShrink: 0,
+            }}>
+              {(c.ticker || c.name || "?")[0]?.toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.white, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {c.name || c.ticker}
+              </div>
+              <div style={{ fontSize: 10, color: t.textDim }}>
+                ${c.ticker || "?"} · {c.chain || "near"}
+              </div>
+            </div>
+            {c.priceUsd != null && (
+              <div style={{ fontSize: 11, color: t.text, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
+                ${Number(c.priceUsd).toFixed(c.priceUsd < 1 ? 4 : 2)}
+              </div>
+            )}
+          </a>
+        ))}
+      </div>
+    </section>
   );
 }

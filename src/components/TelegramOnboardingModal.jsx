@@ -11,7 +11,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 
 const STORAGE_KEY = "ironshield:tg-onboarding:v1";
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TG_BOT_USERNAME || "IronShieldCore_bot";
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 
 export default function TelegramOnboardingModal() {
   const t = useTheme();

@@ -17,7 +17,7 @@ import { X, Zap, Loader2, Check, EyeOff, ChevronDown, ExternalLink } from "lucid
 import { useTheme } from "@/lib/contexts";
 import { fetchWalletTokens, callTipPost, formatTokenAmount, NATIVE_NEAR } from "@/lib/tokens";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 
 const PRESETS = [5, 25, 100];
 

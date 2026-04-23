@@ -11,8 +11,8 @@ import { useSearchParams } from "next/navigation";
 import { Zap, ArrowLeft, Flame, Crown, CalendarClock, Copy, Check } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { TipModal, TipHistoryDrawer } from "@/components/TipModal";
-
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import AppShell from "@/components/shell/AppShell";
+import { API_BASE as API } from "@/lib/apiBase";
 
 function timeAgo(d) {
   const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
@@ -122,31 +122,18 @@ function TipPageInner() {
     : null;
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-      {/* Hidden nav — signals the root pre-loader (which watches for <nav>) to hide. */}
-      <nav aria-hidden style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", opacity: 0 }} />
-
-      {/* Top bar */}
-      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${t.border}`,
-        display: "flex", alignItems: "center", gap: 12, background: t.bgCard, position: "sticky", top: 0, zIndex: 10 }}>
-        <a href="/" style={{ color: t.text, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
-          <ArrowLeft size={18} /> <span style={{ fontSize: 14 }}>IronShield</span>
-        </a>
-        <div style={{ flex: 1 }} />
-        <button onClick={copyShareLink} style={{
-          padding: "8px 12px", borderRadius: 999, background: t.bgSurface, border: `1px solid ${t.border}`,
-          color: t.text, cursor: "pointer", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 6,
-        }}>
-          {copied ? <><Check size={14} color={t.green} /> Copied</> : <><Copy size={14} /> Share link</>}
-        </button>
-        {!connected ? (
-          <button onClick={openWallet} style={primaryBtn(t)}>Connect wallet</button>
-        ) : (
-          <span style={{ fontSize: 12, color: t.textMuted }}>{shortWallet(wallet)}</span>
-        )}
-      </div>
-
+    <AppShell>
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "20px 18px 60px" }}>
+        {/* Share action — kept local to the tip surface so visitors
+            can grab the URL without hunting through the nav. */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <button onClick={copyShareLink} style={{
+            padding: "8px 12px", borderRadius: 999, background: t.bgSurface, border: `1px solid ${t.border}`,
+            color: t.text, cursor: "pointer", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 6,
+          }}>
+            {copied ? <><Check size={14} color={t.green} /> Copied</> : <><Copy size={14} /> Share link</>}
+          </button>
+        </div>
         {/* Banner */}
         {profile.bannerUrl && (
           <div style={{ height: 140, borderRadius: 14, overflow: "hidden", marginBottom: 16,
@@ -258,7 +245,8 @@ function TipPageInner() {
       )}
 
       <style>{`.ix-spin { animation: ixSpin 1s linear infinite; } @keyframes ixSpin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+      </div>
+    </AppShell>
   );
 }
 

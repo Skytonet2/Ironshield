@@ -13,7 +13,7 @@ import {
 import { useTheme } from "@/lib/contexts";
 import { IRONCLAW_SYMBOL } from "@/lib/ironclaw";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 
 const ICONS = {
   tips:      Zap,

@@ -15,8 +15,8 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import {
   callOpenRoom, IRONCLAW_SYMBOL, IRONCLAW_PRICE_USD, formatIronclawCompact,
 } from "@/lib/ironclaw";
-
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import AppShell from "@/components/shell/AppShell";
+import { API_BASE as API } from "@/lib/apiBase";
 const MIN_STAKE_USD = 50;
 
 const ACCESS_OPTIONS = [
@@ -84,32 +84,21 @@ export default function RoomsPage() {
   }, [filter]); // eslint-disable-line
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-      {/* Hidden nav — root pre-loader watches for <nav> to dismiss */}
-      <nav aria-hidden style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", opacity: 0 }} />
-
-      {/* Top bar */}
-      <div style={{
-        padding: "14px 18px", borderBottom: `1px solid ${t.border}`,
-        display: "flex", alignItems: "center", gap: 12, background: t.bgCard,
-        position: "sticky", top: 0, zIndex: 10,
-      }}>
-        <a href="/" style={{ color: t.text, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
-          <ArrowLeft size={18} /> <span style={{ fontSize: 14 }}>IronShield</span>
-        </a>
-        <div style={{ flex: 1 }} />
-        {!connected ? (
-          <button onClick={openWallet} style={primaryBtn(t)}>Connect wallet</button>
-        ) : (
-          <span style={{ fontSize: 12, color: t.textMuted }}>{shortWallet(wallet)}</span>
-        )}
-        <button onClick={() => connected ? setOpenModal(true) : openWallet()}
-          style={{ ...primaryBtn(t), display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <Plus size={14} /> Open Room
-        </button>
-      </div>
-
+    <AppShell>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 18px 60px" }}>
+        {/* Top action — kept local so the rooms page owns the "Open
+            Room" CTA without stuffing it into AppShell. The legacy
+            standalone top-bar is gone; AppShell now carries logo /
+            nav / wallet chip. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => connected ? setOpenModal(true) : openWallet()}
+            style={{ ...primaryBtn(t), display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <Plus size={14} /> Open Room
+          </button>
+        </div>
         {/* Hero */}
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ color: t.white, fontSize: 26, fontWeight: 800, margin: "0 0 4px",
@@ -176,7 +165,8 @@ export default function RoomsPage() {
       )}
 
       <style>{`.ix-spin { animation: ixSpin 1s linear infinite; } @keyframes ixSpin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+      </div>
+    </AppShell>
   );
 }
 

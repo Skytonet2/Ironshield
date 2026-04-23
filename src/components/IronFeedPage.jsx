@@ -24,7 +24,7 @@ import { CoinBadge, CoinModal, MintModal } from "@/components/NewsCoinPage";
 import DMCallPanel from "@/components/DMCallPanel";
 import { useCall } from "@/lib/callContext";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 
 // Wallets granted free access to premium features (org badge, agent deploy).
 // Team / founder accounts bypass the NEAR payment step.

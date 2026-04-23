@@ -92,13 +92,43 @@ export default function FeedPage() {
     setErr(null);
     (async () => {
       try {
-        const res = await fetch(`${BACKEND_BASE}${target.endpoint}?limit=30`, {
-          headers: wallet ? { "x-wallet": wallet } : {},
-          signal: ctl.signal,
-        });
-        if (!res.ok) throw new Error(`${target.label} ${res.status}`);
-        const j = await res.json();
-        setPosts(j.posts || []);
+        // For the default For You feed, blend in recent Voices posts
+        // so users see influencer takes + native voice posts alongside
+        // regular posts — without having to switch tabs. On every other
+        // tab we just render that tab's endpoint.
+        if (tab === "foryou") {
+          const [fy, vc] = await Promise.all([
+            fetch(`${BACKEND_BASE}${target.endpoint}?limit=30`, {
+              headers: wallet ? { "x-wallet": wallet } : {},
+              signal: ctl.signal,
+            }).then(r => r.ok ? r.json() : { posts: [] }).catch(() => ({ posts: [] })),
+            fetch(`${BACKEND_BASE}/api/feed/voices?limit=15`, {
+              headers: wallet ? { "x-wallet": wallet } : {},
+              signal: ctl.signal,
+            }).then(r => r.ok ? r.json() : { posts: [] }).catch(() => ({ posts: [] })),
+          ]);
+          // Dedupe on id, then sort by createdAt. Voices from Nitter use
+          // string ids like "x:1234" so they won't collide with native
+          // numeric ids — the Map handles both.
+          const byId = new Map();
+          for (const p of [...(fy.posts || []), ...(vc.posts || [])]) {
+            if (p?.id != null) byId.set(p.id, p);
+          }
+          const merged = Array.from(byId.values()).sort((a, b) => {
+            const ta = new Date(a.createdAt || a.created_at || 0).getTime();
+            const tb = new Date(b.createdAt || b.created_at || 0).getTime();
+            return tb - ta;
+          });
+          setPosts(merged);
+        } else {
+          const res = await fetch(`${BACKEND_BASE}${target.endpoint}?limit=30`, {
+            headers: wallet ? { "x-wallet": wallet } : {},
+            signal: ctl.signal,
+          });
+          if (!res.ok) throw new Error(`${target.label} ${res.status}`);
+          const j = await res.json();
+          setPosts(j.posts || []);
+        }
       } catch (e) {
         if (e.name !== "AbortError") setErr(e.message);
       } finally {

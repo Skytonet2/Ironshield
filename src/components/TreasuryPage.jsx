@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 const ORANGE = "#f97316";
 
 function fmtNear(v) {

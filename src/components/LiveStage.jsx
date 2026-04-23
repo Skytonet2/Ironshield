@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Mic, MicOff, Crown, ShieldAlert, Hand, Loader2 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 
 // Lazy-loaded so static export doesn't pull livekit-client into every bundle.
 // Wrapped in try/catch so deploys without livekit-client installed still build —

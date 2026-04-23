@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageSquare, X } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+import { API_BASE as API } from "@/lib/apiBase";
 const POLL_MS = 15_000;
 const TOAST_TTL = 6_000;
 const LS_SEEN = "ix_dm_seen_v1";
