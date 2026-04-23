@@ -1261,21 +1261,40 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
       </form>
 
       <style jsx global>{`
-        /* Context pane: docked on desktop, overlay on tablet/mobile. */
+        /* Context pane: docked on desktop, overlay on tablet/mobile.
+           !important guards against the inline \`display: flex\` the
+           JSX ships — same class of bug as the list/thread split.
+           Without the override, the context pane auto-flowed into an
+           implicit grid row BELOW the thread on phones, stacking the
+           Details subtree under the conversation instead of covering
+           it. */
         @media (min-width: 1180px) {
-          .ix-msg-context { position: static; width: auto; }
+          .ix-msg-context { position: static !important; width: auto !important; transform: none !important; }
         }
         @media (max-width: 1179px) {
           .ix-msg-context {
-            position: absolute;
+            position: fixed !important;
             top: 0; right: 0; bottom: 0;
-            width: min(92vw, 340px);
+            width: min(92vw, 360px) !important;
             transform: translateX(100%);
             transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
-            z-index: 5;
+            z-index: 50;
             box-shadow: -14px 0 38px rgba(0,0,0,0.35);
           }
           .ix-msg-context[data-open="true"] { transform: translateX(0); }
+          /* When the pane is closed on mobile, also zero its visual
+             footprint so it can't leak through in the grid flow under
+             any circumstance. Belt-and-suspenders with the transform. */
+          .ix-msg-context[data-open="false"] { pointer-events: none; }
+        }
+        @media (max-width: 640px) {
+          /* On true phones go full-width — a 92vw panel with 8vw of
+             blurred backdrop looks weirdly tight; just take the
+             screen. */
+          .ix-msg-context {
+            width: 100vw !important;
+            max-width: 100vw !important;
+          }
         }
         .ix-msg-root { position: relative; }
         .ix-msg-grid { position: relative; }
