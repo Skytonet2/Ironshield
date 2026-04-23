@@ -266,6 +266,47 @@ export default function RootLayout({ children }) {
             we never loop. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
+            // ─── One-time SW purge on this build ────────────────────
+            // The brand-system + Messages rework changed chunk layout
+            // enough that an old service worker serving stale HTML
+            // from its cache would reference chunks that no longer
+            // exist → renderer crash ("This page couldn't load").
+            //
+            // On first paint of this build, compare a stamped version
+            // marker to localStorage; if it's different, unregister
+            // every SW and drop every cache, then reload once. The
+            // marker prevents loops — subsequent visits with the same
+            // build skip the purge entirely.
+            try {
+              var BUILD = "ironshield-build-2026-04-23-brand";
+              var PREV = null;
+              try { PREV = localStorage.getItem("ironshield:build"); } catch(e){}
+              if (PREV !== BUILD) {
+                try { localStorage.setItem("ironshield:build", BUILD); } catch(e){}
+                if (!/[?&]purged=1/.test(location.search)) {
+                  // Kick off unregister + cache clear, then reload.
+                  var sep = location.search ? "&" : "?";
+                  var next = location.pathname + location.search + sep + "purged=1" + location.hash;
+                  var killSw = (navigator.serviceWorker && navigator.serviceWorker.getRegistrations)
+                    ? navigator.serviceWorker.getRegistrations().then(function(regs){
+                        return Promise.all(regs.map(function(r){ return r.unregister(); }));
+                      }).catch(function(){})
+                    : Promise.resolve();
+                  var killCache = (window.caches && caches.keys)
+                    ? caches.keys().then(function(keys){
+                        return Promise.all(keys.map(function(k){ return caches.delete(k); }));
+                      }).catch(function(){})
+                    : Promise.resolve();
+                  Promise.all([killSw, killCache]).then(function(){
+                    location.replace(location.origin + next);
+                  });
+                  // Don't proceed with the rest of the loader script
+                  // on this pass — we're about to reload.
+                  return;
+                }
+              }
+            } catch(e){}
+
             // Strip stale ?_r= cache-busters that may have been added by old loader versions
             // (the near.page web4 gateway 404s on query strings)
             try {
