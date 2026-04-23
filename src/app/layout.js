@@ -266,26 +266,13 @@ export default function RootLayout({ children }) {
             we never loop. */}
         <script dangerouslySetInnerHTML={{ __html: `
           (function(){
-            // ─── Background SW cleanup (non-reloading) ────────────
-            // Quietly unregister any leftover service worker and drop
-            // its caches. NO reload here — triggering a reload from
-            // this path while chunks are still downloading can race
-            // with the 12-second auto-recover below and trap users
-            // in a loop. The new /sw.js is a self-uninstaller, so
-            // when a stale SW hands control to it, the cleanup
-            // completes without us orchestrating anything.
-            try {
-              if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
-                navigator.serviceWorker.getRegistrations().then(function(regs){
-                  regs.forEach(function(r){ try { r.unregister(); } catch(e){} });
-                }).catch(function(){});
-              }
-              if (window.caches && caches.keys) {
-                caches.keys().then(function(keys){
-                  keys.forEach(function(k){ try { caches.delete(k); } catch(e){} });
-                }).catch(function(){});
-              }
-            } catch(e){}
+            // The SW is now registered (v4, push-only, no fetch handler)
+            // by usePWA on mount, so we MUST NOT blanket-unregister here —
+            // that would race our own registration on every boot. The v3
+            // self-uninstaller and any older caches get cleaned by v4's
+            // activate hook on the first transition, and the 12-second
+            // auto-recover below is still the escape hatch if boot
+            // actually gets stuck.
 
             // Strip stale ?_r= cache-busters that may have been added by old loader versions
             // (the near.page web4 gateway 404s on query strings)

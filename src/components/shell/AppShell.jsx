@@ -22,6 +22,7 @@ import {
   LazyMotion, domAnimation, m, AnimatePresence, pageVariants,
 } from "@/lib/motion";
 import { useNotifications } from "@/lib/hooks/useNotifications";
+import { usePWA } from "@/lib/usePWA";
 import NotificationsDrawer from "@/components/notifications/NotificationsDrawer";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -832,6 +833,12 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   // badge and the mobile Alerts tab badge with the viewer's real
   // unread count (polled every 30s while the shell is mounted).
   const { unreadCount } = useNotifications(walletAddress);
+
+  // Register the service worker and re-sync the push subscription with
+  // the backend whenever the wallet changes. Without this, no SW exists
+  // on the page and web push can't be delivered — OS notifications
+  // literally cannot fire without an active worker.
+  usePWA(walletAddress);
 
   // DM unread count for the mobile Messages tab badge. Lives in the
   // shell (not the /messages page) so the badge updates even when the

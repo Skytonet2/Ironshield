@@ -8,28 +8,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { API_BASE as API } from "@/lib/apiBase";
 
-// ─── Service Worker registration — TEMPORARILY DISABLED ───────────
-// Stale SW caches turned out to be the cause of the renderer crash
-// ("This page couldn't load") after the brand-system deploy. Until we
-// ship a cleaner SW caching strategy, skip registration entirely and
-// let the browser's HTTP cache handle asset freshness. Push
-// notifications and offline app-shell come back with the re-enable.
-//
-// We also ensure any OLD registration (from a pre-disable build) gets
-// nuked on mount — the /sw.js on the server is now a self-
-// uninstalling no-op, but unregistering from the client side too
-// gives us a deterministic cleanup path.
+// ─── Service Worker registration ──────────────────────────────────
+// We register /sw.js purely so web push works — the v4 worker
+// installs NO fetch handler, so we avoid the stale-cache crash that
+// took v1/v2 down while still getting OS-level notifications back.
+// See public/sw.js for the full rationale.
 let swRegistration = null;
 
 async function registerSW() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
+  if (swRegistration) return swRegistration;
   try {
-    const regs = await navigator.serviceWorker.getRegistrations();
-    for (const r of regs) {
-      try { await r.unregister(); } catch (_) { /* ignore */ }
-    }
-  } catch (_) { /* ignore */ }
-  return null;
+    swRegistration = await navigator.serviceWorker.register("/sw.js");
+    return swRegistration;
+  } catch (e) {
+    console.warn("[PWA] SW register failed:", e.message);
+    return null;
+  }
 }
 
 // ─── Push subscription ─────────────────────────────────────────────
@@ -93,16 +88,30 @@ export function usePWA(wallet) {
   const [pushDenied, setPushDenied]       = useState(false);
   const prompted = useRef(false);
 
-  // Register SW on mount
+  // Register SW on mount. When a wallet is also connected, re-POST
+  // the current subscription so the backend has the latest endpoint —
+  // browsers can rotate endpoints silently (pushsubscriptionchange is
+  // best-effort and unreliable on iOS), and without this re-sync the
+  // server keeps pushing to a dead row until it 410s out.
   useEffect(() => {
-    registerSW().then((reg) => {
-      if (reg) {
-        reg.pushManager?.getSubscription().then((sub) => {
-          setPushEnabled(!!sub);
-        });
-      }
+    let cancelled = false;
+    registerSW().then(async (reg) => {
+      if (!reg || cancelled) return;
+      try {
+        const sub = await reg.pushManager?.getSubscription();
+        if (cancelled) return;
+        setPushEnabled(!!sub);
+        if (sub && wallet) {
+          await fetch(`${API}/api/push/subscribe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-wallet": wallet },
+            body: JSON.stringify({ subscription: sub.toJSON() }),
+          }).catch(() => { /* best-effort re-sync */ });
+        }
+      } catch (_) { /* ignore */ }
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [wallet]);
 
   // Intercept install prompt
   useEffect(() => {
