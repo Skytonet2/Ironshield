@@ -87,10 +87,7 @@ export default function SettingsShell() {
 
   return (
     <AppShell>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "220px 1fr",
-        gap: 16,
+      <div className="ix-settings-grid" style={{
         maxWidth: 1100,
         margin: "0 auto",
         padding: "16px 20px",
@@ -100,13 +97,53 @@ export default function SettingsShell() {
           <TabContent tab={tab} />
         </div>
       </div>
+      <style jsx global>{`
+        .ix-settings-grid {
+          display: grid;
+          gap: 16px;
+          grid-template-columns: 220px minmax(0, 1fr);
+        }
+        /* On tablet + phone, stack nav above content so the right
+           column gets the full viewport width. The sticky-nav
+           affordance only makes sense when there's room beside it.
+           The nav itself collapses into a horizontal scroller so
+           every tab stays reachable in one tap. */
+        @media (max-width: 899px) {
+          .ix-settings-grid { grid-template-columns: 1fr; }
+          .ix-settings-nav {
+            position: static !important;
+            flex-direction: row !important;
+            gap: 12px !important;
+            overflow-x: auto;
+            padding-bottom: 8px;
+            margin-bottom: 4px;
+            border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
+          }
+          .ix-settings-nav > div {
+            flex-shrink: 0;
+          }
+          .ix-settings-nav > div > div:first-child {
+            /* group label */
+            white-space: nowrap;
+          }
+          .ix-settings-nav > div > div:last-child {
+            flex-direction: row !important;
+            gap: 4px !important;
+          }
+          .ix-settings-nav button { white-space: nowrap; }
+        }
+      `}</style>
     </AppShell>
   );
 }
 
 function SettingsNav({ groups, activeTab, onPick, t }) {
+  // Desktop: vertical sticky stack. Mobile: horizontal scroller below
+  // the top nav so every tab stays one tap away without eating half
+  // the viewport. The ix-settings-nav class toggles that via the
+  // global CSS block at the bottom of SettingsShell.
   return (
-    <aside style={{
+    <aside className="ix-settings-nav" style={{
       display: "flex",
       flexDirection: "column",
       gap: 20,

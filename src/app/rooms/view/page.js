@@ -36,9 +36,17 @@ export default function RoomViewPage() {
 }
 
 function Loading() {
+  // Mark the outer wrapper as app-shell-ready so the inline pre-loader
+  // script (see src/app/layout.js) dismisses the crest. The room view
+  // is intentionally standalone (no AppShell chrome — spaces-style
+  // focused surface), so it has to signal readiness explicitly.
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center",
-      background: "#080b12", color: "#94a3b8" }}>Loading room…</div>
+    <div data-app-shell="ready" style={{
+      minHeight: "100vh", display: "grid", placeItems: "center",
+      background: "#080b12", color: "#94a3b8",
+    }}>
+      Loading room…
+    </div>
   );
 }
 
@@ -278,8 +286,10 @@ function RoomViewInner() {
   if (loading) return <Loading />;
   if (error || !room) {
     return (
-      <div style={{ minHeight: "100vh", background: t.bg, color: t.text,
-        display: "grid", placeItems: "center", padding: 24 }}>
+      <div data-app-shell="ready" style={{
+        minHeight: "100vh", background: t.bg, color: t.text,
+        display: "grid", placeItems: "center", padding: 24,
+      }}>
         <div style={{ textAlign: "center" }}>
           <Radio size={36} color={t.amber} />
           <h2 style={{ color: t.white, margin: "10px 0 6px" }}>Room not found</h2>
@@ -295,7 +305,7 @@ function RoomViewInner() {
   const handsUp   = parts.filter(p => p.handRaised && p.role === "listener");
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
+    <div data-app-shell="ready" style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
       <nav aria-hidden style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", opacity: 0 }} />
 
       {/* Top bar */}

@@ -37,9 +37,18 @@ export default function TipPage() {
 }
 
 function LoadingFallback() {
+  // Render inside AppShell so the root pre-loader (which watches for
+  // [data-app-shell="ready"]) dismisses. Previously the raw div left
+  // the pre-loader stuck whenever loading took more than a moment.
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center",
-      background: "#080b12", color: "#94a3b8" }}>Loading…</div>
+    <AppShell>
+      <div style={{
+        minHeight: "40vh", display: "grid", placeItems: "center",
+        color: "#94a3b8", fontSize: 13,
+      }}>
+        Loading…
+      </div>
+    </AppShell>
   );
 }
 
@@ -105,15 +114,18 @@ function TipPageInner() {
 
   if (error || !profile) {
     return (
-      <div style={{ minHeight: "100vh", background: t.bg, color: t.text,
-        display: "grid", placeItems: "center", padding: 24 }}>
-        <div style={{ maxWidth: 420, textAlign: "center" }}>
-          <Zap size={40} color={t.amber} style={{ marginBottom: 12 }} />
-          <h2 style={{ color: t.white, margin: "0 0 8px" }}>Creator not found</h2>
-          <p style={{ color: t.textMuted, fontSize: 14 }}>{error || "We couldn't find this creator."}</p>
-          <a href="/" style={{ color: t.accent, fontSize: 14 }}>← Back to IronShield</a>
+      <AppShell>
+        <div style={{
+          minHeight: "40vh", display: "grid", placeItems: "center", padding: 24,
+        }}>
+          <div style={{ maxWidth: 420, textAlign: "center" }}>
+            <Zap size={40} color={t.amber} style={{ marginBottom: 12 }} />
+            <h2 style={{ color: t.white, margin: "0 0 8px" }}>Creator not found</h2>
+            <p style={{ color: t.textMuted, fontSize: 14 }}>{error || "We couldn't find this creator."}</p>
+            <a href="/" style={{ color: t.accent, fontSize: 14 }}>← Back to IronShield</a>
+          </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
