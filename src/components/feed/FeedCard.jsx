@@ -17,6 +17,7 @@ import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckC
 import { useTheme } from "@/lib/contexts";
 import useImpression from "@/lib/hooks/useImpression";
 import CoinItButton from "./CoinItButton";
+import Avatar from "./Avatar";
 
 function fmtCount(n) {
   const v = Number(n || 0);
@@ -227,25 +228,14 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
               : `/profile?username=${encodeURIComponent(author?.username || "")}`}
           style={{ display: "block" }}
         >
-          {author?.pfp_url ? (
-            <img
-              src={author.pfp_url}
-              alt={author?.username || ""}
-              width={40}
-              height={40}
-              style={{ borderRadius: "50%", objectFit: "cover", background: "var(--bg-input)" }}
-              onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
-            />
-          ) : (
-            <div style={{
-              width: 40, height: 40, borderRadius: "50%",
-              background: "var(--accent-dim)", color: t.accent,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontWeight: 700, fontSize: 14,
-            }}>
-              {(author?.display_name || author?.username || "?")[0]?.toUpperCase()}
-            </div>
-          )}
+          <Avatar
+            src={author?.pfp_url}
+            alt={author?.username || ""}
+            size={40}
+            fallbackText={author?.display_name || author?.username || "?"}
+            fallbackBg="var(--accent-dim)"
+            fallbackColor={t.accent}
+          />
         </a>
         {isXCross && (
           <span

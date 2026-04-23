@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
+import Avatar from "@/components/feed/Avatar";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import { API_BASE as API } from "@/lib/apiBase";
 import {
@@ -340,23 +341,12 @@ function CommentNode({ t, c, depth, replyTarget, setReplyTarget, replyText, setR
         background: "var(--bg-card)",
         border: `1px solid ${t.border}`,
       }}>
-        {c.pfp_url ? (
-          <img
-            src={c.pfp_url}
-            alt=""
-            width={30} height={30}
-            style={{ borderRadius: "50%", flexShrink: 0, objectFit: "cover" }}
-          />
-        ) : (
-          <div style={{
-            width: 30, height: 30, borderRadius: "50%",
-            background: "var(--bg-input)", flexShrink: 0,
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            fontSize: 10, color: t.textDim,
-          }}>
-            {(displayName || "?").slice(0, 2).toUpperCase()}
-          </div>
-        )}
+        <Avatar
+          src={c.pfp_url}
+          size={30}
+          fallbackText={displayName || "?"}
+          fallbackColor={t.textDim}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, flexWrap: "wrap" }}>
             <a

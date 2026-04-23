@@ -1112,11 +1112,14 @@ function EarnHero({ t, address, connected, profile, profileLoading, openWallet, 
       </div>
 
       <style jsx>{`
+        /* Mascot (middle column) is now skipped in JS on narrow viewports via
+           isNarrow, so the old nth-child(2) display:none would incorrectly
+           hide the agent status card once the mascot was gone. The grid just
+           collapses to 2 cols (text + status) <=1024px, 1 col <=680px. */
         @media (max-width: 1024px) {
           .earn-hero-grid {
             grid-template-columns: 1fr 1fr !important;
           }
-          .earn-hero-grid > :nth-child(2) { display: none; }
         }
         @media (max-width: 680px) {
           .earn-hero-grid {
@@ -1452,10 +1455,18 @@ export default function EarnPage({ openWallet }) {
     return [...agentTasks, ...baseConverted];
   }, [agentTasks]);
 
-  // Pull the on-chain leaderboard once on mount; ProposalsProvider has its own
-  // cache but the agents view lives on the same contract so we reuse the hook.
+  // Pull the on-chain leaderboard once on mount, but DEFER to browser idle so
+  // the near-api-js import doesn't compete with first paint. On mobile WebView
+  // the eager fetch-on-mount was contributing to the renderer OOM; ProposalsProvider
+  // already uses this pattern.
   useEffect(() => {
-    fetchLeaderboard({ limit: 50 }).catch(() => {});
+    if (typeof window === "undefined") return;
+    const ric = window.requestIdleCallback || ((cb) => setTimeout(cb, 600));
+    const cancel = window.cancelIdleCallback || clearTimeout;
+    const handle = ric(() => {
+      fetchLeaderboard({ limit: 50 }).catch(() => {});
+    }, { timeout: 3000 });
+    return () => { try { cancel(handle); } catch {} };
   }, [fetchLeaderboard]);
 
   // Merge on-chain rows first, top-up with memoryStore demo rows so the UI
