@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bell, Mail, MessageSquare, Phone, Zap, Target, DollarSign, Shield, Users as UsersIcon } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
+import { usePWA } from "@/lib/usePWA";
 import { API_BASE as API } from "@/lib/apiBase";
 import { tabCard, tabTitle, row, rowSub, toggle } from "./_shared";
 
@@ -51,16 +52,47 @@ function savePrefs(p) {
 export default function NotificationsTab() {
   const t = useTheme();
   const { address } = useWallet();
+  const { pushEnabled, pushDenied, enablePush, disablePush, isIOS } = usePWA(address);
   const [prefs, setPrefs] = useState(DEFAULTS);
   const [syncedAt, setSyncedAt] = useState(null);
+  const [pushError, setPushError] = useState("");
 
   useEffect(() => { setPrefs(loadPrefs()); }, []);
 
-  const update = useCallback((section, key, value) => {
+  // Keep the "Push" channel toggle in sync with the real browser
+  // subscription state. Without this, the UI can lie — e.g. a user
+  // toggles push on, we ignore it, and the toggle stays lit despite
+  // no actual SW subscription existing.
+  useEffect(() => {
+    setPrefs((prev) => {
+      if (prev.channels.push === pushEnabled) return prev;
+      const next = { ...prev, channels: { ...prev.channels, push: pushEnabled } };
+      savePrefs(next);
+      return next;
+    });
+  }, [pushEnabled]);
+
+  const update = useCallback(async (section, key, value) => {
+    // Push channel is backed by a real browser subscription, not just
+    // a prefs flag — route it through the PWA hook so the device
+    // actually gets enrolled (or unenrolled) with the push service.
+    if (section === "channels" && key === "push") {
+      setPushError("");
+      if (value) {
+        const res = await enablePush();
+        if (!res.ok) {
+          setPushError(res.message || "Couldn't enable push.");
+          return; // leave toggle off — useEffect above will reconcile
+        }
+      } else {
+        await disablePush();
+      }
+      return; // pushEnabled effect reconciles prefs.channels.push
+    }
+
     setPrefs((prev) => {
       const next = { ...prev, [section]: { ...prev[section], [key]: value } };
       savePrefs(next);
-      // Best-effort server sync — noop if the endpoint isn't mounted.
       if (address) {
         fetch(`${API}/api/push/preferences`, {
           method: "PATCH",
@@ -70,7 +102,7 @@ export default function NotificationsTab() {
       }
       return next;
     });
-  }, [address]);
+  }, [address, enablePush, disablePush]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -91,7 +123,13 @@ export default function NotificationsTab() {
               <c.Icon size={15} color={prefs.channels[c.key] ? t.accent : t.textDim} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{c.label}</div>
-                <div style={rowSub(t)}>{c.hint}</div>
+                <div style={rowSub(t)}>
+                  {c.key === "push" && pushDenied
+                    ? "Blocked in browser settings — re-enable there first."
+                    : c.key === "push" && pushError
+                      ? pushError
+                      : c.hint}
+                </div>
               </div>
               <Toggle t={t} on={!!prefs.channels[c.key]} onChange={(v) => update("channels", c.key, v)} />
             </div>
