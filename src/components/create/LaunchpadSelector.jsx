@@ -127,10 +127,11 @@ export default function LaunchpadSelector({ onClose, prefill = null, initialChai
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      className="ix-launchpad-backdrop"
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.62)",
+        background: "rgba(0,0,0,0.72)",
         backdropFilter: "blur(8px)",
         zIndex: 220,
         display: "flex",
@@ -139,8 +140,29 @@ export default function LaunchpadSelector({ onClose, prefill = null, initialChai
         padding: 20,
       }}
     >
+      <style jsx global>{`
+        @media (max-width: 640px) {
+          .ix-launchpad-backdrop {
+            background: var(--bg-app, #050816) !important;
+            backdrop-filter: none !important;
+            padding: 0 !important;
+            align-items: stretch !important;
+          }
+          .ix-launchpad-modal {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 100dvh !important;
+            border-radius: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 18px !important;
+            overflow-y: auto !important;
+          }
+        }
+      `}</style>
       <div
         onClick={(e) => e.stopPropagation()}
+        className="ix-launchpad-modal"
         style={{
           width: "100%",
           maxWidth: 620,
