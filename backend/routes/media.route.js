@@ -154,7 +154,24 @@ router.post("/upload", (req, res) => {
     return res.status(503).json({ error: "busboy module missing — run `npm i busboy`" });
   }
 
-  const bb = Busboy({ headers: req.headers, limits: { fileSize: 25 * 1024 * 1024 } });
+  // Busboy throws synchronously when the Content-Type header is absent
+  // or not multipart, which bubbles up as a generic 500 via the Express
+  // error handler. Check first so bare/curl-probed requests get a
+  // useful 400 instead.
+  const ct = String(req.headers["content-type"] || "").toLowerCase();
+  if (!ct.startsWith("multipart/form-data")) {
+    return res.status(400).json({
+      error: "multipart/form-data required",
+      hint:  "POST a file as multipart form data (field name 'file').",
+    });
+  }
+
+  let bb;
+  try {
+    bb = Busboy({ headers: req.headers, limits: { fileSize: 25 * 1024 * 1024 } });
+  } catch (e) {
+    return res.status(400).json({ error: `bad upload headers: ${e.message}` });
+  }
   let fileBuf = null;
   let filename = "upload.bin";
   let mimeType = "application/octet-stream";
