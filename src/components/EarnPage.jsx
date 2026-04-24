@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Search, Trophy, Link2, Image as ImageIcon, X, Send, Lock, Bot,
-  ExternalLink, Sun, Moon, Zap, Users, Star, Clock, CheckCircle,
+  ExternalLink, Sun, Moon, Zap, Users, Star, Clock, Check, CheckCircle,
   ChevronDown, Upload, Award, TrendingUp, Calendar,
   Play, ArrowRight, Wallet, Flame, PieChart, Crown,
 } from "lucide-react";
