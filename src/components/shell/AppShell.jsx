@@ -29,9 +29,9 @@ import { useRouter } from "next/navigation";
 import { BrandMark } from "@/components/brand/Brand";
 import {
   Search, Zap, Plus, ArrowLeftRight, Bell, Bookmark,
-  Eye, Trophy, Briefcase, Bot, Settings, DollarSign, BarChart2,
+  Eye, Trophy, Briefcase, Bot, Settings, DollarSign,
   Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
-  Home, Menu, X as XIcon, User, MessageCircle,
+  Home, Menu, X as XIcon, User, MessageCircle, Users, Sparkles,
 } from "lucide-react";
 import { useTheme, useWallet as useCtxWallet } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
@@ -95,6 +95,12 @@ const SIDEBAR_GROUPS = [
       { key: "treasury",    label: "Treasury",         Icon: Briefcase,  href: "/treasury"    },
       { key: "earn",        label: "Earn",             Icon: Trophy,     href: "/earn"        },
       { key: "agent",       label: "Agent",            Icon: Bot,        href: "/agent"       },
+      // Phase 5/6 agent platform routes. Kept below the legacy "Agent"
+      // link so the IronClaw autonomous agent stays the top-level entry;
+      // the user-owned profiles and marketplace sit underneath.
+      { key: "my-agent",    label: "My Agent",         Icon: User,       href: "/agents/me"   },
+      { key: "agents",      label: "Agents",           Icon: Users,      href: "/agents"      },
+      { key: "skills",      label: "Skills",           Icon: Sparkles,   href: "/skills"      },
       { key: "ecosystem",   label: "Ecosystem",        Icon: Network,    href: "/ecosystem"   },
       { key: "docs",        label: "Docs",             Icon: BookOpen,   href: "/docs"        },
     ],
@@ -102,7 +108,6 @@ const SIDEBAR_GROUPS = [
   {
     label: "Tools",
     items: [
-      { key: "analytics", label: "Analytics", Icon: BarChart2,   href: "/analytics", soon: true },
       { key: "settings",  label: "Settings",  Icon: Settings,    href: "/settings"  },
     ],
   },
