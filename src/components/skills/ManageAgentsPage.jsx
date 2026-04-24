@@ -1,85 +1,77 @@
 "use client";
-// ManageAgentsPage (/agents/me). Dashboard of agents the current user
-// has connected — list view matching the mock, parallel to the
-// marketplace chrome via SkillsShell.
+// Manage agents — /agents/me. Reads the connected wallet's on-chain
+// profile (one agent per wallet on the current contract — multi-agent
+// support lands with the Phase 7 migration).
 //
-// Layout (desktop):
-//   • Title + "+ Connect new agent" CTA
-//   • 4-stat strip: connected / pending / installs / skills enabled
-//   • Connected agents rows (icon + meta | status | permissions | installed skills | Configure)
-//   • Available connections cards (Ironclaw, Openclaw — Connect CTA)
-//   • Footer security reassurance banner
+// Contract reads:
+//   • fetchProfile()            → current viewer's AgentProfile
+//   • getIronclawSource(owner)  → linked external IronClaw source, if any
+//   • getInstalledSkills(owner) → count used for the "Skills enabled" stat
+//   • getAgentStats(owner)      → "last active" for the Active/Idle chip
+//
+// Removed from the design pass:
+//   • Hardcoded Ironclaw + Openclaw row fixtures.
+//   • "Available connections" cards (no directory view on-chain; comes
+//     back in the functionality PR as a link to the agents directory +
+//     NEAR AI agent registry once it ships).
+//
+// Empty states:
+//   • Not connected → "Connect a wallet" prompt
+//   • Connected, no profile → "Register your agent" CTA opens the
+//     CreateAgentModal from the legacy EarnPage path (the hook already
+//     exposes registerAgent).
 
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, ExternalLink, MoreHorizontal, CheckCircle2, Shield,
-  Eye, Pencil, MessageSquare, DollarSign, Coins, Bot, Headphones,
-  ArrowRight,
+  Package, ArrowRight, Wallet, Loader2, Settings, Info,
 } from "lucide-react";
-import { useTheme } from "@/lib/contexts";
+import { useTheme, useWallet } from "@/lib/contexts";
+import useAgent from "@/hooks/useAgent";
 
-/* ──────────────────── Data (mock) ──────────────────── */
+const ACTIVE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
-const STATS = [
-  { value: "2",  label: "Connected agents"  },
-  { value: "0",  label: "Pending connections" },
-  { value: "2",  label: "Total installations" },
-  { value: "12", label: "Skills enabled"     },
-];
+function truncAddr(a) {
+  if (!a) return "";
+  if (a.length <= 16) return a;
+  return `${a.slice(0, 8)}…${a.slice(-6)}`;
+}
 
-const CONNECTED = [
-  {
-    handle: "Ironclaw",
-    wallet: "ironclaw.near",
-    connectedAt: "May 12, 2025 • 2:45 PM",
-    accent: "#a855f7",
-    emoji: "🦾",
-    status: "Active",
-    lastSeen: "2 min ago",
-    permissions: [
-      { label: "Read data",           icon: Eye      },
-      { label: "Sign transactions",   icon: Pencil   },
-      { label: "Interact with contracts", icon: Coins },
-    ],
-    installedCount: 8,
-  },
-  {
-    handle: "Openclaw",
-    wallet: "openclaw.near",
-    connectedAt: "May 10, 2025 • 11:20 AM",
-    accent: "#3b82f6",
-    emoji: "🎧",
-    status: "Active",
-    lastSeen: "5 min ago",
-    permissions: [
-      { label: "Read data",           icon: Eye      },
-      { label: "Sign transactions",   icon: Pencil   },
-      { label: "Send messages",       icon: MessageSquare },
-    ],
-    installedCount: 4,
-  },
-];
+function timeAgo(nsStr) {
+  if (!nsStr) return "never";
+  try {
+    const ns = BigInt(nsStr);
+    const ms = Number(ns / 1_000_000n);
+    const diff = Date.now() - ms;
+    if (diff < 60_000)      return "just now";
+    if (diff < 3_600_000)   return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000)  return `${Math.floor(diff / 3_600_000)}h ago`;
+    return `${Math.floor(diff / 86_400_000)}d ago`;
+  } catch { return "—"; }
+}
 
-const AVAILABLE = [
-  {
-    handle: "Ironclaw",
-    emoji: "🦾",
-    accent: "#a855f7",
-    desc: "An autonomous DeFi agent that executes trades, manages assets, and finds opportunities across protocols.",
-    tags: ["DeFi", "Trading", "Automation"],
-  },
-  {
-    handle: "Openclaw",
-    emoji: "🎧",
-    accent: "#3b82f6",
-    desc: "A communication-first agent that can interact across social platforms, send messages, and engage with communities.",
-    tags: ["Social", "Communication", "Engagement"],
-  },
-];
+function profileCreatedDate(ns) {
+  if (!ns) return "—";
+  try {
+    const ms = Number(BigInt(ns) / 1_000_000n);
+    const d  = new Date(ms);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch { return "—"; }
+}
+
+function isAgentActive(stats) {
+  if (!stats?.last_active) return false;
+  try {
+    const ns = BigInt(stats.last_active);
+    const ms = Number(ns / 1_000_000n);
+    return Date.now() - ms < ACTIVE_THRESHOLD_MS;
+  } catch { return false; }
+}
 
 /* ──────────────────── Header ──────────────────── */
 
-function PageHeader({ t }) {
+function PageHeader({ t, onCreate, disabled }) {
   return (
     <header className="ma-header" style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -93,34 +85,49 @@ function PageHeader({ t }) {
           Manage your agents
         </h1>
         <p style={{ fontSize: 13, color: t.textMuted, marginTop: 6 }}>
-          Connect, manage, and switch between your AI agents.
+          Your on-chain agent profile, linked runtimes, and installed skills.
         </p>
       </div>
-      <Link href="/agents/connect" style={{
-        padding: "10px 16px",
-        background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
-        border: "none", borderRadius: 10,
-        fontSize: 13, fontWeight: 700, color: "#fff",
-        display: "inline-flex", alignItems: "center", gap: 8,
-        textDecoration: "none",
-        boxShadow: `0 10px 24px rgba(168,85,247,0.35)`,
-      }}>
+      <button
+        type="button"
+        onClick={onCreate}
+        disabled={disabled}
+        style={{
+          padding: "10px 16px",
+          background: disabled
+            ? t.bgSurface
+            : `linear-gradient(135deg, #a855f7, ${t.accent})`,
+          border: disabled ? `1px solid ${t.border}` : "none",
+          borderRadius: 10,
+          fontSize: 13, fontWeight: 700,
+          color: disabled ? t.textMuted : "#fff",
+          display: "inline-flex", alignItems: "center", gap: 8,
+          cursor: disabled ? "not-allowed" : "pointer",
+          boxShadow: disabled ? "none" : `0 10px 24px rgba(168,85,247,0.35)`,
+        }}
+      >
         <Plus size={14} /> Connect new agent
-      </Link>
+      </button>
     </header>
   );
 }
 
 /* ──────────────────── Stats strip ──────────────────── */
 
-function StatsStrip({ t }) {
+function StatsStrip({ t, hasProfile, installedCount }) {
+  const stats = [
+    { value: hasProfile ? "1" : "0", label: "Connected agents"  },
+    { value: "0",                    label: "Pending connections" },
+    { value: hasProfile ? "1" : "0", label: "Total installations" },
+    { value: String(installedCount ?? 0), label: "Skills enabled" },
+  ];
   return (
     <div className="ma-stats" style={{
       display: "grid",
       gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) minmax(220px, 1fr)",
       gap: 14, marginBottom: 28,
     }}>
-      {STATS.map(s => (
+      {stats.map(s => (
         <div key={s.label} style={{
           background: t.bgCard, border: `1px solid ${t.border}`,
           borderRadius: 12, padding: "16px 18px",
@@ -164,7 +171,17 @@ function StatsStrip({ t }) {
 
 /* ──────────────────── Connected row ──────────────────── */
 
-function ConnectedRow({ a, t }) {
+function ConnectedRow({ t, profile, address, stats, ironclawSource, installedCount }) {
+  const active = isAgentActive(stats);
+  const permissionLines = [
+    { icon: Shield,  label: "Read profile data" },
+    { icon: Package, label: "Install/uninstall skills" },
+  ];
+  if (ironclawSource) {
+    permissionLines.push({ icon: ExternalLink, label: "Bridge IronClaw posts" });
+  }
+  const configureHref = `/agents/configure?handle=${encodeURIComponent(profile.handle)}`;
+
   return (
     <div className="ma-row" style={{
       display: "grid",
@@ -177,33 +194,35 @@ function ConnectedRow({ a, t }) {
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
         <span aria-hidden style={{
           width: 48, height: 48, flexShrink: 0, borderRadius: 12,
-          background: `linear-gradient(135deg, ${a.accent}3a, ${a.accent}14)`,
+          background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          fontSize: 22,
+          color: "#fff",
         }}>
-          {a.emoji}
+          <Package size={22} />
         </span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: t.white }}>
-              {a.handle}
+              @{profile.handle}
             </span>
             <span style={{
               fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
               background: "rgba(16,185,129,0.18)", color: "#10b981",
               display: "inline-flex", alignItems: "center", gap: 4,
             }}>
-              <CheckCircle2 size={10} /> Connected
+              <CheckCircle2 size={10} /> Registered
             </span>
           </div>
           <div style={{
             fontSize: 11.5, color: t.textMuted, marginTop: 2,
             fontFamily: "var(--font-jetbrains-mono), monospace",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            maxWidth: 320,
           }}>
-            {a.wallet}
+            {truncAddr(profile.owner)}
           </div>
           <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>
-            Connected on {a.connectedAt}
+            Joined {profileCreatedDate(profile.created_at)}
           </div>
         </div>
       </div>
@@ -212,12 +231,20 @@ function ConnectedRow({ a, t }) {
         <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
           Status
         </div>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "#10b981" }}>
-          <span style={{ width: 7, height: 7, background: "#10b981", borderRadius: "50%", boxShadow: "0 0 8px #10b981" }} />
-          {a.status}
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          fontSize: 13, fontWeight: 700,
+          color: active ? "#10b981" : t.textMuted,
+        }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: "50%",
+            background: active ? "#10b981" : t.textDim,
+            boxShadow: active ? "0 0 8px #10b981" : "none",
+          }} />
+          {active ? "Active" : "Idle"}
         </div>
         <div style={{ fontSize: 11, color: t.textDim, marginTop: 4 }}>
-          Last seen {a.lastSeen}
+          Last active {timeAgo(stats?.last_active)}
         </div>
       </div>
 
@@ -226,7 +253,7 @@ function ConnectedRow({ a, t }) {
           Permissions
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {a.permissions.map(p => (
+          {permissionLines.map(p => (
             <div key={p.label} style={{
               display: "inline-flex", alignItems: "center", gap: 6,
               fontSize: 12, color: t.textMuted,
@@ -235,11 +262,11 @@ function ConnectedRow({ a, t }) {
             </div>
           ))}
         </div>
-        <Link href={`/agents/configure?handle=${a.handle.toLowerCase()}&tab=permissions`} style={{
+        <Link href={`${configureHref}&tab=permissions`} style={{
           fontSize: 11, color: t.accent, marginTop: 6, display: "inline-block",
           textDecoration: "none",
         }}>
-          View all ({a.permissions.length + 3})
+          View details
         </Link>
       </div>
 
@@ -247,10 +274,13 @@ function ConnectedRow({ a, t }) {
         <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
           Installed skills
         </div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: t.white, lineHeight: 1 }}>
-          {a.installedCount}
+        <div style={{
+          fontSize: 22, fontWeight: 800, color: t.white, lineHeight: 1,
+          fontFamily: "var(--font-jetbrains-mono), monospace",
+        }}>
+          {installedCount ?? 0}
         </div>
-        <Link href={`/agents/configure?handle=${a.handle.toLowerCase()}&tab=skills`} style={{
+        <Link href={`${configureHref}&tab=skills`} style={{
           display: "inline-flex", alignItems: "center", gap: 4,
           marginTop: 8, fontSize: 11, color: t.accent, textDecoration: "none", fontWeight: 600,
         }}>
@@ -259,13 +289,14 @@ function ConnectedRow({ a, t }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Link href={`/agents/configure?handle=${a.handle.toLowerCase()}`} style={{
+        <Link href={configureHref} style={{
           padding: "10px 16px",
           background: t.bgSurface, border: `1px solid ${t.border}`,
           borderRadius: 10, fontSize: 12, fontWeight: 700, color: t.text,
           textDecoration: "none", whiteSpace: "nowrap",
+          display: "inline-flex", alignItems: "center", gap: 6,
         }}>
-          Configure
+          <Settings size={12} /> Configure
         </Link>
         <button type="button" aria-label="More" style={{
           width: 34, height: 34, borderRadius: 10,
@@ -279,103 +310,97 @@ function ConnectedRow({ a, t }) {
   );
 }
 
-function ConnectedSection({ t }) {
-  return (
-    <section style={{ marginBottom: 28 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 800, color: t.white, margin: "0 0 12px" }}>
-        Connected agents
-      </h2>
-      {CONNECTED.map(a => <ConnectedRow key={a.handle} a={a} t={t} />)}
-    </section>
-  );
-}
+/* ──────────────────── Empty states ──────────────────── */
 
-/* ──────────────────── Available connections ──────────────────── */
-
-function AvailableCard({ a, t }) {
+function NotConnectedState({ t, onConnect }) {
   return (
     <div style={{
-      background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
-      padding: 20, display: "flex", gap: 16, minWidth: 0,
+      padding: "44px 24px", borderRadius: 14,
+      background: t.bgCard, border: `1px dashed ${t.border}`,
+      textAlign: "center",
     }}>
       <span aria-hidden style={{
-        width: 56, height: 56, flexShrink: 0, borderRadius: 12,
-        background: `linear-gradient(135deg, ${a.accent}3a, ${a.accent}14)`,
+        width: 52, height: 52, borderRadius: 14,
+        background: `${t.accent}22`, color: t.accent,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
-        fontSize: 26,
+        marginBottom: 14,
       }}>
-        {a.emoji}
+        <Wallet size={22} />
       </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: t.white, marginBottom: 6 }}>
-          {a.handle}
-        </div>
-        <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.55, marginBottom: 10 }}>
-          {a.desc}
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-          {a.tags.map(t2 => (
-            <span key={t2} style={{
-              fontSize: 11, fontWeight: 600, color: t.textMuted,
-              padding: "3px 10px", borderRadius: 999,
-              background: t.bgSurface, border: `1px solid ${t.border}`,
-            }}>
-              {t2}
-            </span>
-          ))}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button type="button" style={{
-            padding: "8px 14px",
-            background: `linear-gradient(135deg, #a855f7, ${a.accent})`,
-            border: "none", borderRadius: 10,
-            fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer",
-          }}>
-            Connect
-          </button>
-          <Link href={`/agents/about/${a.handle.toLowerCase()}`} style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            fontSize: 12, fontWeight: 600, color: t.accent,
-            textDecoration: "none",
-          }}>
-            Learn more <ExternalLink size={12} />
-          </Link>
-        </div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: t.white, marginBottom: 6 }}>
+        Connect a wallet to manage agents
       </div>
+      <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18, maxWidth: 360, margin: "0 auto 18px" }}>
+        Your on-chain agent profile, installed skills, and linked runtimes
+        all key off your NEAR account.
+      </div>
+      <button type="button" onClick={onConnect} style={{
+        padding: "11px 18px",
+        background: `linear-gradient(135deg, #a855f7, #3b82f6)`,
+        border: "none", borderRadius: 10,
+        fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
+        display: "inline-flex", alignItems: "center", gap: 8,
+        boxShadow: `0 10px 28px rgba(168,85,247,0.35)`,
+      }}>
+        <Wallet size={14} /> Connect wallet
+      </button>
     </div>
   );
 }
 
-function AvailableSection({ t }) {
+function NoProfileState({ t }) {
   return (
-    <section style={{
-      background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
-      padding: "20px 20px 22px", marginBottom: 22,
+    <div style={{
+      padding: "36px 24px", borderRadius: 14,
+      background: t.bgCard, border: `1px dashed ${t.border}`,
+      textAlign: "center",
     }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: 6,
+      <span aria-hidden style={{
+        width: 52, height: 52, borderRadius: 14,
+        background: `rgba(168,85,247,0.22)`, color: "#c4b8ff",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        marginBottom: 14,
       }}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: t.white, margin: 0 }}>
-          Available connections
-        </h2>
-        <Link href="/docs/agents" style={{
-          fontSize: 12, color: t.accent, fontWeight: 600, textDecoration: "none",
-          display: "inline-flex", alignItems: "center", gap: 4,
-        }}>
-          Learn more about agents <ExternalLink size={11} />
-        </Link>
+        <Package size={22} />
+      </span>
+      <div style={{ fontSize: 16, fontWeight: 800, color: t.white, marginBottom: 6 }}>
+        No agent registered yet
       </div>
-      <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 16 }}>
-        Connect other AI agents to unlock more capabilities.
+      <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18, maxWidth: 420, margin: "0 auto 18px" }}>
+        Claim a handle and your agent joins IronShield on-chain. Takes ~30s
+        and one wallet signature. Multi-agent support per wallet lands
+        with the Phase 7 migration.
       </div>
-      <div className="ma-available-grid" style={{
-        display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-        gap: 12,
+      <Link href="/agent" style={{
+        display: "inline-flex", alignItems: "center", gap: 8,
+        padding: "11px 18px",
+        background: `linear-gradient(135deg, #a855f7, #3b82f6)`,
+        border: "none", borderRadius: 10,
+        fontSize: 13, fontWeight: 700, color: "#fff", textDecoration: "none",
+        boxShadow: `0 10px 28px rgba(168,85,247,0.35)`,
       }}>
-        {AVAILABLE.map(a => <AvailableCard key={a.handle} a={a} t={t} />)}
+        <Plus size={14} /> Register agent
+      </Link>
+    </div>
+  );
+}
+
+/* ──────────────────── Multi-agent info banner ──────────────────── */
+
+function MultiAgentNotice({ t }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-start", gap: 10,
+      padding: "12px 18px", marginBottom: 22,
+      background: `linear-gradient(135deg, ${t.accent}14, rgba(168,85,247,0.10))`,
+      border: `1px solid ${t.border}`, borderRadius: 12,
+    }}>
+      <Info size={14} color={t.accent} style={{ marginTop: 2, flexShrink: 0 }} />
+      <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.55 }}>
+        <strong style={{ color: t.white }}>Heads up —</strong> the current contract allows one agent per wallet.
+        Multi-agent support with independent NEAR accounts per agent lands in Phase 7.
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -408,15 +433,109 @@ function SecurityBanner({ t }) {
 
 export default function ManageAgentsPage() {
   const t = useTheme();
+  const { connected, address, showModal } = useWallet?.() || {};
+  const agent = useAgent();
+  const { profile, profileLoading } = agent;
+
+  // Pin the hook's ref-unstable callbacks so our effects don't retrigger
+  // every render and spin up an infinite fetch loop. useAgent rebuilds
+  // every callback when viewMethod/callMethod change identity, which
+  // happens on every wallet-context update.
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
+
+  const [ironclawSource, setIronclawSource] = useState(null);
+  const [installed, setInstalled]           = useState([]);
+  const [stats, setStats]                   = useState(null);
+
+  // Auxiliary reads once we have a profile owner. Deps are primitives
+  // only — the hook callbacks are ref-unstable and would retrigger
+  // indefinitely if listed here.
+  useEffect(() => {
+    if (!profile?.owner) {
+      setIronclawSource(null);
+      setInstalled([]);
+      setStats(null);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const a = agentRef.current;
+        const [src, inst, st] = await Promise.all([
+          a.getIronclawSource(profile.owner).catch(() => null),
+          a.getInstalledSkills(profile.owner).catch(() => []),
+          a.getAgentStats(profile.owner).catch(() => null),
+        ]);
+        if (!alive) return;
+        setIronclawSource(src || null);
+        setInstalled(Array.isArray(inst) ? inst : []);
+        setStats(st || null);
+      } catch {
+        // Non-fatal — stats are decoration, absence is fine.
+      }
+    })();
+    return () => { alive = false; };
+  }, [profile?.owner]);
+
+  // useAgent self-refetches on address change — we don't need a second
+  // effect here, and having one made this page's "no profile" state
+  // spin a fetch every render.
+
+  const handleCreate = useCallback(() => {
+    if (!connected) { showModal?.(); return; }
+    // Without a profile, route to the agent creator flow; with a profile
+    // the current contract has no multi-agent support.
+    if (!profile) {
+      if (typeof window !== "undefined") window.location.href = "/agent";
+      return;
+    }
+    alert("Multi-agent support lands with the Phase 7 contract migration.");
+  }, [connected, showModal, profile]);
+
+  const installedCount = installed.length;
+
   return (
     <>
-      <PageHeader t={t} />
-      <StatsStrip t={t} />
-      <ConnectedSection t={t} />
-      <AvailableSection t={t} />
+      <PageHeader t={t} onCreate={handleCreate} disabled={false} />
+
+      {connected && <MultiAgentNotice t={t} />}
+
+      <StatsStrip t={t} hasProfile={!!profile} installedCount={installedCount} />
+
+      <section style={{ marginBottom: 28 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 800, color: t.white, margin: "0 0 12px" }}>
+          Connected agents
+        </h2>
+
+        {!connected && (
+          <NotConnectedState t={t} onConnect={() => showModal?.()} />
+        )}
+
+        {connected && profileLoading && !profile && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textMuted, fontSize: 13 }}>
+            <Loader2 size={14} style={{ animation: "ma-spin 0.9s linear infinite" }} /> Loading your agent…
+          </div>
+        )}
+
+        {connected && !profileLoading && !profile && <NoProfileState t={t} />}
+
+        {connected && profile && (
+          <ConnectedRow
+            t={t}
+            profile={profile}
+            address={address}
+            stats={stats}
+            ironclawSource={ironclawSource}
+            installedCount={installedCount}
+          />
+        )}
+      </section>
+
       <SecurityBanner t={t} />
 
       <style jsx global>{`
+        @keyframes ma-spin { to { transform: rotate(360deg); } }
         @media (max-width: 1100px) {
           .ma-row {
             grid-template-columns: 1fr 1fr !important;
@@ -426,7 +545,6 @@ export default function ManageAgentsPage() {
         }
         @media (max-width: 820px) {
           .ma-stats { grid-template-columns: repeat(2, 1fr) !important; }
-          .ma-available-grid { grid-template-columns: 1fr !important; }
           .ma-row { grid-template-columns: 1fr !important; }
         }
       `}</style>

@@ -1,64 +1,80 @@
 "use client";
-// Marketplace (/skills). Pixel-hewing to the mock:
-//   • Hero strip: headline + subhead + stats + "Create a skill" CTA
-//   • Search + filter chip row (All / Free / Paid / Verified / Filters)
-//   • Featured skills — horizontal row of 6 cards (scroll on mobile)
-//   • Top skills this week — table with rank, skill, category, installs,
-//     rating, price
-//   • Right rail: "Become a top creator" CTA + "Recent activity" list
+// Marketplace (/skills). Reads entirely from the ironshield.near contract:
+//   • list_skills(limit, offset)  → base list
+//   • get_skills_count            → hero stat "Total Skills"
+//   • install_count per row       → derived totals + featured sort
+//   • get_public_agents           → "Creators" count (distinct authors)
 //
-// All data is placeholder right now; the follow-up PR wires contract
-// + backend fetches. Keeping every card shape keyed by id so swapping
-// mock → real is a one-line change in the data arrays.
+// Sections:
+//   • Hero: headline + stats + Create CTA
+//   • Filter bar: search + All/Free/Paid chips (Verified hidden until
+//     Phase 7 adds a verified flag on-chain)
+//   • Featured skills: top 6 by install_count
+//   • Top skills: full table, install_count desc (previously "Top this
+//     week"; title changed until the backend surfaces a weekly ranking)
+//   • Right rail: Become a top creator CTA + Newest skills feed (from
+//     created_at desc)
+//
+// Empty states are honest: zero skills → "No skills published yet"
+// with a primary CTA to /skills/create. No mock rows.
 
 import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Filter, Zap, Trophy, Star, CheckCircle2, DollarSign,
-  Flame, ArrowRight, Sparkles, ChevronRight, Tag,
+  Search, Filter, Zap, Star, CheckCircle2, DollarSign,
+  Flame, ArrowRight, Sparkles, ChevronRight, Tag, Package, Plus,
 } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
+import useAgent from "@/hooks/useAgent";
 
-/* ──────────────────── Data (mock) ──────────────────── */
+const YOCTO_PER_NEAR = 1_000_000_000_000_000_000_000_000n;
 
-const HERO_STATS = [
-  { label: "Total Skills",   value: "1,320"   },
-  { label: "Total Installs", value: "18.6K"   },
-  { label: "Creators",       value: "320"     },
-  { label: "Volume (NEAR)",  value: "$24.8K"  },
-];
+/* ──────────────────── Helpers ──────────────────── */
 
-const FILTERS = [
-  { key: "all",      label: "All",      icon: null      },
-  { key: "free",     label: "Free",     icon: DollarSign },
-  { key: "paid",     label: "Paid",     icon: null      },
-  { key: "verified", label: "Verified", icon: CheckCircle2 },
-];
+function formatPrice(priceYocto) {
+  try {
+    const y = BigInt(priceYocto ?? "0");
+    if (y === 0n) return "Free";
+    // Show up to 3 decimal places, trim trailing zeros.
+    const whole   = y / YOCTO_PER_NEAR;
+    const remYocto = y % YOCTO_PER_NEAR;
+    const frac    = Number(remYocto) / 1e24;
+    const combined = Number(whole) + frac;
+    const str     = combined.toFixed(3).replace(/\.?0+$/, "");
+    return `${str} NEAR`;
+  } catch {
+    return "—";
+  }
+}
 
-const FEATURED = [
-  { id: 1, name: "Airdrop Hunter",       author: "0xYourn…near", verified: true,  installs: "12.4K", rating: 4.9, price: "Free",    badge: "Trending", accent: "#a855f7", desc: "Find potential airdrops across multiple networks.", emoji: "🪂" },
-  { id: 2, name: "DeFi Portfolio Tracker", author: "DefiWizard.near", verified: true,  installs: "9.2K",  rating: 4.8, price: "Free",    badge: "Trending", accent: "#10b981", desc: "Track and analyze your DeFi portfolio in real-time.", emoji: "📈" },
-  { id: 3, name: "Auto Swap",            author: "SwapMaster.near", verified: true,  installs: "7.1K",  rating: 4.7, price: "0.5 NEAR", badge: "Popular",  accent: "#3b82f6", desc: "Automatically swap tokens with best routes.", emoji: "🔁" },
-  { id: 4, name: "Smart Market Alert",   author: "MarketSense.near", verified: true, installs: "6.3K",  rating: 4.6, price: "0.3 NEAR", badge: "Hot",      accent: "#f97316", desc: "Get real-time alerts for market movements.", emoji: "📊" },
-  { id: 5, name: "Twitter Assistant",    author: "SocialBot.near",   verified: true, installs: "5.8K",  rating: 4.5, price: "Free",    badge: "Popular",  accent: "#fb923c", desc: "Automate tweets, replies and engagement.", emoji: "🤖" },
-  { id: 6, name: "Contract Scanner",     author: "BlockGuard.near",  verified: true, installs: "3.9K",  rating: 4.8, price: "0.2 NEAR", badge: "New",      accent: "#14b8a6", desc: "Scan smart contracts for vulnerabilities.", emoji: "🛡️" },
-];
+function formatCount(n) {
+  const v = Number(n || 0);
+  if (v < 1000) return String(v);
+  if (v < 1_000_000) return `${(v / 1000).toFixed(v >= 9950 ? 0 : 1)}K`;
+  return `${(v / 1_000_000).toFixed(1)}M`;
+}
 
-const TOP_THIS_WEEK = FEATURED.slice(0, 5).map((s, i) => ({
-  rank: i + 1,
-  ...s,
-  category: i === 0 ? "Airdrops & Rewards" : i === 1 ? "DeFi" : i === 2 ? "Trading" : i === 3 ? "Analytics" : "Social",
-}));
+function truncAuthor(addr) {
+  if (!addr) return "anon";
+  if (addr.length > 20) return `${addr.slice(0, 10)}…${addr.slice(-6)}`;
+  return addr;
+}
 
-const RECENT_ACTIVITY = [
-  { skill: "DeFi Yield Optimizer", author: "YieldKing.near",   event: "was installed", when: "2m ago"  },
-  { skill: "Wallet Guard",         author: "BlockGuard.near",  event: "was installed", when: "5m ago"  },
-  { skill: "NFT Floor Tracker",    author: "NFTAlert.near",    event: "was installed", when: "12m ago" },
-  { skill: "Cross-chain Bridge",   author: "BridgeMaster.near",event: "was installed", when: "18m ago" },
-];
+function accentFor(id) {
+  // Stable per-skill accent so the featured tiles aren't all one color.
+  const palette = ["#a855f7", "#10b981", "#3b82f6", "#f97316", "#fb923c", "#14b8a6", "#ec4899", "#eab308"];
+  return palette[Number(id || 0) % palette.length];
+}
 
 /* ──────────────────── Hero ──────────────────── */
 
-function Hero({ t }) {
+function Hero({ t, stats }) {
+  const rows = [
+    { label: "Total Skills",   value: stats.totalSkills   != null ? formatCount(stats.totalSkills)   : "—" },
+    { label: "Total Installs", value: stats.totalInstalls != null ? formatCount(stats.totalInstalls) : "—" },
+    { label: "Creators",       value: stats.creators      != null ? formatCount(stats.creators)      : "—" },
+    { label: "Paid / Free",    value: stats.paidCount != null ? `${stats.paidCount}/${stats.freeCount}` : "—" },
+  ];
   return (
     <div className="mk-hero" style={{
       position: "relative", overflow: "hidden",
@@ -71,7 +87,6 @@ function Hero({ t }) {
       gridTemplateColumns: "minmax(0, 1fr) minmax(0, 0.9fr) auto",
       gap: 24, alignItems: "center",
     }}>
-      {/* Radial blob bg */}
       <div aria-hidden style={{
         position: "absolute", right: -80, top: -40, width: 360, height: 360,
         background: `radial-gradient(circle at center, rgba(168,85,247,0.25), transparent 65%)`,
@@ -101,7 +116,7 @@ function Hero({ t }) {
         padding: "16px 18px",
         background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 12,
       }}>
-        {HERO_STATS.map(s => (
+        {rows.map(s => (
           <div key={s.label} style={{ minWidth: 0, textAlign: "left" }}>
             <div style={{
               fontSize: 22, fontWeight: 800, color: t.white, lineHeight: 1.1,
@@ -131,7 +146,12 @@ function Hero({ t }) {
 
 /* ──────────────────── Filter bar ──────────────────── */
 
-function FilterBar({ t }) {
+function FilterBar({ t, query, setQuery, filter, setFilter }) {
+  const filters = [
+    { key: "all",  label: "All" },
+    { key: "free", label: "Free", icon: DollarSign },
+    { key: "paid", label: "Paid" },
+  ];
   return (
     <div style={{ marginBottom: 24 }}>
       <label style={{
@@ -143,6 +163,8 @@ function FilterBar({ t }) {
       }}>
         <Search size={15} color={t.textDim} />
         <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Search skills…"
           style={{
             flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none",
@@ -152,41 +174,81 @@ function FilterBar({ t }) {
       </label>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        {FILTERS.map((f, i) => {
-          const active = i === 0;
+        {filters.map((f) => {
+          const active = f.key === filter;
           const Icon = f.icon;
           return (
-            <button key={f.key} type="button" style={{
-              padding: "7px 14px",
-              background: active ? `linear-gradient(135deg, #a855f7, ${t.accent})` : t.bgCard,
-              border: active ? "none" : `1px solid ${t.border}`,
-              borderRadius: 999, cursor: "pointer",
-              fontSize: 12.5, fontWeight: 600,
-              color: active ? "#fff" : t.textMuted,
-              display: "inline-flex", alignItems: "center", gap: 6,
-            }}>
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              style={{
+                padding: "7px 14px",
+                background: active ? `linear-gradient(135deg, #a855f7, ${t.accent})` : t.bgCard,
+                border: active ? "none" : `1px solid ${t.border}`,
+                borderRadius: 999, cursor: "pointer",
+                fontSize: 12.5, fontWeight: 600,
+                color: active ? "#fff" : t.textMuted,
+                display: "inline-flex", alignItems: "center", gap: 6,
+              }}
+            >
               {Icon && <Icon size={12} />}
               {f.label}
             </button>
           );
         })}
-        <button type="button" style={{
-          padding: "7px 14px",
-          background: t.bgCard, border: `1px solid ${t.border}`,
-          borderRadius: 999, cursor: "pointer",
-          fontSize: 12.5, fontWeight: 600, color: t.textMuted,
-          display: "inline-flex", alignItems: "center", gap: 6,
-        }}>
-          <Filter size={12} /> Filters
-        </button>
       </div>
     </div>
   );
 }
 
-/* ──────────────────── Featured card ──────────────────── */
+/* ──────────────────── Empty state ──────────────────── */
+
+function EmptyState({ t, loading }) {
+  return (
+    <div style={{
+      padding: "44px 24px", borderRadius: 14,
+      background: t.bgCard, border: `1px dashed ${t.border}`,
+      textAlign: "center",
+    }}>
+      <span aria-hidden style={{
+        width: 52, height: 52, borderRadius: 14,
+        background: `linear-gradient(135deg, rgba(168,85,247,0.22), rgba(59,130,246,0.12))`,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        color: "#c4b8ff", marginBottom: 14,
+      }}>
+        <Package size={22} />
+      </span>
+      <div style={{ fontSize: 16, fontWeight: 800, color: t.white, marginBottom: 6 }}>
+        {loading ? "Loading skills…" : "No skills published yet"}
+      </div>
+      <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18, maxWidth: 360, margin: "0 auto 18px" }}>
+        {loading
+          ? "Fetching the marketplace from ironshield.near."
+          : "Be the first to publish a capability. Creators earn every time another agent installs."}
+      </div>
+      {!loading && (
+        <Link href="/skills/create" style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          padding: "11px 18px",
+          background: `linear-gradient(135deg, #a855f7, #3b82f6)`,
+          border: "none", borderRadius: 10,
+          fontSize: 13, fontWeight: 700, color: "#fff", textDecoration: "none",
+          boxShadow: `0 10px 28px rgba(168,85,247,0.35)`,
+        }}>
+          <Plus size={14} /> Create a skill
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────── Featured ──────────────────── */
 
 function FeaturedCard({ skill, t }) {
+  const accent = accentFor(skill.id);
+  const price  = formatPrice(skill.price_yocto);
+  const free   = price === "Free";
   return (
     <Link href={`/skills/${skill.id}`} className="mk-featured-card" style={{
       flex: "0 0 220px",
@@ -199,29 +261,31 @@ function FeaturedCard({ skill, t }) {
       <div style={{
         position: "relative",
         height: 72, borderRadius: 10,
-        background: `linear-gradient(135deg, ${skill.accent}33, ${skill.accent}12)`,
+        background: `linear-gradient(135deg, ${accent}33, ${accent}12)`,
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 28,
       }}>
-        <span aria-hidden>{skill.emoji}</span>
-        <span style={{
-          position: "absolute", top: 6, left: 6,
-          fontSize: 10, fontWeight: 700,
-          padding: "2px 8px",
-          background: "rgba(0,0,0,0.45)", color: "#fff", borderRadius: 999,
-          display: "inline-flex", alignItems: "center", gap: 4,
-        }}>
-          <Flame size={10} /> {skill.badge}
-        </span>
+        <Package size={24} color={accent} />
+        {skill.install_count > 0 && (
+          <span style={{
+            position: "absolute", top: 6, left: 6,
+            fontSize: 10, fontWeight: 700,
+            padding: "2px 8px",
+            background: "rgba(0,0,0,0.45)", color: "#fff", borderRadius: 999,
+            display: "inline-flex", alignItems: "center", gap: 4,
+          }}>
+            <Flame size={10} /> {formatCount(skill.install_count)}
+          </span>
+        )}
         <span style={{
           position: "absolute", top: 6, right: 6,
           fontSize: 10, fontWeight: 700,
           padding: "2px 8px",
-          background: skill.price === "Free" ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.12)",
-          color: skill.price === "Free" ? "#10b981" : "#fff",
+          background: free ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.12)",
+          color: free ? "#10b981" : "#fff",
           borderRadius: 999,
         }}>
-          {skill.price}
+          {price}
         </span>
       </div>
 
@@ -229,27 +293,26 @@ function FeaturedCard({ skill, t }) {
         {skill.name}
       </div>
       <div style={{ fontSize: 11, color: t.textDim, display: "inline-flex", alignItems: "center", gap: 4 }}>
-        by {skill.author}
-        {skill.verified && <CheckCircle2 size={11} color={t.accent} />}
+        by {truncAuthor(skill.author)}
       </div>
-      <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, minHeight: 34 }}>
-        {skill.desc}
+      <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, minHeight: 34, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        {skill.description || ""}
       </div>
       <div style={{
         marginTop: "auto",
         display: "flex", justifyContent: "space-between", alignItems: "center",
         paddingTop: 8, borderTop: `1px solid ${t.border}`,
       }}>
-        <div style={{ fontSize: 11, color: t.textDim }}>{skill.installs} installs</div>
-        <div style={{ fontSize: 11, color: t.textMuted, display: "inline-flex", alignItems: "center", gap: 3 }}>
-          <Star size={11} color="#f59e0b" fill="#f59e0b" /> {skill.rating}
+        <div style={{ fontSize: 11, color: t.textDim }}>
+          {formatCount(skill.install_count)} {skill.install_count === 1 ? "install" : "installs"}
         </div>
       </div>
     </Link>
   );
 }
 
-function FeaturedSection({ t }) {
+function FeaturedSection({ t, skills }) {
+  if (!skills.length) return null;
   return (
     <section style={{ marginBottom: 28 }}>
       <div style={{
@@ -275,15 +338,16 @@ function FeaturedSection({ t }) {
         scrollSnapType: "x mandatory",
         paddingBottom: 4,
       }}>
-        {FEATURED.map(s => <FeaturedCard key={s.id} skill={s} t={t} />)}
+        {skills.map(s => <FeaturedCard key={s.id} skill={s} t={t} />)}
       </div>
     </section>
   );
 }
 
-/* ──────────────────── Weekly table ──────────────────── */
+/* ──────────────────── Top table ──────────────────── */
 
-function WeeklyTable({ t }) {
+function TopTable({ t, skills }) {
+  if (!skills.length) return null;
   return (
     <section className="mk-weekly" style={{
       background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
@@ -294,19 +358,14 @@ function WeeklyTable({ t }) {
         marginBottom: 14, padding: "0 4px",
       }}>
         <h2 style={{ fontSize: 16, fontWeight: 800, color: t.white, margin: 0 }}>
-          Top skills this week
+          Top skills
         </h2>
-        <Link href="/skills/top" style={{
-          fontSize: 12, color: t.accent, fontWeight: 600, textDecoration: "none",
-        }}>
-          View all
-        </Link>
       </div>
 
       <div role="table" style={{ fontSize: 13 }}>
         <div role="row" className="mk-tbl-header" style={{
           display: "grid",
-          gridTemplateColumns: "44px minmax(0, 1.7fr) minmax(0, 1fr) 80px 110px 80px",
+          gridTemplateColumns: "44px minmax(0, 2fr) minmax(0, 1fr) 100px 80px",
           gap: 10, padding: "8px 10px",
           fontSize: 11, fontWeight: 700, color: t.textDim,
           textTransform: "uppercase", letterSpacing: 0.8,
@@ -314,76 +373,69 @@ function WeeklyTable({ t }) {
         }}>
           <div>#</div>
           <div>Skill</div>
-          <div>Category</div>
+          <div>Author</div>
           <div>Installs</div>
-          <div>Rating</div>
           <div>Price</div>
         </div>
-        {TOP_THIS_WEEK.map(s => (
-          <Link
-            key={s.rank}
-            href={`/skills/${s.id}`}
-            role="row"
-            className="mk-tbl-row"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "44px minmax(0, 1.7fr) minmax(0, 1fr) 80px 110px 80px",
-              gap: 10, padding: "12px 10px",
-              alignItems: "center",
-              borderBottom: `1px solid ${t.border}`,
-              textDecoration: "none", color: "inherit",
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{s.rank}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-              <span aria-hidden style={{
-                width: 32, height: 32, flexShrink: 0, borderRadius: 8,
-                background: `linear-gradient(135deg, ${s.accent}33, ${s.accent}14)`,
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                fontSize: 16,
-              }}>
-                {s.emoji}
-              </span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.white, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {s.name}
-                </div>
-                <div style={{
-                  fontSize: 11, color: t.textDim, marginTop: 2,
-                  display: "inline-flex", alignItems: "center", gap: 4,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        {skills.map((s, i) => {
+          const accent = accentFor(s.id);
+          const price  = formatPrice(s.price_yocto);
+          return (
+            <Link
+              key={s.id}
+              href={`/skills/${s.id}`}
+              role="row"
+              className="mk-tbl-row"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "44px minmax(0, 2fr) minmax(0, 1fr) 100px 80px",
+                gap: 10, padding: "12px 10px",
+                alignItems: "center",
+                borderBottom: `1px solid ${t.border}`,
+                textDecoration: "none", color: "inherit",
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{i + 1}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <span aria-hidden style={{
+                  width: 32, height: 32, flexShrink: 0, borderRadius: 8,
+                  background: `linear-gradient(135deg, ${accent}33, ${accent}14)`,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  color: accent,
                 }}>
-                  by {s.author}
-                  {s.verified && <CheckCircle2 size={10} color={t.accent} />}
+                  <Package size={14} />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.white, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.name}
+                  </div>
+                  <div style={{
+                    fontSize: 11, color: t.textDim, marginTop: 2,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {s.description || ""}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div>
-              <span style={{
-                fontSize: 11, padding: "3px 10px", borderRadius: 999,
-                background: `${s.accent}22`, color: s.accent, fontWeight: 600,
-                display: "inline-flex", alignItems: "center", gap: 4,
+              <div style={{
+                fontSize: 12, color: t.textMuted,
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>
-                <Tag size={10} /> {s.category}
-              </span>
-            </div>
-            <div style={{ fontFamily: "var(--font-jetbrains-mono), monospace", color: t.textMuted }}>
-              {s.installs}
-            </div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, color: t.textMuted }}>
-              <Star size={11} color="#f59e0b" fill="#f59e0b" /> {s.rating}{" "}
-              <span style={{ color: t.textDim, fontSize: 11 }}>
-                ({Math.round(Math.random() * 300 + 100)})
-              </span>
-            </div>
-            <div style={{
-              fontSize: 12, fontWeight: 700,
-              color: s.price === "Free" ? "#10b981" : t.white,
-            }}>
-              {s.price}
-            </div>
-          </Link>
-        ))}
+                {truncAuthor(s.author)}
+              </div>
+              <div style={{ fontFamily: "var(--font-jetbrains-mono), monospace", color: t.textMuted }}>
+                {formatCount(s.install_count)}
+              </div>
+              <div style={{
+                fontSize: 12, fontWeight: 700,
+                color: price === "Free" ? "#10b981" : t.white,
+              }}>
+                {price}
+              </div>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );
@@ -406,9 +458,7 @@ function BecomeTopCreator({ t }) {
           background: `linear-gradient(135deg, #fbbf24, #f59e0b)`,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 18,
-        }}>
-          🏆
-        </div>
+        }}>🏆</div>
         <div style={{ fontSize: 14, fontWeight: 800, color: t.white }}>
           Become a top creator
         </div>
@@ -429,48 +479,49 @@ function BecomeTopCreator({ t }) {
   );
 }
 
-function RecentActivity({ t }) {
+function NewestSkills({ t, skills }) {
+  if (!skills.length) return null;
   return (
     <div style={{
       borderRadius: 14, padding: "16px 16px 14px",
       background: t.bgCard, border: `1px solid ${t.border}`,
     }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: t.white, marginBottom: 12 }}>
-        Recent activity
+        Newest skills
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {RECENT_ACTIVITY.map((a, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-            <span aria-hidden style={{
-              width: 28, height: 28, flexShrink: 0, borderRadius: 8,
-              background: `${t.accent}20`, border: `1px solid ${t.border}`,
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-              fontSize: 12, color: t.accent,
-            }}>
-              <Sparkles size={12} />
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: 12, fontWeight: 700, color: t.white,
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>{a.skill}</div>
-              <div style={{ fontSize: 11, color: t.textDim }}>
-                by {a.author} {a.event}
+        {skills.slice(0, 5).map((s) => {
+          const accent = accentFor(s.id);
+          return (
+            <Link
+              key={s.id}
+              href={`/skills/${s.id}`}
+              style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                textDecoration: "none", color: "inherit",
+              }}
+            >
+              <span aria-hidden style={{
+                width: 28, height: 28, flexShrink: 0, borderRadius: 8,
+                background: `${accent}22`, border: `1px solid ${t.border}`,
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                color: accent,
+              }}>
+                <Sparkles size={12} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 12, fontWeight: 700, color: t.white,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>{s.name}</div>
+                <div style={{ fontSize: 11, color: t.textDim }}>
+                  by {truncAuthor(s.author)}
+                </div>
               </div>
-            </div>
-            <div style={{ fontSize: 10.5, color: t.textDim, whiteSpace: "nowrap" }}>
-              {a.when}
-            </div>
-          </div>
-        ))}
+            </Link>
+          );
+        })}
       </div>
-      <Link href="/skills/activity" style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        marginTop: 12, fontSize: 12, color: t.accent, fontWeight: 600,
-        textDecoration: "none",
-      }}>
-        View all activity <ArrowRight size={12} />
-      </Link>
     </div>
   );
 }
@@ -479,10 +530,108 @@ function RecentActivity({ t }) {
 
 export default function MarketplacePage() {
   const t = useTheme();
+  const agent = useAgent();
+
+  // Pin hook callbacks — useAgent returns new identities each render,
+  // which would retrigger this fetch forever if listed in effect deps.
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
+
+  const [skills, setSkills] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState(null);
+  const [creators, setCreators] = useState(null);
+
+  const [query, setQuery]   = useState("");
+  const [filter, setFilter] = useState("all");
+
+  // Single on-mount fetch: skills list + public-agents count for the
+  // Creators stat. Empty deps + a ref-pinned caller.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const a = agentRef.current;
+        const [rows, creators] = await Promise.all([
+          a.listSkills({ limit: 100, offset: 0 }),
+          a.getPublicAgents({ limit: 100, offset: 0 }).catch(() => []),
+        ]);
+        if (!alive) return;
+        setSkills(Array.isArray(rows) ? rows : []);
+        setCreators(Array.isArray(creators) ? creators.length : 0);
+      } catch (e) {
+        if (!alive) return;
+        setError(e?.message || "Failed to load marketplace");
+        setSkills([]);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Derived stats + filtered list.
+  const stats = useMemo(() => {
+    const totalInstalls = skills.reduce((sum, s) => sum + Number(s.install_count || 0), 0);
+    const freeCount = skills.filter(s => String(s.price_yocto ?? "0") === "0").length;
+    const paidCount = skills.length - freeCount;
+    return {
+      totalSkills: skills.length,
+      totalInstalls,
+      creators,
+      freeCount,
+      paidCount,
+    };
+  }, [skills, creators]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return skills.filter(s => {
+      if (filter === "free" && String(s.price_yocto ?? "0") !== "0") return false;
+      if (filter === "paid" && String(s.price_yocto ?? "0") === "0") return false;
+      if (q) {
+        const hay = `${s.name || ""} ${s.description || ""} ${s.author || ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [skills, query, filter]);
+
+  const featured = useMemo(() => {
+    const byInstalls = [...visible].sort((a, b) => Number(b.install_count || 0) - Number(a.install_count || 0));
+    return byInstalls.slice(0, 6);
+  }, [visible]);
+
+  const topTable = useMemo(() => {
+    const byInstalls = [...visible].sort((a, b) => Number(b.install_count || 0) - Number(a.install_count || 0));
+    return byInstalls.slice(0, 10);
+  }, [visible]);
+
+  const newest = useMemo(() => {
+    const byCreated = [...skills].sort((a, b) => BigInt(b.created_at || 0) > BigInt(a.created_at || 0) ? 1 : -1);
+    return byCreated.slice(0, 5);
+  }, [skills]);
+
+  const isEmpty = !loading && skills.length === 0;
+  const filteredEmpty = !loading && skills.length > 0 && visible.length === 0;
+
   return (
     <>
-      <Hero t={t} />
-      <FilterBar t={t} />
+      <Hero t={t} stats={stats} />
+      <FilterBar t={t} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} />
+
+      {error && (
+        <div style={{
+          padding: "14px 16px", marginBottom: 20,
+          borderRadius: 12, border: `1px solid rgba(239,68,68,0.35)`,
+          background: "rgba(239,68,68,0.06)",
+          fontSize: 13, color: "#fda4af",
+        }}>
+          Couldn't load marketplace: {error}
+        </div>
+      )}
 
       <div className="mk-grid" style={{
         display: "grid",
@@ -491,8 +640,22 @@ export default function MarketplacePage() {
         alignItems: "flex-start",
       }}>
         <div style={{ minWidth: 0 }}>
-          <FeaturedSection t={t} />
-          <WeeklyTable t={t} />
+          {isEmpty && <EmptyState t={t} loading={loading} />}
+          {filteredEmpty && (
+            <div style={{
+              padding: "36px 24px", borderRadius: 14,
+              background: t.bgCard, border: `1px dashed ${t.border}`,
+              textAlign: "center", color: t.textMuted, fontSize: 13,
+            }}>
+              No skills match your search. Clear the query or try a different filter.
+            </div>
+          )}
+          {!isEmpty && !filteredEmpty && (
+            <>
+              <FeaturedSection t={t} skills={featured} />
+              <TopTable t={t} skills={topTable} />
+            </>
+          )}
         </div>
         <aside className="mk-right" style={{
           position: "sticky", top: 76,
@@ -500,7 +663,7 @@ export default function MarketplacePage() {
           minWidth: 0,
         }}>
           <BecomeTopCreator t={t} />
-          <RecentActivity t={t} />
+          <NewestSkills t={t} skills={newest} />
         </aside>
       </div>
 
