@@ -9,18 +9,18 @@
 import { useEffect, useState } from "react";
 
 export default function useMediaQuery(query) {
-  const [matches, setMatches] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia(query).matches;
-  });
+  // Always start false — on the server there's no window, and on the first
+  // client render we MUST match the server output so hydration doesn't
+  // bail. The useEffect below syncs the real value after mount, which
+  // triggers a second render on mobile without a hydration mismatch.
+  const [matches, setMatches] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mql = window.matchMedia(query);
     const handler = (e) => setMatches(e.matches);
-    mql.addEventListener("change", handler);
-    // Re-sync on mount (client renders may differ from SSR initial).
     setMatches(mql.matches);
+    mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
   }, [query]);
 
