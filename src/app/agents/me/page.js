@@ -1,9 +1,16 @@
 "use client";
-// Owner's private agent dashboard. Mirrors the legacy-route wrapper pattern
-// used by /agent and /earn — keeps Next.js app-router happy while the page
-// component lives under src/components/.
+// /agents/me — user's agent dashboard, redesigned. Now a list view of
+// every agent the user has connected. The single-agent detail + configure
+// flow lives at /agents/[handle]/configure. The old AgentDashboardPage
+// component remains importable for one release in case we need to roll back.
 
-import { lazy } from "react";
-import LegacyRoute from "@/components/shell/LegacyRoute";
-const AgentDashboardPage = lazy(() => import("@/components/AgentDashboardPage"));
-export default function Page() { return <LegacyRoute Component={AgentDashboardPage} />; }
+import SkillsShell from "@/components/skills/SkillsShell";
+import ManageAgentsPage from "@/components/skills/ManageAgentsPage";
+
+export default function Page() {
+  return (
+    <SkillsShell>
+      <ManageAgentsPage />
+    </SkillsShell>
+  );
+}
