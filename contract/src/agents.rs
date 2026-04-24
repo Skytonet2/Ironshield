@@ -1,5 +1,6 @@
 use crate::*;
 use near_sdk::json_types::U128;
+use near_sdk::{NearToken, Promise};
 
 // ── Weekly bucket math ──────────────────────────────────────────────────────
 // Weeks run Saturday 21:00 UTC → next Saturday 21:00 UTC so the contract's
@@ -20,6 +21,19 @@ pub const MAX_INSTALLED_PER_AGENT:   usize = 25;
 pub const MAX_SKILL_NAME_LEN:        usize = 48;
 pub const MAX_SKILL_DESCRIPTION_LEN: usize = 240;
 pub const MAX_TASK_DESCRIPTION_LEN:  usize = 280;
+
+// ── Phase 7 (Sub-PR A): skill metadata caps ────────────────────────────────
+pub const MAX_SKILL_TAGS:            usize = 5;
+pub const MAX_SKILL_TAG_LEN:         usize = 24;
+pub const MAX_SKILL_CATEGORY_LEN:    usize = 32;
+pub const MAX_SKILL_IMAGE_URL_LEN:   usize = 256;
+
+/// Basis-points split on paid skill installs. 10_000 = 100%, so
+/// PLATFORM_FEE_BPS=100 → 1% platform / 99% author. Constants so the
+/// split is auditable in one place and can't drift between the Rust
+/// call site and whatever the frontend displays.
+pub const PLATFORM_FEE_BPS:          u32 = 100;
+pub const BPS_DENOM:                 u32 = 10_000;
 
 fn current_week_index() -> u64 {
     env::block_timestamp().saturating_sub(WEEK_ANCHOR_NS) / NS_PER_WEEK
@@ -57,6 +71,25 @@ pub struct Skill {
     pub price_yocto:   u128,
     pub install_count: u64,
     pub created_at:    u64,
+}
+
+/// Phase 7 companion row stored in a parallel map keyed by `skill_id`.
+/// Kept separate from `Skill` so the Phase 5 skills already on-chain
+/// don't need to be re-encoded (borsh has no schema embedded, so adding
+/// fields to `Skill` would require rewriting every existing row — we
+/// dodge that by attaching metadata here instead). Populated eagerly by
+/// `create_skill` on new listings; legacy skills show `None` until the
+/// author calls `update_skill_metadata`.
+#[near(serializers=[borsh, json])]
+#[derive(Clone, Default)]
+pub struct SkillMetadata {
+    pub category:  String,
+    pub tags:      Vec<String>,
+    pub image_url: String,
+    /// Admin-toggled trust signal. Surfaced as a blue-check on the
+    /// marketplace; skills start `false` and can only be flipped by
+    /// `owner_id` via `set_skill_verified`.
+    pub verified:  bool,
 }
 
 /// One row in an agent's recent-activity ring buffer. The `kind` is a short
@@ -662,11 +695,41 @@ impl StakingContract {
 
     // ── Skills marketplace ─────────────────────────────────────────────────
 
+    /// Normalize + validate a tags vector. Case-insensitive dedupe, empty
+    /// strings dropped, bounded length per tag + total. Reused by create +
+    /// update paths so both share identical rules.
+    fn sanitize_tags(raw: Vec<String>) -> Vec<String> {
+        let mut out: Vec<String> = Vec::with_capacity(raw.len().min(MAX_SKILL_TAGS));
+        for t in raw.into_iter() {
+            let trimmed = t.trim().to_lowercase();
+            if trimmed.is_empty() { continue; }
+            assert!(
+                trimmed.len() <= MAX_SKILL_TAG_LEN,
+                "Each tag must be ≤{} chars",
+                MAX_SKILL_TAG_LEN
+            );
+            if !out.iter().any(|existing| existing == &trimmed) {
+                out.push(trimmed);
+            }
+            if out.len() >= MAX_SKILL_TAGS { break; }
+        }
+        out
+    }
+
+    /// Phase 7: `create_skill` now also accepts category / tags /
+    /// image_url. All four metadata fields are optional in the borsh
+    /// surface — passing empty string / empty vec writes a default
+    /// `SkillMetadata` row so the skill still has a metadata entry
+    /// (distinguishes "Phase 7 skill with blank metadata" from "legacy
+    /// Phase 5/6 skill that pre-dates metadata").
     pub fn create_skill(
         &mut self,
-        name: String,
+        name:        String,
         description: String,
         price_yocto: U128,
+        category:    String,
+        tags:        Vec<String>,
+        image_url:   String,
     ) -> u64 {
         assert!(!self.paused, "Contract is paused");
         let author = env::predecessor_account_id();
@@ -684,6 +747,19 @@ impl StakingContract {
             desc_t.len() <= MAX_SKILL_DESCRIPTION_LEN,
             "Skill description must be ≤240 chars"
         );
+        let cat_t = category.trim();
+        assert!(
+            cat_t.len() <= MAX_SKILL_CATEGORY_LEN,
+            "Category must be ≤{} chars",
+            MAX_SKILL_CATEGORY_LEN
+        );
+        let img_t = image_url.trim();
+        assert!(
+            img_t.len() <= MAX_SKILL_IMAGE_URL_LEN,
+            "Image URL must be ≤{} chars",
+            MAX_SKILL_IMAGE_URL_LEN
+        );
+        let clean_tags = Self::sanitize_tags(tags);
 
         let id = self.next_skill_id;
         self.next_skill_id = self.next_skill_id.saturating_add(1);
@@ -697,13 +773,80 @@ impl StakingContract {
             created_at:    env::block_timestamp(),
         };
         self.skills.insert(id, skill);
+        self.skill_metadata.insert(id, SkillMetadata {
+            category:  cat_t.to_string(),
+            tags:      clean_tags,
+            image_url: img_t.to_string(),
+            verified:  false,
+        });
         env::log_str(&format!(
-            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_created\",\"data\":{{\"id\":{},\"author\":\"{}\",\"name\":\"{}\"}}}}",
-            id, author, name_t
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_created\",\"data\":{{\"id\":{},\"author\":\"{}\",\"name\":\"{}\",\"category\":\"{}\"}}}}",
+            id, author, name_t, cat_t
         ));
         id
     }
 
+    /// Phase 7: skill authors can retroactively add or rewrite their
+    /// skill's metadata — category/tags/image. Verified stays sticky
+    /// (authors can't self-verify; only `set_skill_verified` by the
+    /// contract owner can flip it).
+    pub fn update_skill_metadata(
+        &mut self,
+        skill_id:  u64,
+        category:  String,
+        tags:      Vec<String>,
+        image_url: String,
+    ) {
+        let caller = env::predecessor_account_id();
+        let skill = self.skills.get(&skill_id).cloned()
+            .expect("Skill not found");
+        assert_eq!(skill.author, caller, "Only the skill author can update metadata");
+
+        let cat_t = category.trim();
+        assert!(cat_t.len() <= MAX_SKILL_CATEGORY_LEN,
+            "Category must be ≤{} chars", MAX_SKILL_CATEGORY_LEN);
+        let img_t = image_url.trim();
+        assert!(img_t.len() <= MAX_SKILL_IMAGE_URL_LEN,
+            "Image URL must be ≤{} chars", MAX_SKILL_IMAGE_URL_LEN);
+        let clean_tags = Self::sanitize_tags(tags);
+
+        // Preserve the existing verified flag — authors can never flip it.
+        let current_verified = self.skill_metadata.get(&skill_id)
+            .map(|m| m.verified)
+            .unwrap_or(false);
+
+        self.skill_metadata.insert(skill_id, SkillMetadata {
+            category:  cat_t.to_string(),
+            tags:      clean_tags,
+            image_url: img_t.to_string(),
+            verified:  current_verified,
+        });
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_metadata_updated\",\"data\":{{\"id\":{},\"author\":\"{}\"}}}}",
+            skill_id, caller
+        ));
+    }
+
+    /// Owner-only: toggle the verified flag. Writes a metadata row if
+    /// the skill pre-dates Phase 7 and doesn't have one yet.
+    pub fn set_skill_verified(&mut self, skill_id: u64, verified: bool) {
+        assert_eq!(env::predecessor_account_id(), self.owner_id,
+            "Only the contract owner can verify skills");
+        assert!(self.skills.get(&skill_id).is_some(), "Skill not found");
+        let mut meta = self.skill_metadata.get(&skill_id).cloned().unwrap_or_default();
+        meta.verified = verified;
+        self.skill_metadata.insert(skill_id, meta);
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_verified_changed\",\"data\":{{\"id\":{},\"verified\":{}}}}}",
+            skill_id, verified
+        ));
+    }
+
+    /// Phase 7: `install_skill` is now `#[payable]`. Caller must attach
+    /// at least `skill.price_yocto` yoctoNEAR. The deposit is split
+    /// 99% → skill author, 1% → contract owner. Free skills (price 0)
+    /// accept a zero-deposit call and do no transfers.
+    #[payable]
     pub fn install_skill(&mut self, skill_id: u64) {
         let owner = env::predecessor_account_id();
         assert!(
@@ -712,6 +855,46 @@ impl StakingContract {
         );
         let mut skill = self.skills.get(&skill_id).cloned()
             .expect("Skill not found");
+
+        // Payment enforcement. Free skills short-circuit all the way
+        // through; paid skills require at least `price_yocto` and split
+        // the attached deposit 99/1.
+        let attached = env::attached_deposit().as_yoctonear();
+        let price    = skill.price_yocto;
+        if price > 0 {
+            assert!(
+                attached >= price,
+                "Insufficient deposit: skill costs {} yoctoNEAR, received {}",
+                price, attached
+            );
+            // Split the EXACT price; any overpay is refunded on transfer
+            // below so an accidental drag-and-drop doesn't move funds
+            // beyond the install.
+            let platform_cut = price.saturating_mul(PLATFORM_FEE_BPS as u128) / (BPS_DENOM as u128);
+            let author_cut   = price.saturating_sub(platform_cut);
+            if author_cut > 0 {
+                Promise::new(skill.author.clone())
+                    .transfer(NearToken::from_yoctonear(author_cut));
+            }
+            if platform_cut > 0 {
+                Promise::new(self.owner_id.clone())
+                    .transfer(NearToken::from_yoctonear(platform_cut));
+            }
+            // Refund overpay back to caller.
+            let refund = attached.saturating_sub(price);
+            if refund > 0 {
+                Promise::new(owner.clone())
+                    .transfer(NearToken::from_yoctonear(refund));
+            }
+        } else {
+            // Free skill — if the caller attached funds anyway, send
+            // them straight back rather than silently absorbing.
+            if attached > 0 {
+                Promise::new(owner.clone())
+                    .transfer(NearToken::from_yoctonear(attached));
+            }
+        }
+
         let mut installed = self.installed_skills.get(&owner).cloned().unwrap_or_default();
         assert!(
             !installed.contains(&skill_id),
@@ -725,11 +908,11 @@ impl StakingContract {
         self.installed_skills.insert(owner.clone(), installed);
 
         skill.install_count = skill.install_count.saturating_add(1);
-        self.skills.insert(skill_id, skill);
+        self.skills.insert(skill_id, skill.clone());
 
         env::log_str(&format!(
-            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_installed\",\"data\":{{\"owner\":\"{}\",\"skill_id\":{}}}}}",
-            owner, skill_id
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_installed\",\"data\":{{\"owner\":\"{}\",\"skill_id\":{},\"price_yocto\":\"{}\",\"paid\":{}}}}}",
+            owner, skill_id, price, price > 0
         ));
     }
 
@@ -757,6 +940,13 @@ impl StakingContract {
         self.skills.get(&skill_id).cloned()
     }
 
+    /// Phase 7: fetch a skill's metadata row. Legacy skills that
+    /// pre-date Phase 7 return `None` — callers should render the
+    /// base skill without category/tags/badge.
+    pub fn get_skill_metadata(&self, skill_id: u64) -> Option<SkillMetadata> {
+        self.skill_metadata.get(&skill_id).cloned()
+    }
+
     /// Skill marketplace listing — newest first. Limit capped at 100.
     pub fn list_skills(&self, limit: u32, offset: u32) -> Vec<Skill> {
         let cap  = (limit as usize).min(100);
@@ -766,9 +956,47 @@ impl StakingContract {
         all.into_iter().skip(skip).take(cap).collect()
     }
 
+    /// Phase 7: one-shot view that joins skills with their metadata.
+    /// Avoids N+1 RPCs when the marketplace renders cards that need both
+    /// the base skill and its tags/category/verified flag. Metadata is
+    /// `None` for legacy skills.
+    pub fn list_skills_with_metadata(
+        &self,
+        limit: u32,
+        offset: u32,
+    ) -> Vec<(Skill, Option<SkillMetadata>)> {
+        let cap  = (limit as usize).min(100);
+        let skip = offset as usize;
+        let mut all: Vec<Skill> = self.skills.values().cloned().collect();
+        all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        all.into_iter()
+            .skip(skip).take(cap)
+            .map(|s| {
+                let meta = self.skill_metadata.get(&s.id).cloned();
+                (s, meta)
+            })
+            .collect()
+    }
+
     pub fn get_installed_skills(&self, owner: AccountId) -> Vec<Skill> {
         let ids = self.installed_skills.get(&owner).cloned().unwrap_or_default();
         ids.iter().filter_map(|id| self.skills.get(id).cloned()).collect()
+    }
+
+    /// Phase 7 counterpart to `get_installed_skills` that returns the
+    /// metadata alongside each installed skill. Same `None`-for-legacy
+    /// caveat applies.
+    pub fn get_installed_skills_with_metadata(
+        &self,
+        owner: AccountId,
+    ) -> Vec<(Skill, Option<SkillMetadata>)> {
+        let ids = self.installed_skills.get(&owner).cloned().unwrap_or_default();
+        ids.iter().filter_map(|id| {
+            self.skills.get(id).cloned().map(|s| {
+                let meta = self.skill_metadata.get(id).cloned();
+                (s, meta)
+            })
+        }).collect()
     }
 
     pub fn get_skills_count(&self) -> u64 {

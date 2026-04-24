@@ -176,25 +176,73 @@ export default function useAgent() {
     return Array.isArray(rows) ? rows : [];
   }, [viewMethod]);
 
-  // ── Phase 5: skills marketplace ─────────────────────────────────────────
-  const createSkill = useCallback(async ({ name, description, priceYocto = "0" }) => {
+  // ── Phase 5 + Phase 7 (Sub-PR A): skills marketplace ────────────────────
+  // Phase 7 widens `create_skill` with category/tags/image_url and makes
+  // `install_skill` payable. The old signature still accepts a bare
+  // {name, description, priceYocto} — the new metadata params are
+  // optional so existing callers don't break.
+  const createSkill = useCallback(async ({
+    name, description, priceYocto = "0",
+    category = "", tags = [], imageUrl = "",
+  }) => {
     return callMethod(STAKING_CONTRACT, "create_skill", {
       name, description,
       price_yocto: String(priceYocto),
+      category,
+      tags:      Array.isArray(tags) ? tags : [],
+      image_url: imageUrl,
     }, "0");
   }, [callMethod]);
 
-  const installSkill = useCallback(async (skillId) => {
-    return callMethod(STAKING_CONTRACT, "install_skill", { skill_id: Number(skillId) }, "0");
+  // Phase 7: install_skill is payable. Attach deposit >= price_yocto.
+  // The contract splits 99/1 (author/platform) and refunds any overpay
+  // back to the caller.
+  const installSkill = useCallback(async (skillId, priceYocto = "0") => {
+    return callMethod(
+      STAKING_CONTRACT,
+      "install_skill",
+      { skill_id: Number(skillId) },
+      String(priceYocto ?? "0"),
+    );
   }, [callMethod]);
 
   const uninstallSkill = useCallback(async (skillId) => {
     return callMethod(STAKING_CONTRACT, "uninstall_skill", { skill_id: Number(skillId) }, "0");
   }, [callMethod]);
 
+  // Phase 7: authors can update their own skill's metadata (category /
+  // tags / image). Verified stays sticky — only the contract owner can
+  // flip it via set_skill_verified.
+  const updateSkillMetadata = useCallback(async ({ skillId, category = "", tags = [], imageUrl = "" }) => {
+    return callMethod(STAKING_CONTRACT, "update_skill_metadata", {
+      skill_id:  Number(skillId),
+      category,
+      tags:      Array.isArray(tags) ? tags : [],
+      image_url: imageUrl,
+    }, "0");
+  }, [callMethod]);
+
+  // Phase 7 owner-only: toggle a skill's verified flag. Exposed for
+  // completeness; the admin UI will gate it on address === owner_id.
+  const setSkillVerified = useCallback(async (skillId, verified) => {
+    return callMethod(STAKING_CONTRACT, "set_skill_verified", {
+      skill_id: Number(skillId),
+      verified: Boolean(verified),
+    }, "0");
+  }, [callMethod]);
+
   const listSkills = useCallback(async ({ limit = 50, offset = 0 } = {}) => {
     const rows = await viewMethod(STAKING_CONTRACT, "list_skills", { limit, offset });
     return Array.isArray(rows) ? rows : [];
+  }, [viewMethod]);
+
+  // Phase 7: joined fetch that returns [skill, metadata|null] tuples.
+  // Prefer this over list_skills for anything that renders category /
+  // tags / verified — it avoids the N+1 per-skill metadata lookup.
+  const listSkillsWithMetadata = useCallback(async ({ limit = 50, offset = 0 } = {}) => {
+    const rows = await viewMethod(STAKING_CONTRACT, "list_skills_with_metadata", { limit, offset });
+    if (!Array.isArray(rows)) return [];
+    return rows.map(([skill, metadata]) => ({ skill, metadata: metadata || null }));
   }, [viewMethod]);
 
   const getInstalledSkills = useCallback(async (owner = address) => {
@@ -203,8 +251,19 @@ export default function useAgent() {
     return Array.isArray(rows) ? rows : [];
   }, [viewMethod, address]);
 
+  const getInstalledSkillsWithMetadata = useCallback(async (owner = address) => {
+    if (!owner) return [];
+    const rows = await viewMethod(STAKING_CONTRACT, "get_installed_skills_with_metadata", { owner });
+    if (!Array.isArray(rows)) return [];
+    return rows.map(([skill, metadata]) => ({ skill, metadata: metadata || null }));
+  }, [viewMethod, address]);
+
   const getSkill = useCallback(async (skillId) => {
     return viewMethod(STAKING_CONTRACT, "get_skill", { skill_id: Number(skillId) });
+  }, [viewMethod]);
+
+  const getSkillMetadata = useCallback(async (skillId) => {
+    return viewMethod(STAKING_CONTRACT, "get_skill_metadata", { skill_id: Number(skillId) });
   }, [viewMethod]);
 
   // ── Phase 6: link existing IronClaw agent ───────────────────────────────
@@ -524,9 +583,13 @@ export default function useAgent() {
     assignTask, cancelTask, completeTask, getAgentTasks,
     // Phase 5: IronClaw subscription + public directory
     setSubscription, setPublicFlag, getAgentFlags, getPublicAgents,
-    // Phase 5: skills marketplace
+    // Phase 5 + Phase 7: skills marketplace
     createSkill, installSkill, uninstallSkill,
     listSkills, getInstalledSkills, getSkill,
+    // Phase 7 additions
+    updateSkillMetadata, setSkillVerified,
+    listSkillsWithMetadata, getInstalledSkillsWithMetadata,
+    getSkillMetadata,
     // Phase 6: link to existing IronClaw agent
     linkToIronclaw, unlinkFromIronclaw, getIronclawSource,
     // leaderboard
