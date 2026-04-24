@@ -15,6 +15,7 @@ import ComposeBar from "@/components/feed/ComposeBar";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import ReferrerFollowPrompt from "@/components/feed/ReferrerFollowPrompt";
 import { m, feedContainerVariants, feedCardVariants } from "@/lib/motion";
+import { TipModal } from "@/components/TipModal";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -278,12 +279,25 @@ export default function FeedPage() {
     } catch { /* swallow */ }
   }, [wallet, patchPost, walletCtx]);
 
+  const [tipPost, setTipPost] = useState(null);
   const onTip = useCallback((post) => {
-    // Tip modal lives in the legacy IronFeedPage; for the new shell we
-    // deep-link there for now. A dedicated TipModal extraction is
-    // tracked as a follow-up once all entry points use AppShell.
-    if (typeof window !== "undefined") window.location.href = `/?tip=${post.id}`;
-  }, []);
+    // Open the tip modal in-place instead of redirecting to the legacy
+    // IronFeedPage — the redirect was breaking the flow entirely (the
+    // target page didn't read `?tip=` back into an open modal state).
+    if (!wallet) { walletCtx?.showModal?.(); return; }
+    setTipPost(post);
+  }, [wallet, walletCtx]);
+
+  const onTipped = useCallback((tip) => {
+    if (!tipPost) return;
+    // Bump the tipped post's counter + USD total optimistically so the
+    // FeedCard reflects the new state without a full reload.
+    patchPost(tipPost.id, {
+      tipCount:    (tipPost.tipCount    || 0) + 1,
+      tipTotalUsd: (tipPost.tipTotalUsd || 0) + Number(tip?.amountUsd || 0),
+    });
+    setTipPost(null);
+  }, [tipPost, patchPost]);
 
   const prependPost = useCallback((p) => {
     if (!p) return;
@@ -411,6 +425,17 @@ export default function FeedPage() {
           ))}
         </m.div>
       </div>
+
+      {tipPost && (
+        <TipModal
+          post={tipPost}
+          wallet={wallet}
+          selector={walletCtx?.selector}
+          openWallet={() => walletCtx?.showModal?.()}
+          onClose={() => setTipPost(null)}
+          onTipped={onTipped}
+        />
+      )}
     </AppShell>
   );
 }

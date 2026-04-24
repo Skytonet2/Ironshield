@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
+import { TipModal } from "@/components/TipModal";
 import Avatar from "@/components/feed/Avatar";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import { API_BASE as API } from "@/lib/apiBase";
@@ -50,7 +51,8 @@ function timeAgo(iso) {
 
 export default function PostPage() {
   const t = useTheme();
-  const { address } = useWallet();
+  const { address, selector, showModal: openWallet } = useWallet();
+  const [tipOpen, setTipOpen] = useState(false);
 
   const [postId, setPostId] = useState(null);
   const [post, setPost] = useState(null);
@@ -212,7 +214,10 @@ export default function PostPage() {
                 } catch {}
               }}
               onReply={(text) => postComment({ content: text })}
-              onTip={() => { /* tip flow lives in FeedCard modal */ }}
+              onTip={() => {
+                if (!address) { openWallet?.(); return; }
+                setTipOpen(true);
+              }}
             />
           </div>
         )}
@@ -315,6 +320,25 @@ export default function PostPage() {
           }
         `}</style>
       </div>
+
+      {tipOpen && post && (
+        <TipModal
+          post={post}
+          wallet={address}
+          selector={selector}
+          openWallet={() => openWallet?.()}
+          onClose={() => setTipOpen(false)}
+          onTipped={(tip) => {
+            setTipOpen(false);
+            // Optimistic counter bump on the post being viewed.
+            setPost((p) => p ? ({
+              ...p,
+              tipCount:    (p.tipCount    || 0) + 1,
+              tipTotalUsd: (p.tipTotalUsd || 0) + Number(tip?.amountUsd || 0),
+            }) : p);
+          }}
+        />
+      )}
     </AppShell>
   );
 }

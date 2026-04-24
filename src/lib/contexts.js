@@ -146,7 +146,8 @@ export function WalletProvider({ children }) {
   const [walletType, setWalletType] = useState(null);
   const [displayName, setDisplayName] = useState(null);
   const [balance, setBalance] = useState("0");
-  const [initStarted, setInitStarted] = useState(false);
+  // initWalletRef below serialises the lazy-init promise so concurrent
+  // callers share one in-flight init instead of racing.
   const [chooserOpen, setChooserOpen] = useState(false);
   const googleTokenClient = useRef(null);
 
@@ -190,66 +191,77 @@ export function WalletProvider({ children }) {
     })();
   }, [address]);
 
-  // Lazy wallet init: only loads heavy NEAR libs when needed
+  // Lazy wallet init: only loads heavy NEAR libs when needed. Returns the
+  // freshly-created { selector, modal } pair so callers (e.g. connectNear)
+  // can `modal.show()` immediately without waiting for React to re-render
+  // with the new state — the previous design read the stale closure
+  // `modal` which was still null after the very first init, which is why
+  // users had to click the Connect button twice.
+  const initWalletRef = useRef(null);
   const initWallet = useCallback(async () => {
-    if (initStarted || selector) return;
-    setInitStarted(true);
-    try {
-      const [
-        { setupWalletSelector },
-        { setupModal: _setupModal },
-        { setupMeteorWallet },
-        { setupHereWallet },
-        { setupHotWallet },
-        { setupIntearWallet },
-      ] = await Promise.all([
-        import("@near-wallet-selector/core"),
-        import("@near-wallet-selector/modal-ui"),
-        import("@near-wallet-selector/meteor-wallet"),
-        import("@near-wallet-selector/here-wallet"),
-        import("@near-wallet-selector/hot-wallet"),
-        import("@near-wallet-selector/intear-wallet"),
-        import("@near-wallet-selector/modal-ui/styles.css"),
-      ]);
+    if (initWalletRef.current) return initWalletRef.current;
+    initWalletRef.current = (async () => {
+      try {
+        const [
+          { setupWalletSelector },
+          { setupModal: _setupModal },
+          { setupMeteorWallet },
+          { setupHereWallet },
+          { setupHotWallet },
+          { setupIntearWallet },
+        ] = await Promise.all([
+          import("@near-wallet-selector/core"),
+          import("@near-wallet-selector/modal-ui"),
+          import("@near-wallet-selector/meteor-wallet"),
+          import("@near-wallet-selector/here-wallet"),
+          import("@near-wallet-selector/hot-wallet"),
+          import("@near-wallet-selector/intear-wallet"),
+          import("@near-wallet-selector/modal-ui/styles.css"),
+        ]);
 
-      const _selector = await setupWalletSelector({
-        network: "mainnet",
-        modules: [
-          setupMeteorWallet(),
-          setupHereWallet(),
-          setupHotWallet(),
-          setupIntearWallet(),
-        ],
-      });
+        const _selector = await setupWalletSelector({
+          network: "mainnet",
+          modules: [
+            setupMeteorWallet(),
+            setupHereWallet(),
+            setupHotWallet(),
+            setupIntearWallet(),
+          ],
+        });
 
-      const _modal = _setupModal(_selector, { contractId: "ironshield.near" });
+        const _modal = _setupModal(_selector, { contractId: "ironshield.near" });
 
-      const state = _selector.store.getState();
-      if (state.accounts.length > 0) {
-        setWalletType("near");
-        setAddress(state.accounts[0].accountId);
-        fetchBalance(state.accounts[0].accountId);
-      }
-
-      setSelector(_selector);
-      setModal(_modal);
-
-      _selector.store.observable.subscribe((state) => {
+        const state = _selector.store.getState();
         if (state.accounts.length > 0) {
           setWalletType("near");
           setAddress(state.accounts[0].accountId);
           fetchBalance(state.accounts[0].accountId);
-        } else {
-          setWalletType(null);
-          setAddress(null);
-          setBalance("0");
         }
-      });
-    } catch (err) {
-      console.warn("Wallet selector init failed:", err);
-      setInitStarted(false);
-    }
-  }, [initStarted, selector]);
+
+        setSelector(_selector);
+        setModal(_modal);
+
+        _selector.store.observable.subscribe((state) => {
+          if (state.accounts.length > 0) {
+            setWalletType("near");
+            setAddress(state.accounts[0].accountId);
+            fetchBalance(state.accounts[0].accountId);
+          } else {
+            setWalletType(null);
+            setAddress(null);
+            setBalance("0");
+          }
+        });
+
+        return { selector: _selector, modal: _modal };
+      } catch (err) {
+        console.warn("Wallet selector init failed:", err);
+        initWalletRef.current = null; // allow a retry
+        throw err;
+      }
+    })();
+    return initWalletRef.current;
+  }, []);
 
   // Auto-init if user was previously connected: but DEFER it to browser
   // idle time so it never blocks first paint or initial bundle parse.
@@ -309,10 +321,14 @@ export function WalletProvider({ children }) {
   };
 
   const connectNear = async () => {
-    if (!selector) await initWallet();
-    await new Promise(r => setTimeout(r, 100));
+    // Use the return value of initWallet rather than the React `modal`
+    // state so the selector opens on the FIRST click even when this is
+    // the user's very first interaction with the wallet — React hasn't
+    // committed the setModal call by the time we reach the show() line
+    // otherwise.
+    const { modal: liveModal } = await initWallet();
     setChooserOpen(false);
-    if (modal) modal.show();
+    liveModal?.show();
   };
 
   const connectEvm = async () => {
@@ -420,30 +436,232 @@ export function WalletProvider({ children }) {
   );
 }
 
+// WalletChooser — the ONLY connect modal in the app. Previously there
+// was a second, nicer ConnectAccountModal that sat in SkillsShell and
+// delegated picks back to this component, which meant a "Connect" click
+// bounced through two dialogs before the NEAR selector opened. This
+// consolidated version matches that nicer design (app-icon tiles,
+// Recommended badge, privacy footer) so every caller of showModal()
+// gets the same first-class flow.
+//
+// Each row calls its connect function directly — no nested modal.
 function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
   const opts = [
-    { label: "NEAR Wallet", hint: "Meteor / HERE / HOT / Intear", onClick: onNear },
-    { label: "Google Sign-In", hint: "Use your Google account", onClick: onGoogle },
-    { label: "EVM Wallet", hint: "MetaMask / injected wallet", onClick: onEvm },
-    { label: "Solana Wallet", hint: "Phantom / injected wallet", onClick: onSol },
+    {
+      key: "near",
+      label: "NEAR Wallet",
+      hint: "Meteor • HERE • HOT • Intear",
+      recommended: true,
+      onClick: onNear,
+      tile: { bg: "#0f0f17", border: "rgba(255,255,255,0.12)", glyph: "N", color: "#fff" },
+    },
+    {
+      key: "google",
+      label: "Google Sign-In",
+      hint: "Use your Google account",
+      onClick: onGoogle,
+      tile: { bg: "#fff", border: "rgba(0,0,0,0.06)", glyph: "G", color: "#4285F4" },
+    },
+    {
+      key: "evm",
+      label: "EVM Wallet",
+      hint: "MetaMask • injected wallet",
+      onClick: onEvm,
+      tile: { bg: "#ffe7c6", border: "rgba(0,0,0,0.06)", glyph: "🦊", color: "#000" },
+    },
+    {
+      key: "sol",
+      label: "Solana Wallet",
+      hint: "Phantom • injected wallet",
+      onClick: onSol,
+      tile: { bg: "linear-gradient(135deg, #9945FF 0%, #14F195 100%)", border: "rgba(255,255,255,0.18)", glyph: "S", color: "#fff" },
+    },
   ];
+
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.58)", backdropFilter: "blur(4px)", zIndex: 9999, display: "grid", placeItems: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(92vw, 420px)", borderRadius: 16, border: "1px solid #1e293b", background: "#0d1117", padding: 16 }}>
-        <div style={{ color: "#fff", fontWeight: 800, fontSize: 18, marginBottom: 4 }}>Connect account</div>
-        <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 12 }}>Choose how you want to sign in.</div>
-        <div style={{ display: "grid", gap: 8 }}>
-          {opts.map((o) => (
-            <button key={o.label} onClick={o.onClick} style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: "1px solid #1e293b", background: "#161b22", color: "#e2e8f0", cursor: "pointer" }}>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{o.label}</div>
-              <div style={{ color: "#94a3b8", fontSize: 11 }}>{o.hint}</div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(4, 6, 14, 0.72)",
+        backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "24px 16px",
+        animation: "wc-fade 140ms ease-out",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative",
+          width: "100%", maxWidth: 520,
+          background: "linear-gradient(180deg, #0f1424 0%, #0b1020 100%)",
+          border: "1px solid #1d2540",
+          borderRadius: 20,
+          padding: "28px 28px 24px",
+          boxShadow: "0 30px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(168,85,247,0.12)",
+          animation: "wc-pop 160ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+          maxHeight: "calc(100vh - 48px)", overflowY: "auto",
+        }}
+      >
+        <button
+          type="button" aria-label="Close" onClick={onClose}
+          style={{
+            position: "absolute", top: 16, right: 16,
+            width: 34, height: 34, borderRadius: "50%",
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid #1d2540", color: "#9aa4bd",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", fontSize: 15,
+          }}
+        >✕</button>
+
+        <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 22 }}>
+          <span aria-hidden style={{
+            width: 52, height: 52, flexShrink: 0, borderRadius: 14,
+            background: "linear-gradient(135deg, rgba(168,85,247,0.4), rgba(59,130,246,0.25))",
+            border: "1px solid rgba(168,85,247,0.35)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            color: "#c4b8ff", fontSize: 20,
+            boxShadow: "0 6px 24px rgba(168,85,247,0.35)",
+          }}>🔒</span>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{
+              fontSize: 22, fontWeight: 800, color: "#fff", margin: 0,
+              letterSpacing: -0.4,
+            }}>Connect account</h2>
+            <p style={{ fontSize: 13, color: "#9aa4bd", margin: "4px 0 0" }}>
+              Choose how you want to sign in to{" "}
+              <span style={{
+                background: "linear-gradient(90deg, #60a5fa, #a855f7)",
+                WebkitBackgroundClip: "text", backgroundClip: "text",
+                WebkitTextFillColor: "transparent", color: "transparent",
+                fontWeight: 700,
+              }}>IronShield</span>.
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {opts.map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={opt.onClick}
+              style={{
+                display: "flex", alignItems: "center", gap: 14,
+                padding: "14px 16px", width: "100%",
+                background: "rgba(255,255,255,0.025)",
+                border: `1px solid ${opt.recommended ? "rgba(168,85,247,0.5)" : "#1d2540"}`,
+                borderRadius: 14,
+                cursor: "pointer", textAlign: "left",
+                transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease",
+                boxShadow: opt.recommended ? "0 0 0 1px rgba(168,85,247,0.22) inset" : "none",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                e.currentTarget.style.borderColor = "rgba(168,85,247,0.55)";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(255,255,255,0.025)";
+                e.currentTarget.style.borderColor = opt.recommended ? "rgba(168,85,247,0.5)" : "#1d2540";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              <span aria-hidden style={{
+                width: 42, height: 42, borderRadius: 10,
+                background: opt.tile.bg,
+                border: `1px solid ${opt.tile.border}`,
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                fontWeight: 800, fontSize: opt.key === "evm" ? 22 : 20,
+                color: opt.tile.color, letterSpacing: -1, flexShrink: 0,
+              }}>{opt.tile.glyph}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  fontSize: 15, fontWeight: 800, color: "#fff",
+                }}>
+                  {opt.label}
+                  {opt.recommended && (
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, padding: "2px 10px", borderRadius: 999,
+                      background: "rgba(168,85,247,0.22)", color: "#c4b8ff",
+                    }}>Recommended</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: "#9aa4bd", marginTop: 2 }}>
+                  {opt.hint}
+                </div>
+              </div>
+              <span style={{ color: "#6c7692", fontSize: 14, flexShrink: 0 }}>›</span>
             </button>
           ))}
         </div>
-        <button onClick={onClose} style={{ marginTop: 12, width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid #1e293b", background: "transparent", color: "#94a3b8", cursor: "pointer" }}>
-          Cancel
-        </button>
+
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          margin: "18px 0 16px",
+        }}>
+          <span style={{ flex: 1, height: 1, background: "#1d2540" }} />
+          <span style={{ fontSize: 11.5, color: "#6c7692", fontStyle: "italic" }}>
+            More options coming soon
+          </span>
+          <span style={{ flex: 1, height: 1, background: "#1d2540" }} />
+        </div>
+
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "14px", background: "rgba(255,255,255,0.03)",
+          border: "1px solid #1d2540", borderRadius: 12,
+        }}>
+          <span aria-hidden style={{
+            width: 32, height: 32, flexShrink: 0, borderRadius: 10,
+            background: "rgba(168,85,247,0.18)", color: "#c4b8ff",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontSize: 14,
+          }}>🛡️</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#fff" }}>
+              Your privacy matters
+            </div>
+            <div style={{ fontSize: 11.5, color: "#9aa4bd", marginTop: 2 }}>
+              We never store your private keys or access your funds.
+            </div>
+          </div>
+          <button
+            type="button" onClick={onClose}
+            style={{
+              padding: "9px 18px",
+              background: "transparent",
+              border: "1px solid #1d2540", borderRadius: 10,
+              fontSize: 12.5, fontWeight: 700, color: "#e5ebf7",
+              cursor: "pointer",
+            }}
+          >Cancel</button>
+        </div>
       </div>
+
+      <style jsx global>{`
+        @keyframes wc-fade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes wc-pop {
+          from { opacity: 0; transform: translateY(10px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
     </div>
   );
 }
