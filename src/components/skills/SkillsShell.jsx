@@ -30,6 +30,7 @@ import {
   Compass, LayoutGrid, Trophy, Sparkles, Crown, TrendingUp,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
+import ConnectAccountModal from "./ConnectAccountModal";
 
 const TOP_TABS = [
   { key: "marketplace",    label: "Marketplace",    href: "/skills"        },
@@ -63,9 +64,9 @@ const SIDEBAR_CATEGORIES = [
    Top Nav
    ────────────────────────────────────────────────────────────── */
 
-function TopNav({ t, onToggleDrawer }) {
+function TopNav({ t, onToggleDrawer, onOpenConnect }) {
   const pathname = usePathname() || "";
-  const { connected, address, showModal, balance } = useWallet?.() || {};
+  const { connected, address, balance } = useWallet?.() || {};
 
   const isActive = (href) => {
     if (href === "/skills") {
@@ -187,10 +188,13 @@ function TopNav({ t, onToggleDrawer }) {
         <Bell size={15} />
       </button>
 
-      {/* Profile chip */}
+      {/* Profile chip. When disconnected, opens the Connect Account
+          modal (mock-matching multi-provider chooser). When connected,
+          the click is a no-op for now — the profile menu ships in the
+          functionality PR. */}
       <button
         type="button"
-        onClick={() => !connected && showModal?.()}
+        onClick={() => !connected && onOpenConnect?.()}
         className="sk-profile"
         style={{
           display: "inline-flex", alignItems: "center", gap: 10,
@@ -371,11 +375,13 @@ function EarnCta({ t }) {
 
 export default function SkillsShell({ children }) {
   const t = useTheme();
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { showModal: openNearWalletSelector } = useWallet?.() || {};
+  const [drawerOpen, setDrawerOpen]     = useState(false);
+  const [connectOpen, setConnectOpen]   = useState(false);
 
-  // Close drawer when route changes or on resize-up past mobile.
+  // Close drawer + connect modal when route changes or on resize-up past mobile.
   const pathname = usePathname();
-  useEffect(() => { setDrawerOpen(false); }, [pathname]);
+  useEffect(() => { setDrawerOpen(false); setConnectOpen(false); }, [pathname]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onResize = () => { if (window.innerWidth >= 768) setDrawerOpen(false); };
@@ -388,7 +394,17 @@ export default function SkillsShell({ children }) {
       data-app-shell="ready"
       style={{ background: t.bg, color: t.text, minHeight: "100vh" }}
     >
-      <TopNav t={t} onToggleDrawer={() => setDrawerOpen(v => !v)} />
+      <TopNav
+        t={t}
+        onToggleDrawer={() => setDrawerOpen(v => !v)}
+        onOpenConnect={() => setConnectOpen(true)}
+      />
+
+      <ConnectAccountModal
+        open={connectOpen}
+        onClose={() => setConnectOpen(false)}
+        onPickNear={() => openNearWalletSelector?.()}
+      />
 
       <div style={{ display: "flex", alignItems: "flex-start" }}>
         {/* Desktop sidebar */}
