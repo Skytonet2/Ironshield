@@ -8,7 +8,12 @@ const app = express();
 const db = require("./db/client");
 const feedHub = require("./ws/feedHub");
 
-app.use(express.json());
+// `verify` stashes the raw body on req.rawBody so HMAC-verifying
+// webhooks (e.g. /api/ironclaw/bridge/inbound) can hash the exact
+// bytes the upstream signed. Other routes ignore it.
+app.use(express.json({
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(require("cors")());
 
 // Routes — AI-powered
@@ -52,6 +57,7 @@ app.use("/api/trading",       require("./routes/trading.route"));
 app.use("/api/bridge",        require("./routes/bridge.route"));
 app.use("/api/ai",            require("./routes/ai.route"));
 app.use("/api/market",        require("./routes/market.route"));
+app.use("/api/ironclaw",      require("./routes/ironclaw.route"));
 
 // Root
 app.get("/", (req, res) => {
