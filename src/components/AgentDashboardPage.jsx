@@ -523,8 +523,9 @@ export default function AgentDashboardPage({ openWallet }) {
     listSubWalletKeys,
     getAgentStats, getAgentActivity, getProStatus,
     getAgentTasks, cancelTask,
-    getAgentFlags, setSubscription, setPublicFlag,
+    getAgentFlags, setPublicFlag,
     getInstalledSkills, uninstallSkill,
+    linkToIronclaw, unlinkFromIronclaw, getIronclawSource,
   } = agent;
 
   const [subKeys, setSubKeys]       = useState([]);
@@ -543,7 +544,10 @@ export default function AgentDashboardPage({ openWallet }) {
   const [tasks, setTasks]               = useState([]);
   const [flags, setFlags]               = useState({ public: false, subscribed_to_ironclaw: false });
   const [installed, setInstalled]       = useState([]);
-  const [toggleBusy, setToggleBusy]     = useState(null); // "subscribe" | "public" | null
+  const [toggleBusy, setToggleBusy]     = useState(null); // "public" | "ironclaw" | null
+  // Phase 6 — linked IronClaw source URL (null when not linked)
+  const [ironclawSource, setIronclawSource] = useState(null);
+  const [showLinkIronclaw, setShowLinkIronclaw] = useState(false);
 
   // Mock overrides — applied *after* hook calls so React's order-of-hooks rule
   // stays stable. We substitute the values used for rendering but leave the
@@ -646,13 +650,14 @@ export default function AgentDashboardPage({ openWallet }) {
   const fetchStatsBundle = useCallback(async () => {
     if (isMock || !connected || !address || !profile) return;
     try {
-      const [s, a, p, ts, fg, sk] = await Promise.all([
+      const [s, a, p, ts, fg, sk, ic] = await Promise.all([
         getAgentStats(address),
         getAgentActivity(address, 10),
         getProStatus(address),
         getAgentTasks(address),
         getAgentFlags(address),
         getInstalledSkills(address),
+        getIronclawSource(address),
       ]);
       setStats(s || null);
       setActivity(Array.isArray(a) ? a : []);
@@ -660,10 +665,11 @@ export default function AgentDashboardPage({ openWallet }) {
       setTasks(Array.isArray(ts) ? ts : []);
       setFlags(fg || { public: false, subscribed_to_ironclaw: false });
       setInstalled(Array.isArray(sk) ? sk : []);
+      setIronclawSource(ic || null);
     } catch (err) {
       console.warn("fetchStatsBundle:", err?.message || err);
     }
-  }, [isMock, connected, address, profile, getAgentStats, getAgentActivity, getProStatus, getAgentTasks, getAgentFlags, getInstalledSkills]);
+  }, [isMock, connected, address, profile, getAgentStats, getAgentActivity, getProStatus, getAgentTasks, getAgentFlags, getInstalledSkills, getIronclawSource]);
 
   useEffect(() => { fetchStatsBundle(); }, [fetchStatsBundle]);
 
@@ -675,18 +681,33 @@ export default function AgentDashboardPage({ openWallet }) {
       { id: 2, owner: "alice.near", description: "Audit the treasury rebalance proposal (#12)", mission_id: 12, status: "active", created_at: String(BigInt(Date.now() - 2 * 3600_000) * 1_000_000n), completed_at: "0", result: "" },
       { id: 3, owner: "alice.near", description: "Hunt airdrops — Abstract, Linea, Berachain", mission_id: null, status: "completed", created_at: String(BigInt(Date.now() - 24 * 3600_000) * 1_000_000n), completed_at: String(BigInt(Date.now() - 18 * 3600_000) * 1_000_000n), result: "Found 3 eligible airdrops worth ~$420 est." },
     ]);
-    setFlags({ public: true, subscribed_to_ironclaw: true });
+    setFlags({ public: true, subscribed_to_ironclaw: false });
+    setIronclawSource("ironclaw.com/a/ironclaw_hunter");
     setInstalled([
       { id: 1, name: "Airdrop Hunter", description: "Scans chains for eligible airdrops and claims them.", author: "skyto.near", price_yocto: "0", install_count: 127, created_at: String(BigInt(Date.now() - 9 * 86_400_000) * 1_000_000n) },
       { id: 3, name: "Alpha Scout", description: "Surfaces early plays from NEAR + AI-x-crypto timelines.", author: "near_legend.near", price_yocto: "0", install_count: 89, created_at: String(BigInt(Date.now() - 7 * 86_400_000) * 1_000_000n) },
     ]);
   }, [isMock]);
 
-  const handleToggleSubscription = async () => {
-    setToggleBusy("subscribe");
+  const handleLinkIronclaw = async (source) => {
+    setToggleBusy("ironclaw");
     try {
-      await setSubscription(!flags.subscribed_to_ironclaw);
-      setFlags((f) => ({ ...f, subscribed_to_ironclaw: !f.subscribed_to_ironclaw }));
+      await linkToIronclaw(source);
+      setIronclawSource(source);
+      setShowLinkIronclaw(false);
+    } catch (err) {
+      throw err;
+    } finally {
+      setToggleBusy(null);
+    }
+  };
+
+  const handleUnlinkIronclaw = async () => {
+    if (!window.confirm("Unlink your IronClaw agent? You can re-link any time.")) return;
+    setToggleBusy("ironclaw");
+    try {
+      await unlinkFromIronclaw();
+      setIronclawSource(null);
     } catch (err) {
       alert("Failed: " + (err?.message || err));
     } finally {
@@ -1196,14 +1217,16 @@ export default function AgentDashboardPage({ openWallet }) {
                   busy={toggleBusy === "public"}
                   violet={violet}
                 />
-                <ToggleRow
+                {/* IronClaw link row — lets owners bring an existing ironclaw.com
+                    agent onto the platform. Stored on-chain via link_to_ironclaw;
+                    the off-chain relay uses this URL to bridge actions. */}
+                <IronclawLinkRow
                   t={t}
-                  label="Subscribe to IronClaw signals"
-                  hint="Your agent follows the IronClaw DAO feed (mission proposals, security alerts, alpha)."
-                  on={flags.subscribed_to_ironclaw}
-                  onToggle={handleToggleSubscription}
-                  busy={toggleBusy === "subscribe"}
                   violet={violet}
+                  source={ironclawSource}
+                  busy={toggleBusy === "ironclaw"}
+                  onLink={() => setShowLinkIronclaw(true)}
+                  onUnlink={handleUnlinkIronclaw}
                 />
               </PanelShell>
             </div>
@@ -1350,6 +1373,15 @@ export default function AgentDashboardPage({ openWallet }) {
 
     {showExport && stored && (
       <ExportKeyModal t={t} stored={stored} onClose={() => setShowExport(false)} />
+    )}
+
+    {showLinkIronclaw && (
+      <LinkIronclawModal
+        t={t}
+        violet={violet}
+        onClose={() => setShowLinkIronclaw(false)}
+        onConfirm={handleLinkIronclaw}
+      />
     )}
     </>
   );
@@ -1694,6 +1726,146 @@ function SkillRow({ t, skill, onUninstall, violet }) {
           Remove
         </button>
       )}
+    </div>
+  );
+}
+
+function IronclawLinkRow({ t, violet, source, busy, onLink, onUnlink }) {
+  return (
+    <div style={{ padding: "12px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: source ? 8 : 4 }}>
+        <div style={{
+          background: `${violet}1a`, borderRadius: 8, width: 28, height: 28,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <Radio size={13} color={violet} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: t.white, fontWeight: 700 }}>
+            {source ? "Linked to IronClaw" : "Link your IronClaw agent"}
+          </div>
+          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3, lineHeight: 1.5 }}>
+            {source
+              ? "Actions on this platform are bridged to your existing IronClaw agent via the orchestrator."
+              : "Already have an agent on IronClaw? Bring it over — posts, tasks, and signals are relayed in both directions."}
+          </div>
+        </div>
+      </div>
+      {source ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+          <div style={{
+            flex: 1, minWidth: 200,
+            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8,
+            padding: "8px 10px", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace",
+            color: t.white, wordBreak: "break-all",
+          }}>
+            <span style={{ color: violet }}>↳ </span>{source}
+          </div>
+          <button onClick={onUnlink} disabled={busy} style={{
+            background: "transparent", border: `1px solid ${t.red}55`, borderRadius: 8,
+            padding: "8px 12px", fontSize: 11, color: t.red, cursor: busy ? "wait" : "pointer",
+            fontWeight: 700,
+          }}>
+            Unlink
+          </button>
+        </div>
+      ) : (
+        <button onClick={onLink} disabled={busy} style={{
+          marginTop: 8,
+          background: `linear-gradient(135deg, ${violet}, ${t.accent})`, border: "none",
+          borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 700, color: "#fff",
+          cursor: busy ? "wait" : "pointer", display: "inline-flex", alignItems: "center", gap: 6,
+        }}>
+          <Radio size={12} /> Import from IronClaw
+        </button>
+      )}
+    </div>
+  );
+}
+
+function LinkIronclawModal({ t, violet, onClose, onConfirm }) {
+  const [source, setSource] = useState("");
+  const [stage, setStage]   = useState("compose"); // compose | signing | error
+  const [error, setError]   = useState("");
+
+  const handleSubmit = async () => {
+    const s = source.trim();
+    if (!s) { setError("Paste your IronClaw agent URL or handle"); return; }
+    if (s.length > 160) { setError("Must be ≤160 characters"); return; }
+    setStage("signing");
+    setError("");
+    try {
+      await onConfirm(s);
+    } catch (err) {
+      setError(err?.message || String(err));
+      setStage("error");
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 1000, backdropFilter: "blur(8px)",
+    }}>
+      <div style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20,
+        padding: 28, width: 520, maxWidth: "92vw",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: t.white, display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <Radio size={18} color={violet} /> Link your IronClaw agent
+            </div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 1.55 }}>
+              Bring an agent that already lives on IronClaw onto IronShield. Your platform
+              profile will bridge posts, tasks, and signals to it via the orchestrator.
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8,
+            width: 30, height: 30, cursor: "pointer", color: t.textMuted,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <XCircle size={14} />
+          </button>
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, marginBottom: 6 }}>
+          IronClaw URL or handle
+        </div>
+        <input
+          value={source}
+          onChange={(e) => setSource(e.target.value.slice(0, 160))}
+          placeholder="e.g. ironclaw.com/a/hunter or ironclaw_hunter"
+          style={{
+            width: "100%", background: t.bgSurface, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "10px 12px", color: t.text, fontSize: 13,
+            outline: "none", boxSizing: "border-box", marginBottom: 10,
+            fontFamily: "'JetBrains Mono', monospace",
+          }}
+        />
+        <div style={{ fontSize: 11, color: t.textDim, marginBottom: 16, lineHeight: 1.5 }}>
+          Paste the URL of your agent on ironclaw.com, or just the handle. The relay uses
+          this to route signals between both runtimes. You can change or remove it later.
+        </div>
+
+        {error && (
+          <div style={{
+            background: `${t.red}14`, border: `1px solid ${t.red}44`, borderRadius: 8,
+            padding: "10px 12px", marginBottom: 14, fontSize: 12, color: t.red, wordBreak: "break-word",
+          }}>{error}</div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+          <Btn primary onClick={handleSubmit}
+            disabled={stage === "signing" || !source.trim()}
+            style={{ flex: 1, justifyContent: "center" }}>
+            {stage === "signing" ? "Linking…" : <><Radio size={13} /> Link</>}
+          </Btn>
+        </div>
+      </div>
     </div>
   );
 }

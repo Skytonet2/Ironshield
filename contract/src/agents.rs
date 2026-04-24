@@ -774,4 +774,48 @@ impl StakingContract {
     pub fn get_skills_count(&self) -> u64 {
         self.next_skill_id
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Phase 6: link an existing IronClaw agent to this platform profile
+    // ═════════════════════════════════════════════════════════════════════════
+    //
+    // Users with an agent already running on ironclaw.com can "bring it over"
+    // by registering a profile here that stores the source URL / handle. The
+    // off-chain orchestrator uses this field to forward posts + actions
+    // between the two runtimes so a linked agent can participate on IronShield
+    // without being re-built from scratch.
+
+    /// Link this profile to an existing IronClaw agent. `source` is a free-
+    /// form string — a URL like "ironclaw.com/a/hunter" or a bare handle —
+    /// that the off-chain relay resolves. Caller must already have a profile.
+    pub fn link_to_ironclaw(&mut self, source: String) {
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register an agent profile first"
+        );
+        let trimmed = source.trim().to_string();
+        assert!(
+            !trimmed.is_empty() && trimmed.len() <= 160,
+            "Source required and ≤160 chars"
+        );
+        self.ironclaw_sources.insert(owner.clone(), trimmed.clone());
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"ironclaw_linked\",\"data\":{{\"owner\":\"{}\",\"source\":\"{}\"}}}}",
+            owner, trimmed
+        ));
+    }
+
+    pub fn unlink_from_ironclaw(&mut self) {
+        let owner = env::predecessor_account_id();
+        self.ironclaw_sources.remove(&owner);
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"ironclaw_unlinked\",\"data\":{{\"owner\":\"{}\"}}}}",
+            owner
+        ));
+    }
+
+    pub fn get_ironclaw_source(&self, owner: AccountId) -> Option<String> {
+        self.ironclaw_sources.get(&owner).cloned()
+    }
 }

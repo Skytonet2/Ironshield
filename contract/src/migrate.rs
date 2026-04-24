@@ -122,6 +122,110 @@ impl StakingContract {
             next_skill_id:       0,
             installed_skills:    UnorderedMap::new(b"I"),
             agent_flags:         UnorderedMap::new(b"F"),
+            ironclaw_sources:    UnorderedMap::new(b"L"),
+        }
+    }
+}
+
+/// Byte-for-byte mirror of the Phase-5 (post-`migrate_v5_tasks_skills()`)
+/// shape. Used by `migrate_v6_ironclaw_link()` to add the `ironclaw_sources`
+/// storage without disturbing existing state. Do NOT edit after the Phase 6
+/// upgrade has run on mainnet.
+#[near(serializers=[borsh])]
+struct Phase5StakingContract {
+    owner_id:               AccountId,
+    ironclaw_token_id:      AccountId,
+    pools:                  OldVector<PoolInfo>,
+    user_info:              OldLookupMap<String, UserInfo>,
+    reward_per_ns:          Balance,
+    last_reward_time:       u64,
+    total_alloc_point:      u32,
+    paused:                 bool,
+    proposals:              OldVector<Proposal>,
+    votes:                  OldLookupMap<String, String>,
+    mission_results:        OldLookupMap<u32, MissionResult>,
+    orchestrator_id:        AccountId,
+    total_revenue:          Balance,
+    distributed_revenue:    Balance,
+    staker_share_bps:       u32,
+    contributor_share_bps:  u32,
+    reserve_share_bps:      u32,
+    proposer_share_bps:     u32,
+    contributor_wallet:     AccountId,
+    reserve_wallet:         AccountId,
+    proposer_wallet:        AccountId,
+    pretoken_mode:          bool,
+    contributors:           OldUnorderedMap<AccountId, ContributorInfo>,
+    pending_applications:   OldUnorderedMap<AccountId, ContributorApplication>,
+    vanguard_nft_contracts: OldVector<AccountId>,
+    vanguard_verified:      OldLookupSet<AccountId>,
+    vanguard_token_id_max:  u64,
+    agent_profiles:         OldUnorderedMap<AccountId, AgentProfile>,
+    agent_handles:          OldUnorderedMap<String, AccountId>,
+    total_points_issued:    Balance,
+    agent_stats:            OldUnorderedMap<AccountId, AgentStats>,
+    agent_tasks:            OldUnorderedMap<AccountId, Vec<AgentTask>>,
+    next_task_id:           u64,
+    skills:                 OldUnorderedMap<u64, Skill>,
+    next_skill_id:          u64,
+    installed_skills:       OldUnorderedMap<AccountId, Vec<u64>>,
+    agent_flags:            OldUnorderedMap<AccountId, AgentFlags>,
+}
+
+#[near]
+impl StakingContract {
+    /// Phase 5 → Phase 6 upgrade: preserves all existing state and adds the
+    /// ironclaw_sources map. Safe to call exactly once on a contract that has
+    /// already run `migrate_v5_tasks_skills()`.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate_v6_ironclaw_link() -> Self {
+        let old: Phase5StakingContract = env::state_read()
+            .expect("No state to migrate — was the contract ever initialized?");
+
+        env::log_str("EVENT_JSON:{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"state_migrated\",\"data\":{\"to\":\"phase6_ironclaw_link\"}}");
+
+        Self {
+            owner_id:               old.owner_id,
+            ironclaw_token_id:      old.ironclaw_token_id,
+            pools:                  old.pools,
+            user_info:              old.user_info,
+            reward_per_ns:          old.reward_per_ns,
+            last_reward_time:       old.last_reward_time,
+            total_alloc_point:      old.total_alloc_point,
+            paused:                 old.paused,
+            proposals:              old.proposals,
+            votes:                  old.votes,
+            mission_results:        old.mission_results,
+            orchestrator_id:        old.orchestrator_id,
+            total_revenue:          old.total_revenue,
+            distributed_revenue:    old.distributed_revenue,
+            staker_share_bps:       old.staker_share_bps,
+            contributor_share_bps:  old.contributor_share_bps,
+            reserve_share_bps:      old.reserve_share_bps,
+            proposer_share_bps:     old.proposer_share_bps,
+            contributor_wallet:     old.contributor_wallet,
+            reserve_wallet:         old.reserve_wallet,
+            proposer_wallet:        old.proposer_wallet,
+            pretoken_mode:          old.pretoken_mode,
+            contributors:           old.contributors,
+            pending_applications:   old.pending_applications,
+            vanguard_nft_contracts: old.vanguard_nft_contracts,
+            vanguard_verified:      old.vanguard_verified,
+            vanguard_token_id_max:  old.vanguard_token_id_max,
+            agent_profiles:         old.agent_profiles,
+            agent_handles:          old.agent_handles,
+            total_points_issued:    old.total_points_issued,
+            agent_stats:            old.agent_stats,
+            agent_tasks:            old.agent_tasks,
+            next_task_id:           old.next_task_id,
+            skills:                 old.skills,
+            next_skill_id:          old.next_skill_id,
+            installed_skills:       old.installed_skills,
+            agent_flags:            old.agent_flags,
+
+            // Phase 6 — empty, populated when an owner calls link_to_ironclaw
+            ironclaw_sources: UnorderedMap::new(b"L"),
         }
     }
 }
@@ -219,6 +323,7 @@ impl StakingContract {
             next_skill_id:    0,
             installed_skills: UnorderedMap::new(b"I"),
             agent_flags:      UnorderedMap::new(b"F"),
+            ironclaw_sources: UnorderedMap::new(b"L"),
         }
     }
 }
@@ -318,6 +423,7 @@ impl StakingContract {
             next_skill_id:    0,
             installed_skills: UnorderedMap::new(b"I"),
             agent_flags:      UnorderedMap::new(b"F"),
+            ironclaw_sources: UnorderedMap::new(b"L"),
         }
     }
 }
@@ -414,6 +520,7 @@ impl StakingContract {
             next_skill_id:       0,
             installed_skills:    UnorderedMap::new(b"I"),
             agent_flags:         UnorderedMap::new(b"F"),
+            ironclaw_sources:    UnorderedMap::new(b"L"),
         }
     }
 }

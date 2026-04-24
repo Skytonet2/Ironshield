@@ -169,6 +169,12 @@ pub struct StakingContract {
     /// Per-owner public-directory + IronClaw-subscription flags. Kept separate
     /// from AgentProfile so Phase 4 profiles don't need a rewrite.
     pub agent_flags:      UnorderedMap<AccountId, AgentFlags>,
+
+    // ── Phase 6: linked external IronClaw agents ───────────────────────
+    /// Maps owner → external IronClaw agent source (URL or handle) when the
+    /// owner has linked an existing ironclaw.com agent to their on-platform
+    /// profile. Lazy-populated; absence means no linked external agent.
+    pub ironclaw_sources: UnorderedMap<AccountId, String>,
 }
 
 #[near]
@@ -227,6 +233,9 @@ impl StakingContract {
             next_skill_id:       0,
             installed_skills:    UnorderedMap::new(b"I"),
             agent_flags:         UnorderedMap::new(b"F"),
+
+            // Phase 6 — linked external IronClaw agents
+            ironclaw_sources:    UnorderedMap::new(b"L"),
         }
     }
 }

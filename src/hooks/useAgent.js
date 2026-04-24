@@ -207,6 +207,20 @@ export default function useAgent() {
     return viewMethod(STAKING_CONTRACT, "get_skill", { skill_id: Number(skillId) });
   }, [viewMethod]);
 
+  // ── Phase 6: link existing IronClaw agent ───────────────────────────────
+  const linkToIronclaw = useCallback(async (source) => {
+    return callMethod(STAKING_CONTRACT, "link_to_ironclaw", { source }, "0");
+  }, [callMethod]);
+
+  const unlinkFromIronclaw = useCallback(async () => {
+    return callMethod(STAKING_CONTRACT, "unlink_from_ironclaw", {}, "0");
+  }, [callMethod]);
+
+  const getIronclawSource = useCallback(async (owner = address) => {
+    if (!owner) return null;
+    return viewMethod(STAKING_CONTRACT, "get_ironclaw_source", { owner });
+  }, [viewMethod, address]);
+
   // Pro-tier derivation from real staking balance. Pro = user has any stake
   // in a pool with reward_multiplier >= 150 (i.e. the "committed" tiers).
   // Returns null while loading, false when not Pro, true when Pro.
@@ -513,6 +527,8 @@ export default function useAgent() {
     // Phase 5: skills marketplace
     createSkill, installSkill, uninstallSkill,
     listSkills, getInstalledSkills, getSkill,
+    // Phase 6: link to existing IronClaw agent
+    linkToIronclaw, unlinkFromIronclaw, getIronclawSource,
     // leaderboard
     leaderboard,
     leaderboardLoading,
