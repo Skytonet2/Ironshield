@@ -216,13 +216,12 @@ function DisconnectedHub({ t, openWallet }) {
           border: `1px solid ${t.border}`, marginBottom: 20,
         }}>
           <div style={{
-            display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 0.9fr)",
-            gap: 24, padding: "40px 44px", alignItems: "center",
+            padding: "40px 44px",
           }}
           className="agent-hub-hero-grid"
           >
-            {/* Left: text + CTA */}
-            <div style={{ minWidth: 0 }}>
+            {/* Text + CTA (decorative mascot illustration removed) */}
+            <div style={{ minWidth: 0, maxWidth: 720 }}>
               <span style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 background: `${violet}1f`, border: `1px solid ${violet}55`,
@@ -277,21 +276,6 @@ function DisconnectedHub({ t, openWallet }) {
               </div>
             </div>
 
-            {/* Right: mascot. Lightweight WebP + no CSS filters to keep the
-                Telegram in-app WebView from OOM-killing the page. */}
-            <div style={{ position: "relative", minHeight: 260, display: "flex", justifyContent: "center", alignItems: "center" }}>
-              <div style={{
-                position: "absolute", inset: 0,
-                background: `radial-gradient(circle at center, ${violet}2a 0%, transparent 60%)`,
-              }} />
-              <img
-                src="/mascot.webp"
-                alt="IronClaw agent mascot"
-                width={260} height={390}
-                decoding="async"
-                style={{ position: "relative", maxWidth: "100%", height: "auto" }}
-              />
-            </div>
           </div>
 
           {/* Feature pills bar — absolutely inside the hero card, spans bottom */}
@@ -914,33 +898,14 @@ export default function AgentDashboardPage({ openWallet }) {
         </div>
       </div>
 
-      {/* ── Hero: avatar + text + mascot + tabs ──────────────────────── */}
+      {/* ── Hero: text + stats + tabs (decorative mascots removed) ──────────────── */}
       <div style={{
         background: `linear-gradient(135deg, ${violet}1e, ${t.bgCard} 55%)`,
         border: `1px solid ${t.border}`, borderRadius: 18,
         padding: 28, marginBottom: 20, position: "relative", overflow: "hidden",
       }}>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(180px, 220px) minmax(0, 1fr) minmax(180px, 260px)",
-          gap: 24, alignItems: "center",
-        }}
-        className="dash-hero-grid">
-          {/* Left: avatar tile */}
-          <div style={{
-            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 16,
-            padding: 16, display: "flex", justifyContent: "center", alignItems: "center",
-            position: "relative", minHeight: 200,
-          }}>
-            <div style={{ position: "absolute", inset: 0,
-              background: `radial-gradient(circle at center, ${violet}2a 0%, transparent 65%)`,
-            }} />
-            <img src="/mascot.webp" alt="agent avatar" width={160} height={240}
-              decoding="async"
-              style={{ position: "relative", maxWidth: "100%", height: "auto" }} />
-          </div>
-
-          {/* Middle: text + stats line */}
+        <div className="dash-hero-grid">
+          {/* Text + stats line */}
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10.5, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 6 }}>
               <span style={{ background: `${violet}22`, color: violet, padding: "3px 8px", borderRadius: 999, fontWeight: 700 }}>
@@ -982,16 +947,6 @@ export default function AgentDashboardPage({ openWallet }) {
             </div>
           </div>
 
-          {/* Right: mascot illustration (duplicate, decorative). Hidden on
-              narrow screens via CSS; still lazy + WebP to avoid decode cost. */}
-          <div style={{ position: "relative", minHeight: 220, display: "flex", justifyContent: "center", alignItems: "center" }}>
-            <div style={{ position: "absolute", inset: 0,
-              background: `radial-gradient(circle at center, ${violet}38 0%, transparent 60%)`,
-            }} />
-            <img src="/mascot.webp" alt="" aria-hidden="true" width={200} height={300}
-              decoding="async" loading="lazy"
-              style={{ position: "relative", maxWidth: "100%", height: "auto" }} />
-          </div>
         </div>
 
         {/* Tab bar */}

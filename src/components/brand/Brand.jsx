@@ -105,13 +105,21 @@ export function BrandPrimary({
 /* ─────────── 2. Mark (nav / sidebar / tight chrome) ─────────── */
 
 export function BrandMark({ size = 28, withWordmark = false, href, asLink = false, className, style }) {
+  // Mascot raster instead of the old SVG shield glyph, per the updated
+  // brand direction. object-fit=contain keeps the full-body mascot
+  // readable at tight chrome sizes (16–40px) since the source file is
+  // a 2:3 portrait.
   const glyph = (
     <img
-      src="/brand/shield-mark.svg"
+      src="/mascot.webp"
       alt=""
       width={size}
       height={size}
-      style={{ display: "block", flexShrink: 0 }}
+      style={{
+        display:   "block",
+        flexShrink: 0,
+        objectFit: "contain",
+      }}
     />
   );
   const content = withWordmark ? (
@@ -180,10 +188,10 @@ export function BrandLoading({ size = 96, label = "Loading IronShield…", pulse
         }}
       >
         <img
-          src="/brand/shield-mono.svg"
+          src="/mascot.webp"
           alt=""
           width="100%" height="100%"
-          style={{ width: "100%", height: "100%" }}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
       </span>
       {label && (

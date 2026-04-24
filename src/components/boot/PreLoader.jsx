@@ -67,23 +67,17 @@ export default function PreLoader() {
         <div className="ic-crest">
           <div className="ic-ring ic-ring-outer" />
           <div className="ic-ring" />
-          <div className="ic-shield">
-            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
-              <path
-                d="M32 4 L54 10 C55.5 10.4 56.5 11.8 56.5 13.4 L56.5 32 C56.5 44.3 48 54.3 32 60 C16 54.3 7.5 44.3 7.5 32 L7.5 13.4 C7.5 11.8 8.5 10.4 10 10 Z"
-                fill="#0b0e1c"
-                stroke="rgba(255,255,255,0.85)"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
-              <g transform="translate(32, 34)" fill="rgba(255,255,255,0.95)">
-                <rect x="-6" y="-8" width="12" height="12" rx="2.4" />
-                <rect x="-4.5" y="-6" width="9" height="2.5" rx="0.8" fill="#1a1d2e" />
-                <circle cx="-2.5" cy="1.2" r="1.4" fill="#1a1d2e" />
-                <circle cx="2.5"  cy="1.2" r="1.4" fill="#1a1d2e" />
-              </g>
-            </svg>
-          </div>
+          {/* Mascot raster replaces the old inline SVG shield glyph.
+              decoding=async keeps first paint snappy even though the
+              image is already preloaded in layout.js. */}
+          <img
+            src="/mascot.webp"
+            alt=""
+            className="ic-mascot"
+            decoding="async"
+            width={120}
+            height={120}
+          />
         </div>
         <div className="ic-brand">Iron<span>Shield</span></div>
         <div className="ic-tag">Connect · Create · Automate · Govern</div>
