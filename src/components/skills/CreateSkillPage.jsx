@@ -1,51 +1,62 @@
 "use client";
-// Create a skill — /skills/create. Four-step wizard with live preview.
+// Create a skill — /skills/create. Wired to the contract's
+// create_skill(name, description, price_yocto) call via useAgent.
 //
-// Layout:
-//   ┌ Header (icon + title + "Free to author" badge + close) ────────┐
-//   ├ Stepper: Details → Permissions → Configure → Review ────────────┤
-//   │ Left: form (Basic info, Category, Tags, Pricing, Early-access)  │
-//   │ Right: live preview card + Permissions summary + Tips + Help    │
-//   ├ Sticky footer: Save draft · autosave indicator · Continue → ────┤
-//   └ Footer strip: Free to publish | Instant publishing | Reach agents
+// The Phase-5 Skill struct on-chain is {id, name, description, author,
+// price_yocto, install_count, created_at}. Category + tag fields from
+// the design mock are NOT stored on-chain yet — they'd have to round-trip
+// through an off-chain metadata table that doesn't exist, so we dropped
+// them from this page. They come back as first-class fields after the
+// Phase 7 contract migration adds `category` and `tags: Vec<String>`.
 //
-// All state is local. The submit flow and contract call (create_skill)
-// land in the follow-up PR.
+// Wizard contract:
+//   Step 1 Details  → validate + collect name, short/long description, price
+//   Step 2 Permissions → placeholder (no on-chain permission model yet)
+//   Step 3 Configure   → placeholder (ditto)
+//   Step 4 Review      → confirm + call create_skill. On success redirect
+//                        to /skills.
+//
+// Until steps 2 + 3 have real fields, advancing through them is
+// cosmetic — the Review step has all the data we actually need.
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
-  Zap, X as XIcon, CheckCircle2, Check, ChevronDown, ArrowRight,
-  ShieldCheck, Bell, Lightbulb, HelpCircle, Store, Eye, Package,
-  Gift, DollarSign, CircleCheck,
+  Zap, X as XIcon, CheckCircle2, Check, ArrowRight, ArrowLeft,
+  ShieldCheck, Lightbulb, HelpCircle, Store, Eye, Package,
+  Info, CircleCheck, Loader2,
 } from "lucide-react";
-import { useTheme } from "@/lib/contexts";
+import { useTheme, useWallet } from "@/lib/contexts";
+import useAgent from "@/hooks/useAgent";
 
 const STEPS = ["Details", "Permissions", "Configure", "Review"];
 
-const CATEGORIES = [
-  { key: "airdrops",    label: "Airdrops & Rewards" },
-  { key: "defi",        label: "DeFi" },
-  { key: "trading",     label: "Trading" },
-  { key: "analytics",   label: "Analytics" },
-  { key: "social",      label: "Social" },
-  { key: "security",    label: "Security" },
-  { key: "productivity",label: "Productivity" },
-  { key: "gaming",      label: "Gaming" },
-  { key: "other",       label: "Other" },
-];
+const NAME_MAX       = 48;
+const SHORT_MAX      = 120;
+const LONG_MAX       = 240; // contract cap on description
+const YOCTO_PER_NEAR = 1_000_000_000_000_000_000_000_000n;
 
-const PERMISSIONS_PREVIEW = [
-  { key: "read",  label: "Read wallet address", note: "Required to analyze eligibility" },
-  { key: "data",  label: "Access blockchain data", note: "Fetch airdrop and campaign data" },
-  { key: "no-tx", label: "No transaction signing", note: "This skill cannot transfer funds" },
-];
+function nearToYocto(nearStr) {
+  // Accepts "0", "0.1", "1.23". Returns a stringified yoctoNEAR integer.
+  const n = String(nearStr ?? "0").trim();
+  if (!n) return "0";
+  const [whole = "0", frac = ""] = n.split(".");
+  const fracPadded = (frac + "000000000000000000000000").slice(0, 24);
+  const y = BigInt(whole) * YOCTO_PER_NEAR + BigInt(fracPadded || "0");
+  return y.toString();
+}
 
 const TIPS = [
   "Use a clear and specific name",
   "Write a detailed description",
-  "Add relevant tags",
   "Keep pricing fair and competitive",
+];
+
+const PERMISSIONS_PREVIEW = [
+  { key: "read",  label: "Read wallet address", note: "Required to analyze eligibility" },
+  { key: "data",  label: "Access blockchain data", note: "Fetch public data from NEAR" },
+  { key: "no-tx", label: "No transaction signing", note: "This skill cannot transfer funds" },
 ];
 
 /* ──────────────────── Header ──────────────────── */
@@ -72,7 +83,7 @@ function WizardHeader({ t }) {
         </h1>
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginTop: 4,
-          fontSize: 12.5, color: t.textMuted,
+          fontSize: 12.5, color: t.textMuted, flexWrap: "wrap",
         }}>
           Publish a capability other agents can install.
           <span style={{
@@ -145,7 +156,7 @@ function Stepper({ t, active }) {
   );
 }
 
-/* ──────────────────── Left: form sections ──────────────────── */
+/* ──────────────────── Form sections ──────────────────── */
 
 function FormSection({ t, children, title, subtitle }) {
   return (
@@ -170,7 +181,7 @@ function FormSection({ t, children, title, subtitle }) {
   );
 }
 
-function Field({ t, label, value, onChange, maxLength, placeholder, multiline, hint }) {
+function Field({ t, label, value, onChange, maxLength, placeholder, multiline, hint, error }) {
   const Tag = multiline ? "textarea" : "input";
   return (
     <div style={{ marginBottom: 18 }}>
@@ -186,7 +197,7 @@ function Field({ t, label, value, onChange, maxLength, placeholder, multiline, h
       </div>
       <div style={{
         position: "relative",
-        border: `1px solid ${t.border}`, borderRadius: 10,
+        border: `1px solid ${error ? "#ef4444" : t.border}`, borderRadius: 10,
         background: t.bgSurface,
       }}>
         <Tag
@@ -204,99 +215,22 @@ function Field({ t, label, value, onChange, maxLength, placeholder, multiline, h
             fontFamily: "inherit",
           }}
         />
-        {value && (
+        {!error && value && (
           <CheckCircle2 size={14} color="#10b981" style={{
             position: "absolute", right: 12, top: multiline ? 14 : "50%",
             transform: multiline ? "none" : "translateY(-50%)",
           }} />
         )}
       </div>
-      {hint && (
+      {error ? (
+        <div style={{ fontSize: 11.5, color: "#fca5a5", marginTop: 6 }}>
+          {error}
+        </div>
+      ) : hint ? (
         <div style={{ fontSize: 11.5, color: t.textDim, marginTop: 6 }}>
           {hint}
         </div>
-      )}
-    </div>
-  );
-}
-
-function CategoryField({ t, value, onChange }) {
-  const current = CATEGORIES.find(c => c.key === value) || CATEGORIES[0];
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ marginBottom: 6 }}>
-        <label style={{ fontSize: 12.5, fontWeight: 700, color: t.white }}>Category</label>
-        <div style={{ fontSize: 11.5, color: t.textDim, marginTop: 2 }}>
-          Choose the best fit for your skill.
-        </div>
-      </div>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10,
-        padding: "11px 14px",
-        background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
-      }}>
-        <Gift size={14} color={t.accent} />
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={{
-            flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none",
-            color: t.white, fontSize: 13, cursor: "pointer",
-            appearance: "none",
-          }}
-        >
-          {CATEGORIES.map(c => (
-            <option key={c.key} value={c.key} style={{ background: t.bgCard, color: t.white }}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown size={14} color={t.textDim} style={{ pointerEvents: "none" }} />
-      </div>
-    </div>
-  );
-}
-
-function TagsField({ t, tags, onChange }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ marginBottom: 6 }}>
-        <label style={{ fontSize: 12.5, fontWeight: 700, color: t.white }}>
-          Tags{" "}
-          <span style={{ color: t.textDim, fontWeight: 500, fontSize: 11.5 }}>
-            (up to 5)
-          </span>
-        </label>
-      </div>
-      <div style={{
-        display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center",
-        padding: "8px 12px",
-        background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
-        minHeight: 40,
-      }}>
-        {tags.map((tag) => (
-          <span key={tag} style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            padding: "3px 10px", borderRadius: 999,
-            background: t.bgCard, border: `1px solid ${t.border}`,
-            fontSize: 11.5, fontWeight: 600, color: t.textMuted,
-          }}>
-            {tag}
-            <button
-              type="button" aria-label={`Remove ${tag}`}
-              onClick={() => onChange(tags.filter(x => x !== tag))}
-              style={{
-                width: 14, height: 14, borderRadius: "50%",
-                background: "transparent", border: "none", color: t.textDim,
-                cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center",
-              }}
-            >
-              <XIcon size={9} />
-            </button>
-          </span>
-        ))}
-        <ChevronDown size={13} color={t.textDim} style={{ marginLeft: "auto" }} />
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -349,7 +283,8 @@ function PricingSection({ t, price, onChange }) {
         }}>
           Free
         </span>
-        Set 0 for free. Paid installs will be available with Marketplace v2.
+        Set 0 for free. Paid installs land with the Phase 7 marketplace migration
+        (99% author / 1% platform).
       </div>
     </FormSection>
   );
@@ -357,9 +292,10 @@ function PricingSection({ t, price, onChange }) {
 
 /* ──────────────────── Right rail ──────────────────── */
 
-function PreviewCard({ t, state }) {
-  const { name, shortDesc, price, category } = state;
-  const priceStr = Number(price) > 0 ? `${price} NEAR` : "Free";
+function PreviewCard({ t, state, author }) {
+  const { name, shortDesc, price } = state;
+  const priceNum = Number(price || 0);
+  const priceStr = priceNum > 0 ? `${priceNum} NEAR` : "Free";
   return (
     <section style={{
       background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
@@ -371,13 +307,12 @@ function PreviewCard({ t, state }) {
         <h3 style={{ fontSize: 14, fontWeight: 800, color: t.white, margin: 0 }}>
           Preview
         </h3>
-        <button type="button" style={{
-          fontSize: 11.5, color: t.accent, fontWeight: 700,
-          background: "transparent", border: "none", cursor: "pointer",
+        <span style={{
+          fontSize: 11.5, color: t.textDim, fontWeight: 600,
           display: "inline-flex", alignItems: "center", gap: 4,
         }}>
-          <Eye size={11} /> See full preview
-        </button>
+          <Eye size={11} /> Live
+        </span>
       </div>
 
       <div style={{
@@ -389,11 +324,13 @@ function PreviewCard({ t, state }) {
             width: 52, height: 52, flexShrink: 0, borderRadius: 12,
             background: `linear-gradient(135deg, rgba(168,85,247,0.35), rgba(59,130,246,0.15))`,
             display: "inline-flex", alignItems: "center", justifyContent: "center",
-            fontSize: 24,
-          }}>🪂</span>
+            color: "#c4b8ff",
+          }}>
+            <Package size={22} />
+          </span>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 15, fontWeight: 800, color: t.white }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 15, fontWeight: 800, color: t.white, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
                 {name || "Skill name"}
               </span>
               <span style={{
@@ -405,64 +342,32 @@ function PreviewCard({ t, state }) {
             </div>
             <div style={{
               fontSize: 11.5, color: t.textMuted, marginTop: 2,
+              fontFamily: "var(--font-jetbrains-mono), monospace",
               display: "inline-flex", alignItems: "center", gap: 4,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%",
             }}>
-              by 0xYourName.near <CheckCircle2 size={11} color={t.accent} />
+              by {author || "your wallet"}
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 12, lineHeight: 1.55 }}>
-          {shortDesc || "Short description will appear here."}
-        </div>
-        <span style={{
-          display: "inline-block", marginBottom: 14,
-          fontSize: 10.5, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
-          background: `${t.accent}22`, color: t.accent,
-        }}>
-          {CATEGORIES.find(c => c.key === category)?.label || "Category"}
-        </span>
-
         <div style={{
-          display: "flex", flexDirection: "column", gap: 8,
-          padding: 12, borderRadius: 10,
-          background: t.bgCard, border: `1px solid ${t.border}`,
+          fontSize: 12.5, color: t.textMuted, marginBottom: 12, lineHeight: 1.55,
+          minHeight: 36,
         }}>
-          <PreviewRow t={t} icon={Package} label="Input"    value="Wallet address" />
-          <PreviewRow t={t} icon={Package} label="Output"   value="List of eligible airdrops" />
-          <PreviewRow t={t} icon={HelpCircle} label="Use case" value="Discover and track airdrop opportunities effortlessly." />
+          {shortDesc || "Short description will appear here."}
         </div>
 
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
-          marginTop: 14, paddingTop: 12, borderTop: `1px solid ${t.border}`,
+          paddingTop: 12, borderTop: `1px solid ${t.border}`,
         }}>
           <div style={{ fontSize: 12, color: t.textMuted }}>Install price</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.white, display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.white }}>
             {priceStr}
-            <span style={{
-              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-              background: "rgba(16,185,129,0.2)", color: "#10b981",
-            }}>
-              {Number(price) > 0 ? "Paid" : "Free"}
-            </span>
           </div>
         </div>
       </div>
     </section>
-  );
-}
-
-function PreviewRow({ t, icon: Icon, label, value }) {
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-      <Icon size={13} color={t.textDim} style={{ marginTop: 2, flexShrink: 0 }} />
-      <div style={{ fontSize: 11, color: t.textDim, width: 64, flexShrink: 0, marginTop: 2 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5, flex: 1 }}>
-        {value}
-      </div>
-    </div>
   );
 }
 
@@ -472,21 +377,11 @@ function PermissionsPreview({ t }) {
       background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
       padding: 20, marginBottom: 16,
     }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14,
-      }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <ShieldCheck size={14} color={t.accent} />
-          <h3 style={{ fontSize: 14, fontWeight: 800, color: t.white, margin: 0 }}>
-            Permissions
-          </h3>
-        </div>
-        <button type="button" style={{
-          fontSize: 11.5, color: t.accent, fontWeight: 700,
-          background: "transparent", border: "none", cursor: "pointer",
-        }}>
-          Manage
-        </button>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <ShieldCheck size={14} color={t.accent} />
+        <h3 style={{ fontSize: 14, fontWeight: 800, color: t.white, margin: 0 }}>
+          Permissions
+        </h3>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {PERMISSIONS_PREVIEW.map(p => (
@@ -553,50 +448,11 @@ function NeedHelp({ t }) {
   );
 }
 
-/* ──────────────────── Sticky footer + bottom strip ──────────────────── */
-
-function WizardFooter({ t, onContinue }) {
-  return (
-    <div className="cs-footer" style={{
-      display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
-      padding: "16px 0 0",
-      marginTop: 20,
-      borderTop: `1px solid ${t.border}`,
-    }}>
-      <button type="button" style={{
-        padding: "11px 18px",
-        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10,
-        fontSize: 13, fontWeight: 700, color: t.text, cursor: "pointer",
-      }}>
-        Save draft
-      </button>
-      <div style={{
-        display: "inline-flex", alignItems: "center", gap: 6,
-        fontSize: 11.5, color: t.textMuted,
-      }}>
-        <CheckCircle2 size={12} color="#10b981" />
-        All changes are saved automatically
-      </div>
-      <div style={{ flex: 1 }} />
-      <button type="button" onClick={onContinue} style={{
-        padding: "12px 22px",
-        background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
-        border: "none", borderRadius: 10,
-        fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
-        display: "inline-flex", alignItems: "center", gap: 8,
-        boxShadow: `0 10px 28px rgba(168,85,247,0.4)`,
-      }}>
-        Continue <ArrowRight size={13} />
-      </button>
-    </div>
-  );
-}
-
 function BottomStrip({ t }) {
   const items = [
-    { Icon: DollarSign, title: "Free to publish", sub: "No fees during beta" },
-    { Icon: Zap,        title: "Instant publishing", sub: "Go live in seconds" },
-    { Icon: Store,      title: "Reach agents",    sub: "Grow your installs"  },
+    { title: "Free to publish", sub: "No fees during beta" },
+    { title: "Instant publishing", sub: "Go live in seconds" },
+    { title: "Reach agents", sub: "Grow your installs" },
   ];
   return (
     <div className="cs-bottom" style={{
@@ -611,7 +467,7 @@ function BottomStrip({ t }) {
             background: `${t.accent}22`, color: t.accent,
             display: "inline-flex", alignItems: "center", justifyContent: "center",
           }}>
-            <it.Icon size={15} />
+            <Zap size={15} />
           </span>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: t.white }}>{it.title}</div>
@@ -623,24 +479,222 @@ function BottomStrip({ t }) {
   );
 }
 
+/* ──────────────────── Steps 2 & 3 (placeholder) ──────────────────── */
+
+function PlaceholderStep({ t, title, body }) {
+  return (
+    <FormSection t={t}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <Info size={14} color={t.accent} />
+        <h2 style={{ fontSize: 15, fontWeight: 800, color: t.white, margin: 0 }}>
+          {title}
+        </h2>
+      </div>
+      <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.6 }}>
+        {body}
+      </div>
+    </FormSection>
+  );
+}
+
+/* ──────────────────── Review step ──────────────────── */
+
+function ReviewStep({ t, state, author, yoctoPrice, submitting, error, onBack, onSubmit }) {
+  return (
+    <FormSection t={t} title="Review" subtitle="Confirm your skill, then publish on-chain.">
+      <div style={{
+        display: "grid", gridTemplateColumns: "max-content 1fr", columnGap: 16, rowGap: 10,
+        padding: "14px 16px",
+        background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 12,
+        fontSize: 13,
+      }}>
+        <div style={{ color: t.textDim }}>Name</div>
+        <div style={{ color: t.white, fontWeight: 700 }}>{state.name || <em style={{ color: t.textDim }}>missing</em>}</div>
+        <div style={{ color: t.textDim }}>Short description</div>
+        <div style={{ color: t.textMuted, lineHeight: 1.5 }}>
+          {state.shortDesc || <em style={{ color: t.textDim }}>missing</em>}
+        </div>
+        <div style={{ color: t.textDim }}>Long description</div>
+        <div style={{ color: t.textMuted, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+          {state.longDesc || <em style={{ color: t.textDim }}>empty</em>}
+        </div>
+        <div style={{ color: t.textDim }}>Install price</div>
+        <div style={{ color: t.white, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
+          {Number(state.price) > 0 ? `${state.price} NEAR` : "Free"}
+          <span style={{
+            marginLeft: 8,
+            fontSize: 11, color: t.textDim,
+            fontFamily: "var(--font-jetbrains-mono), monospace",
+          }}>
+            ({yoctoPrice} yoctoNEAR)
+          </span>
+        </div>
+        <div style={{ color: t.textDim }}>Author</div>
+        <div style={{ color: t.white, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
+          {author || <em style={{ color: t.textDim }}>wallet not connected</em>}
+        </div>
+      </div>
+
+      {error && (
+        <div style={{
+          marginTop: 14, padding: "12px 14px",
+          borderRadius: 10,
+          border: `1px solid rgba(239,68,68,0.35)`,
+          background: "rgba(239,68,68,0.08)",
+          color: "#fecaca", fontSize: 12.5,
+        }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{
+        marginTop: 16,
+        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+      }}>
+        <button type="button" onClick={onBack} style={{
+          padding: "11px 16px",
+          background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+          fontSize: 12.5, fontWeight: 700, color: t.text, cursor: "pointer",
+          display: "inline-flex", alignItems: "center", gap: 6,
+        }}>
+          <ArrowLeft size={13} /> Back
+        </button>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={submitting}
+          style={{
+            padding: "12px 22px",
+            background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+            border: "none", borderRadius: 10,
+            fontSize: 13, fontWeight: 700, color: "#fff",
+            cursor: submitting ? "progress" : "pointer",
+            opacity: submitting ? 0.7 : 1,
+            display: "inline-flex", alignItems: "center", gap: 8,
+            boxShadow: `0 10px 28px rgba(168,85,247,0.4)`,
+          }}
+        >
+          {submitting
+            ? <><Loader2 size={13} style={{ animation: "cs-spin 0.9s linear infinite" }} /> Publishing…</>
+            : <>Publish skill <ArrowRight size={13} /></>}
+        </button>
+      </div>
+
+      <style jsx global>{`
+        @keyframes cs-spin { to { transform: rotate(360deg); } }
+      `}</style>
+    </FormSection>
+  );
+}
+
+/* ──────────────────── Footer nav (steps 1–3) ──────────────────── */
+
+function WizardFooter({ t, canContinue, onBack, onContinue, showBack }) {
+  return (
+    <div className="cs-footer" style={{
+      display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
+      padding: "16px 0 0",
+      marginTop: 20,
+      borderTop: `1px solid ${t.border}`,
+    }}>
+      {showBack && (
+        <button type="button" onClick={onBack} style={{
+          padding: "11px 18px",
+          background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10,
+          fontSize: 13, fontWeight: 700, color: t.text, cursor: "pointer",
+          display: "inline-flex", alignItems: "center", gap: 6,
+        }}>
+          <ArrowLeft size={13} /> Back
+        </button>
+      )}
+      <div style={{ flex: 1 }} />
+      <button
+        type="button"
+        onClick={onContinue}
+        disabled={!canContinue}
+        style={{
+          padding: "12px 22px",
+          background: canContinue
+            ? `linear-gradient(135deg, #a855f7, ${t.accent})`
+            : t.bgSurface,
+          border: canContinue ? "none" : `1px solid ${t.border}`,
+          borderRadius: 10,
+          fontSize: 13, fontWeight: 700,
+          color: canContinue ? "#fff" : t.textDim,
+          cursor: canContinue ? "pointer" : "not-allowed",
+          display: "inline-flex", alignItems: "center", gap: 8,
+          boxShadow: canContinue ? `0 10px 28px rgba(168,85,247,0.4)` : "none",
+        }}
+      >
+        Continue <ArrowRight size={13} />
+      </button>
+    </div>
+  );
+}
+
 /* ──────────────────── Page ──────────────────── */
 
 export default function CreateSkillPage() {
   const t = useTheme();
+  const router = useRouter();
+  const { createSkill } = useAgent();
+  const { connected, address, showModal } = useWallet?.() || {};
+
   const [step, setStep] = useState(0);
   const [state, setState] = useState({
-    name:       "Airdrop Hunter",
-    shortDesc:  "Finds potential airdrops for any wallet across multiple networks.",
-    longDesc:   "Scans multiple blockchain networks to discover potential airdrop opportunities for a given wallet. It monitors eligibility criteria, tracks campaign updates, and delivers a clear list of active airdrops with estimated rewards.",
-    category:   "airdrops",
-    tags:       ["airdrop", "rewards", "wallet", "scanner"],
-    price:      "0",
+    name:      "",
+    shortDesc: "",
+    longDesc:  "",
+    price:     "0",
   });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
   const patch = (next) => setState(s => ({ ...s, ...next }));
 
-  const nameMax = 48;
-  const shortMax = 120;
-  const longMax = 2400;
+  const yoctoPrice = useMemo(() => nearToYocto(state.price), [state.price]);
+
+  // Contract description cap is 240 chars. Combine short + long into one
+  // blob for submission, bounded.
+  const detailsValid = useMemo(() => {
+    const nameOk = state.name.trim().length > 0 && state.name.length <= NAME_MAX;
+    const shortOk = state.shortDesc.trim().length > 0 && state.shortDesc.length <= SHORT_MAX;
+    return nameOk && shortOk;
+  }, [state]);
+
+  const priceValid = useMemo(() => {
+    const n = Number(state.price);
+    return !Number.isNaN(n) && n >= 0;
+  }, [state.price]);
+
+  const canAdvance = (from) => {
+    if (from === 0) return detailsValid && priceValid;
+    return true;
+  };
+
+  const goBack = () => setStep(s => Math.max(0, s - 1));
+  const goNext = () => setStep(s => Math.min(STEPS.length - 1, s + 1));
+
+  const handleSubmit = async () => {
+    if (!connected) { showModal?.(); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      // Concatenate short + long within the 240-char contract cap.
+      const combined = [state.shortDesc.trim(), state.longDesc.trim()]
+        .filter(Boolean).join("\n\n").slice(0, LONG_MAX);
+      await createSkill({
+        name:        state.name.trim().slice(0, NAME_MAX),
+        description: combined,
+        priceYocto:  yoctoPrice,
+      });
+      router.push("/skills");
+    } catch (e) {
+      setError(e?.message || "Publish failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <>
@@ -652,47 +706,100 @@ export default function CreateSkillPage() {
         gap: 22, alignItems: "flex-start",
       }}>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-          <FormSection t={t} title="Basic information" subtitle="Give your skill a clear name and description.">
-            <Field t={t} label="Skill name" maxLength={nameMax}
-              value={state.name} onChange={(v) => patch({ name: v })}
-              placeholder="Airdrop Hunter"
-              hint="Choose a name that describes what your skill does." />
-            <Field t={t} label="Short description" maxLength={shortMax}
-              value={state.shortDesc} onChange={(v) => patch({ shortDesc: v })}
-              placeholder="One-liner visible in the marketplace"
-              hint="One line summary of what your skill does." />
-            <Field t={t} label="Detailed description" maxLength={longMax}
-              value={state.longDesc} onChange={(v) => patch({ longDesc: v })}
-              placeholder="Explain what your skill does in detail"
-              multiline
-              hint="Explain what your skill does, its inputs, outputs and use cases." />
+          {step === 0 && (
+            <>
+              <FormSection t={t} title="Basic information" subtitle="Give your skill a clear name and description.">
+                <Field t={t} label="Skill name" maxLength={NAME_MAX}
+                  value={state.name} onChange={(v) => patch({ name: v })}
+                  placeholder="e.g. Airdrop Hunter"
+                  error={state.name.length > NAME_MAX ? "Too long" : null}
+                  hint="Choose a name that describes what your skill does." />
+                <Field t={t} label="Short description" maxLength={SHORT_MAX}
+                  value={state.shortDesc} onChange={(v) => patch({ shortDesc: v })}
+                  placeholder="One-liner visible in the marketplace"
+                  hint="One line summary of what your skill does." />
+                <Field t={t} label="Detailed description"
+                  value={state.longDesc} onChange={(v) => patch({ longDesc: v })}
+                  placeholder="Explain what your skill does in detail"
+                  multiline
+                  hint={`Short + detailed are merged and capped at ${LONG_MAX} chars on-chain.`} />
+              </FormSection>
 
-            <CategoryField t={t} value={state.category} onChange={(v) => patch({ category: v })} />
-            <TagsField t={t} tags={state.tags} onChange={(v) => patch({ tags: v })} />
-          </FormSection>
+              <PricingSection t={t} price={state.price} onChange={(v) => patch({ price: v })} />
 
-          <PricingSection t={t} price={state.price} onChange={(v) => patch({ price: v })} />
-
-          <div style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "14px 16px",
-            background: `linear-gradient(135deg, rgba(168,85,247,0.16), rgba(59,130,246,0.08))`,
-            border: `1px solid ${t.border}`, borderRadius: 12,
-          }}>
-            <Store size={16} color={t.accent} />
-            <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: t.textMuted }}>
-              <strong style={{ color: t.white }}>Early access:</strong> Publishing is free during beta.
-              <div style={{ marginTop: 2, fontSize: 11.5, color: t.textDim }}>
-                You can update pricing anytime.
+              <div style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "14px 16px",
+                background: `linear-gradient(135deg, rgba(168,85,247,0.16), rgba(59,130,246,0.08))`,
+                border: `1px solid ${t.border}`, borderRadius: 12,
+              }}>
+                <Store size={16} color={t.accent} />
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: t.textMuted }}>
+                  <strong style={{ color: t.white }}>Early access:</strong> Publishing is free during beta.
+                  <div style={{ marginTop: 2, fontSize: 11.5, color: t.textDim }}>
+                    Categories + tags land with the Phase 7 marketplace migration.
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <WizardFooter t={t} onContinue={() => setStep(s => Math.min(s + 1, STEPS.length - 1))} />
+              <WizardFooter t={t} canContinue={canAdvance(0)} showBack={false}
+                onContinue={goNext} />
+            </>
+          )}
+
+          {step === 1 && (
+            <>
+              <PlaceholderStep
+                t={t}
+                title="Permissions"
+                body={
+                  <>
+                    Per-skill permissions land with the Phase 7 contract migration.
+                    For now every skill is classified as read-only: it can see a
+                    connected agent's profile fields, but cannot sign transactions
+                    or transfer tokens. The preview on the right reflects that
+                    baseline.
+                  </>
+                }
+              />
+              <WizardFooter t={t} canContinue showBack onBack={goBack} onContinue={goNext} />
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <PlaceholderStep
+                t={t}
+                title="Configure"
+                body={
+                  <>
+                    Skill parameters (input schema, default config, webhook URL)
+                    are captured off-chain in the functionality UI coming next.
+                    Until then every skill publishes with the default empty
+                    config and is invoked by name.
+                  </>
+                }
+              />
+              <WizardFooter t={t} canContinue showBack onBack={goBack} onContinue={goNext} />
+            </>
+          )}
+
+          {step === 3 && (
+            <ReviewStep
+              t={t}
+              state={state}
+              author={address}
+              yoctoPrice={yoctoPrice}
+              submitting={submitting}
+              error={error || (!connected ? "Connect a NEAR wallet to publish." : null)}
+              onBack={goBack}
+              onSubmit={handleSubmit}
+            />
+          )}
         </div>
 
         <aside style={{ minWidth: 0, position: "sticky", top: 76, display: "flex", flexDirection: "column", gap: 0 }}>
-          <PreviewCard t={t} state={state} />
+          <PreviewCard t={t} state={state} author={address} />
           <PermissionsPreview t={t} />
           <TipsCard t={t} />
           <NeedHelp t={t} />
