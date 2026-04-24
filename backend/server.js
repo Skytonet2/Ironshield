@@ -104,6 +104,7 @@ async function start() {
   try { require("./services/batchWorker").start(); } catch (e) { console.warn("[batch] not started:", e.message); }
   try { require("./jobs/newsBot.job").start(); } catch (e) { console.warn("[newsbot] not started:", e.message); }
   try { require("./services/trendingAgent").start(); } catch (e) { console.warn("[trendingAgent] not started:", e.message); }
+  try { require("./services/orchestratorBot").start(); } catch (e) { console.warn("[orchestrator] not started:", e.message); }
 }
 
 start();
