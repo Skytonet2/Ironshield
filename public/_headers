@@ -1,0 +1,23 @@
+# Cloudflare Pages headers.
+#
+# /clear and /clear.html respond with the Clear-Site-Data header, which
+# forces every modern browser to wipe cache + cookies + site storage +
+# service workers for this origin before the response completes. This is
+# the nuclear recovery path for users stuck with a legacy ironshield.pages.dev
+# service worker that's intercepting their page loads ("This page couldn't
+# load" symptom). The companion /recover page only works if the SW is lax;
+# /clear works even if the SW is fully broken, because the header acts at
+# the HTTP layer before the SW's fetch handler can intercept.
+/clear
+  Clear-Site-Data: "cache", "storage", "cookies", "executionContexts"
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+
+/clear.html
+  Clear-Site-Data: "cache", "storage", "cookies", "executionContexts"
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+
+# Service worker itself must never be cached, so the browser re-fetches it
+# on every navigation and picks up new versions quickly.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
