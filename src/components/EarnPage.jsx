@@ -388,7 +388,7 @@ function SubmitModal({ task, t, onClose, onSubmit, connected, openWallet }) {
 }
 
 // ─── Mission card ─────────────────────────────────────────────────────────────
-function MissionCard({ task, t, onSubmit, connected, openWallet }) {
+function MissionCard({ task, t, onSubmit, onAssignToAgent, hasAgent, connected, openWallet }) {
   return (
     <div style={{
       background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
@@ -460,9 +460,21 @@ function MissionCard({ task, t, onSubmit, connected, openWallet }) {
           ? <div style={{ fontSize: 16, fontWeight: 800, color: t.green, fontFamily: "'JetBrains Mono', monospace", marginBottom: 2 }}>{task.reward}</div>
           : <PointsRange pts={task.points} t={t} />
         }
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
           {connected
-            ? <Btn primary onClick={() => onSubmit(task)} style={{ fontSize: 12, padding: "8px 16px" }}><Send size={12} /> Participate</Btn>
+            ? <>
+                <Btn primary onClick={() => onSubmit(task)} style={{ fontSize: 12, padding: "8px 16px" }}><Send size={12} /> Participate</Btn>
+                {hasAgent && onAssignToAgent && (
+                  <button onClick={() => onAssignToAgent(task)} style={{
+                    background: "transparent", border: `1px solid ${t.accent}55`,
+                    borderRadius: 6, padding: "5px 10px", fontSize: 11, color: t.accent,
+                    cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4,
+                    fontWeight: 600,
+                  }}>
+                    <Bot size={11} /> Assign to agent
+                  </button>
+                )}
+              </>
             : <Btn onClick={openWallet} style={{ fontSize: 12, padding: "8px 16px" }}>Connect</Btn>
           }
         </div>
@@ -796,6 +808,125 @@ function CreateAgentModal({ t, onClose, onCreated, registerAgent, isHandleAvaila
             style={{ flex: 1, justifyContent: "center" }}>
             {submitting ? "Registering…" : <><Bot size={13} /> Register</>}
           </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Assign-to-agent modal ──────────────────────────────────────────────────
+function AssignTaskModal({ t, task, onClose, onAssigned, assignTask }) {
+  const [description, setDescription] = useState(task
+    ? `${task.title}${task.description ? ` — ${task.description}` : ""}`
+    : ""
+  );
+  const [stage, setStage] = useState("compose"); // compose | signing | done | error
+  const [error, setError] = useState("");
+  const [taskId, setTaskId] = useState(null);
+
+  const handleAssign = async () => {
+    const trimmed = description.trim();
+    if (!trimmed) return;
+    setStage("signing");
+    setError("");
+    try {
+      const res = await assignTask({
+        description: trimmed.slice(0, 280),
+        missionId: task?.proposalId ?? null,
+      });
+      // The FunctionCall returns the new task id as the tx result value;
+      // reading it out of the wallet result takes effort. We rely on the
+      // dashboard's task list refresh instead.
+      setTaskId(res?.transaction?.hash || "ok");
+      setStage("done");
+      onAssigned?.();
+    } catch (err) {
+      setError(err?.message || String(err));
+      setStage("error");
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 1000, backdropFilter: "blur(8px)",
+    }}>
+      <div style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20,
+        padding: 28, width: 520, maxWidth: "92vw",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: t.white, display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <Bot size={18} color={t.accent} /> Assign to your agent
+            </div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 1.55 }}>
+              Your agent will pick this up autonomously. Results land in the dashboard activity feed.
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8,
+            width: 30, height: 30, cursor: "pointer", color: t.textMuted,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <X size={13} />
+          </button>
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, marginBottom: 6 }}>
+          Task description <span style={{ color: t.textDim, fontWeight: 400 }}>({description.length}/280)</span>
+        </div>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value.slice(0, 280))}
+          rows={4}
+          placeholder="e.g. Post a Twitter thread about IronShield governance this week, mention @IronClawHQ"
+          style={{
+            width: "100%", background: t.bgSurface, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "12px 14px", color: t.text, fontSize: 13,
+            outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box",
+            lineHeight: 1.55,
+          }}
+        />
+
+        {task?.proposalId && (
+          <div style={{
+            background: `${t.accent}0e`, border: `1px solid ${t.accent}33`, borderRadius: 8,
+            padding: "8px 12px", marginTop: 10, fontSize: 11, color: t.textMuted,
+            display: "inline-flex", alignItems: "center", gap: 6,
+          }}>
+            <Bot size={11} color={t.accent} /> Linked to mission proposal #{task.proposalId}
+          </div>
+        )}
+
+        {stage === "error" && (
+          <div style={{
+            background: `${t.red}14`, border: `1px solid ${t.red}44`, borderRadius: 8,
+            padding: "10px 12px", marginTop: 14, fontSize: 12, color: t.red, wordBreak: "break-word",
+          }}>{error}</div>
+        )}
+
+        {stage === "done" && (
+          <div style={{
+            background: `${t.green}14`, border: `1px solid ${t.green}44`, borderRadius: 8,
+            padding: "10px 12px", marginTop: 14, fontSize: 12, color: t.green, lineHeight: 1.55,
+          }}>
+            Task assigned. Your agent will work on it in the background — track progress from the dashboard.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+          <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>
+            {stage === "done" ? "Close" : "Cancel"}
+          </Btn>
+          {stage !== "done" && (
+            <Btn primary onClick={handleAssign}
+              disabled={stage === "signing" || !description.trim()}
+              style={{ flex: 1, justifyContent: "center" }}>
+              {stage === "signing" ? "Signing…" : <><Bot size={13} /> Assign</>}
+            </Btn>
+          )}
         </div>
       </div>
     </div>
@@ -1410,6 +1541,7 @@ export default function EarnPage({ openWallet }) {
     getSubAccountId,
     leaderboard: chainLeaderboard,
     fetchLeaderboard,
+    assignTask,
   } = useAgent();
 
   const [activeTab, setActiveTab]     = useState(isProgramLive() ? "missions" : "daily");
@@ -1421,6 +1553,7 @@ export default function EarnPage({ openWallet }) {
   const [currentWeek, setCurrentWeek]   = useState(() => getCurrentWeek());
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [showLinkWallet, setShowLinkWallet]   = useState(false);
+  const [assigningTask, setAssigningTask]     = useState(null); // task object or null
 
   // Track narrow viewport so we can SKIP the heavy right-rail subtree + agent
   // mascot + sparkline SVGs instead of just CSS-hiding them. The in-app WebView
@@ -1776,7 +1909,7 @@ export default function EarnPage({ openWallet }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {filteredContent.map(task => (
-                <MissionCard key={task.id} task={task} t={t} onSubmit={handleOpenSubmit} connected={connected} openWallet={openWallet} />
+                <MissionCard key={task.id} task={task} t={t} onSubmit={handleOpenSubmit} onAssignToAgent={setAssigningTask} hasAgent={Boolean(agentProfile)} connected={connected} openWallet={openWallet} />
               ))}
             </div>
           </div>
@@ -1794,7 +1927,7 @@ export default function EarnPage({ openWallet }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {filteredCommunity.map(task => (
-                <MissionCard key={task.id} task={task} t={t} onSubmit={handleOpenSubmit} connected={connected} openWallet={openWallet} />
+                <MissionCard key={task.id} task={task} t={t} onSubmit={handleOpenSubmit} onAssignToAgent={setAssigningTask} hasAgent={Boolean(agentProfile)} connected={connected} openWallet={openWallet} />
               ))}
             </div>
           </div>
@@ -1816,7 +1949,7 @@ export default function EarnPage({ openWallet }) {
                     OOM trying to render all 15+ live agent tasks at once. A
                     "Show more" link reveals the rest only when the user asks. */}
                 {filteredMissions.slice(0, isNarrow ? 6 : filteredMissions.length).map(task => (
-                  <MissionCard key={task.id} task={task} t={t} onSubmit={handleOpenSubmit} connected={connected} openWallet={openWallet} />
+                  <MissionCard key={task.id} task={task} t={t} onSubmit={handleOpenSubmit} onAssignToAgent={setAssigningTask} hasAgent={Boolean(agentProfile)} connected={connected} openWallet={openWallet} />
                 ))}
                 {isNarrow && filteredMissions.length > 6 && (
                   <div style={{ textAlign: "center", padding: "10px 0" }}>
@@ -2161,6 +2294,16 @@ export default function EarnPage({ openWallet }) {
         onClose={() => setShowLinkWallet(false)}
         onLinked={() => refreshAgent().catch(() => {})}
         linkSubWallet={linkSubWallet}
+      />
+    )}
+
+    {/* ── Assign-task modal ────────────────────────────────────────────────── */}
+    {assigningTask && (
+      <AssignTaskModal
+        t={t}
+        task={assigningTask}
+        onClose={() => setAssigningTask(null)}
+        assignTask={assignTask}
       />
     )}
 

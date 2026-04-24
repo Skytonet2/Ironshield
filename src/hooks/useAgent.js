@@ -132,6 +132,81 @@ export default function useAgent() {
     }, "0");
   }, [callMethod]);
 
+  // ── Phase 5: tasks ──────────────────────────────────────────────────────
+  const assignTask = useCallback(async ({ description, missionId = null }) => {
+    return callMethod(STAKING_CONTRACT, "assign_task", {
+      description,
+      mission_id: missionId,
+    }, "0");
+  }, [callMethod]);
+
+  const cancelTask = useCallback(async (taskId) => {
+    return callMethod(STAKING_CONTRACT, "cancel_task", { task_id: Number(taskId) }, "0");
+  }, [callMethod]);
+
+  const completeTask = useCallback(async (owner, taskId, success, result) => {
+    return callMethod(STAKING_CONTRACT, "complete_task", {
+      owner, task_id: Number(taskId), success, result: result || "",
+    }, "0");
+  }, [callMethod]);
+
+  const getAgentTasks = useCallback(async (owner = address) => {
+    if (!owner) return [];
+    const rows = await viewMethod(STAKING_CONTRACT, "get_agent_tasks", { owner });
+    return Array.isArray(rows) ? rows : [];
+  }, [viewMethod, address]);
+
+  // ── Phase 5: IronClaw subscription + public toggle ──────────────────────
+  const setSubscription = useCallback(async (enable) => {
+    return callMethod(STAKING_CONTRACT, "set_subscription", { enable: Boolean(enable) }, "0");
+  }, [callMethod]);
+
+  const setPublicFlag = useCallback(async (isPublic) => {
+    return callMethod(STAKING_CONTRACT, "set_public", { public: Boolean(isPublic) }, "0");
+  }, [callMethod]);
+
+  const getAgentFlags = useCallback(async (owner = address) => {
+    if (!owner) return { public: false, subscribed_to_ironclaw: false };
+    const flags = await viewMethod(STAKING_CONTRACT, "get_agent_flags", { owner });
+    return flags || { public: false, subscribed_to_ironclaw: false };
+  }, [viewMethod, address]);
+
+  const getPublicAgents = useCallback(async ({ limit = 50, offset = 0 } = {}) => {
+    const rows = await viewMethod(STAKING_CONTRACT, "get_public_agents", { limit, offset });
+    return Array.isArray(rows) ? rows : [];
+  }, [viewMethod]);
+
+  // ── Phase 5: skills marketplace ─────────────────────────────────────────
+  const createSkill = useCallback(async ({ name, description, priceYocto = "0" }) => {
+    return callMethod(STAKING_CONTRACT, "create_skill", {
+      name, description,
+      price_yocto: String(priceYocto),
+    }, "0");
+  }, [callMethod]);
+
+  const installSkill = useCallback(async (skillId) => {
+    return callMethod(STAKING_CONTRACT, "install_skill", { skill_id: Number(skillId) }, "0");
+  }, [callMethod]);
+
+  const uninstallSkill = useCallback(async (skillId) => {
+    return callMethod(STAKING_CONTRACT, "uninstall_skill", { skill_id: Number(skillId) }, "0");
+  }, [callMethod]);
+
+  const listSkills = useCallback(async ({ limit = 50, offset = 0 } = {}) => {
+    const rows = await viewMethod(STAKING_CONTRACT, "list_skills", { limit, offset });
+    return Array.isArray(rows) ? rows : [];
+  }, [viewMethod]);
+
+  const getInstalledSkills = useCallback(async (owner = address) => {
+    if (!owner) return [];
+    const rows = await viewMethod(STAKING_CONTRACT, "get_installed_skills", { owner });
+    return Array.isArray(rows) ? rows : [];
+  }, [viewMethod, address]);
+
+  const getSkill = useCallback(async (skillId) => {
+    return viewMethod(STAKING_CONTRACT, "get_skill", { skill_id: Number(skillId) });
+  }, [viewMethod]);
+
   // Pro-tier derivation from real staking balance. Pro = user has any stake
   // in a pool with reward_multiplier >= 150 (i.e. the "committed" tiers).
   // Returns null while loading, false when not Pro, true when Pro.
@@ -431,6 +506,13 @@ export default function useAgent() {
     // orchestrator-only mutations
     recordSubmission,
     recordMissionComplete,
+    // Phase 5: tasks
+    assignTask, cancelTask, completeTask, getAgentTasks,
+    // Phase 5: IronClaw subscription + public directory
+    setSubscription, setPublicFlag, getAgentFlags, getPublicAgents,
+    // Phase 5: skills marketplace
+    createSkill, installSkill, uninstallSkill,
+    listSkills, getInstalledSkills, getSkill,
     // leaderboard
     leaderboard,
     leaderboardLoading,

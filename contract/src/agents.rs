@@ -11,8 +11,52 @@ const NS_PER_WEEK:    u64 = 7 * 24 * 3600 * 1_000_000_000;
 const MAX_SNAPSHOTS:  usize = 7;
 const MAX_ACTIVITY:   usize = 10;
 
+// ── Phase 5: tasks + skills caps ────────────────────────────────────────────
+// Bound per-agent task list so the storage cost per profile stays predictable.
+// An agent can have up to 10 active tasks at once; completed/cancelled tasks
+// fall off the list via the ring-buffer trim in `assign_task`.
+pub const MAX_TASKS_PER_AGENT:       usize = 10;
+pub const MAX_INSTALLED_PER_AGENT:   usize = 25;
+pub const MAX_SKILL_NAME_LEN:        usize = 48;
+pub const MAX_SKILL_DESCRIPTION_LEN: usize = 240;
+pub const MAX_TASK_DESCRIPTION_LEN:  usize = 280;
+
 fn current_week_index() -> u64 {
     env::block_timestamp().saturating_sub(WEEK_ANCHOR_NS) / NS_PER_WEEK
+}
+
+/// A user-assigned task the agent should work on. Status flows:
+/// "active" → "completed" (orchestrator reports success=true) / "failed"
+/// (success=false) / "cancelled" (owner revoked before completion).
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct AgentTask {
+    pub id:           u64,
+    pub owner:        AccountId,
+    pub description:  String,
+    /// Optional link to an existing on-chain mission proposal when the task is
+    /// "work on mission #N"; None for free-form instructions.
+    pub mission_id:   Option<u32>,
+    pub status:       String,
+    pub created_at:   u64,
+    pub completed_at: u64,
+    pub result:       String,
+}
+
+/// A skill is a reusable capability module agents can install — "trading",
+/// "airdrop hunter", "content writer", etc. Skills are authored by anyone with
+/// an agent; the platform takes a cut on paid installs (enforced off-chain for
+/// now; pricing is informational until the skill marketplace v2 slice).
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct Skill {
+    pub id:            u64,
+    pub name:          String,
+    pub description:   String,
+    pub author:        AccountId,
+    pub price_yocto:   u128,
+    pub install_count: u64,
+    pub created_at:    u64,
 }
 
 /// One row in an agent's recent-activity ring buffer. The `kind` is a short
@@ -102,6 +146,20 @@ pub struct AgentProfile {
     pub points: u128,
     pub reputation: u32,
     pub created_at: u64,
+}
+
+/// Phase 5 flags kept in a separate map keyed by owner so AgentProfile's
+/// storage shape stays stable (no profile-rewrite migration needed). Every
+/// field defaults to false; entries are created lazily on first toggle.
+#[near(serializers=[borsh, json])]
+#[derive(Clone, Default)]
+pub struct AgentFlags {
+    /// When true the agent appears in the public /agents directory.
+    pub public: bool,
+    /// When true the agent is subscribed to the IronClaw DAO signal feed
+    /// (mission proposals + alerts). Purely informational on-chain; the
+    /// off-chain relay decides what to forward based on this flag.
+    pub subscribed_to_ironclaw: bool,
 }
 
 #[near]
@@ -411,5 +469,309 @@ impl StakingContract {
         };
         let cap = (limit as usize).min(MAX_ACTIVITY);
         stats.activity_log.iter().rev().take(cap).cloned().collect()
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Phase 5: tasks, IronClaw subscription, public directory, skills
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // ── Tasks ──────────────────────────────────────────────────────────────
+
+    /// Owner assigns a new task to their agent. Optional `mission_id` links
+    /// the task to an existing on-chain mission proposal; free-form tasks
+    /// (no mission) accept any description within the length cap.
+    pub fn assign_task(
+        &mut self,
+        description: String,
+        mission_id: Option<u32>,
+    ) -> u64 {
+        assert!(!self.paused, "Contract is paused");
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register an agent before assigning tasks"
+        );
+        let trimmed = description.trim();
+        assert!(!trimmed.is_empty(), "Description required");
+        assert!(
+            trimmed.len() <= MAX_TASK_DESCRIPTION_LEN,
+            "Description must be ≤280 chars"
+        );
+        if let Some(mid) = mission_id {
+            assert!(
+                self.proposals.get(mid).is_some(),
+                "Referenced mission does not exist"
+            );
+        }
+
+        let id = self.next_task_id;
+        self.next_task_id = self.next_task_id.saturating_add(1);
+
+        let mut list = self.agent_tasks.get(&owner).cloned().unwrap_or_default();
+        // Ring-buffer behaviour: if the owner already has MAX_TASKS active
+        // tasks, drop the oldest to make room.
+        if list.len() >= MAX_TASKS_PER_AGENT {
+            list.remove(0);
+        }
+        let task = AgentTask {
+            id,
+            owner:        owner.clone(),
+            description:  trimmed.to_string(),
+            mission_id,
+            status:       "active".to_string(),
+            created_at:   env::block_timestamp(),
+            completed_at: 0,
+            result:       String::new(),
+        };
+        list.push(task);
+        self.agent_tasks.insert(owner.clone(), list);
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"task_assigned\",\"data\":{{\"owner\":\"{}\",\"task_id\":{},\"mission_id\":{}}}}}",
+            owner, id, mission_id.map(|m| m.to_string()).unwrap_or_else(|| "null".to_string())
+        ));
+        id
+    }
+
+    /// Owner cancels one of their active tasks.
+    pub fn cancel_task(&mut self, task_id: u64) {
+        let owner = env::predecessor_account_id();
+        let mut list = self.agent_tasks.get(&owner).cloned()
+            .expect("No tasks for this owner");
+        let pos = list.iter().position(|t| t.id == task_id)
+            .expect("Task not found");
+        let mut t = list[pos].clone();
+        assert!(t.status == "active", "Task already resolved");
+        t.status = "cancelled".to_string();
+        t.completed_at = env::block_timestamp();
+        list[pos] = t;
+        self.agent_tasks.insert(owner.clone(), list);
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"task_cancelled\",\"data\":{{\"owner\":\"{}\",\"task_id\":{}}}}}",
+            owner, task_id
+        ));
+    }
+
+    /// Orchestrator reports the outcome of a task. `success=true` → completed
+    /// (and optionally awards points via a separate award_points call);
+    /// `success=false` → failed.
+    pub fn complete_task(
+        &mut self,
+        owner: AccountId,
+        task_id: u64,
+        success: bool,
+        result: String,
+    ) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            self.orchestrator_id,
+            "Only the orchestrator can complete tasks"
+        );
+        assert!(result.len() <= 280, "Result must be ≤280 chars");
+        let mut list = self.agent_tasks.get(&owner).cloned()
+            .expect("No tasks for this owner");
+        let pos = list.iter().position(|t| t.id == task_id)
+            .expect("Task not found");
+        let mut t = list[pos].clone();
+        assert!(t.status == "active", "Task already resolved");
+        t.status = if success { "completed" } else { "failed" }.to_string();
+        t.completed_at = env::block_timestamp();
+        t.result = result.clone();
+        list[pos] = t;
+        self.agent_tasks.insert(owner.clone(), list);
+
+        // Mirror into the activity feed so the dashboard shows the outcome
+        // without a separate fetch.
+        if let Some(mut stats) = self.agent_stats.get(&owner).cloned() {
+            stats.push_activity(ActivityEntry {
+                kind:        if success { "task_completed" } else { "task_failed" }.to_string(),
+                amount:      0,
+                description: format!("Task #{}: {}", task_id, result),
+                timestamp:   env::block_timestamp(),
+            });
+            stats.last_active = env::block_timestamp();
+            self.agent_stats.insert(owner.clone(), stats);
+        }
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"task_{}\",\"data\":{{\"owner\":\"{}\",\"task_id\":{}}}}}",
+            if success { "completed" } else { "failed" }, owner, task_id
+        ));
+    }
+
+    pub fn get_agent_tasks(&self, owner: AccountId) -> Vec<AgentTask> {
+        self.agent_tasks.get(&owner).cloned().unwrap_or_default()
+    }
+
+    // ── IronClaw subscription + public toggle ──────────────────────────────
+
+    pub fn set_subscription(&mut self, enable: bool) {
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register an agent first"
+        );
+        let mut flags = self.agent_flags.get(&owner).cloned().unwrap_or_default();
+        flags.subscribed_to_ironclaw = enable;
+        self.agent_flags.insert(owner.clone(), flags);
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"subscription_changed\",\"data\":{{\"owner\":\"{}\",\"enabled\":{}}}}}",
+            owner, enable
+        ));
+    }
+
+    pub fn set_public(&mut self, public: bool) {
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register an agent first"
+        );
+        let mut flags = self.agent_flags.get(&owner).cloned().unwrap_or_default();
+        flags.public = public;
+        self.agent_flags.insert(owner.clone(), flags);
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"public_changed\",\"data\":{{\"owner\":\"{}\",\"public\":{}}}}}",
+            owner, public
+        ));
+    }
+
+    pub fn get_agent_flags(&self, owner: AccountId) -> AgentFlags {
+        self.agent_flags.get(&owner).cloned().unwrap_or_default()
+    }
+
+    /// Public directory of agents whose owners have opted in via set_public.
+    /// Returned newest-first; limit capped at 100 to keep the call bounded.
+    pub fn get_public_agents(&self, limit: u32, offset: u32) -> Vec<AgentProfile> {
+        let cap  = (limit as usize).min(100);
+        let skip = offset as usize;
+        // Walk agent_flags (small set — only agents that ever toggled), join
+        // with agent_profiles, filter for public=true.
+        let mut profiles: Vec<AgentProfile> = self.agent_flags
+            .iter()
+            .filter_map(|(owner, flags)| {
+                if flags.public {
+                    self.agent_profiles.get(owner).cloned()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        profiles.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        profiles.into_iter().skip(skip).take(cap).collect()
+    }
+
+    // ── Skills marketplace ─────────────────────────────────────────────────
+
+    pub fn create_skill(
+        &mut self,
+        name: String,
+        description: String,
+        price_yocto: U128,
+    ) -> u64 {
+        assert!(!self.paused, "Contract is paused");
+        let author = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&author).is_some(),
+            "Register an agent before authoring skills"
+        );
+        let name_t = name.trim();
+        assert!(
+            !name_t.is_empty() && name_t.len() <= MAX_SKILL_NAME_LEN,
+            "Skill name required and ≤48 chars"
+        );
+        let desc_t = description.trim();
+        assert!(
+            desc_t.len() <= MAX_SKILL_DESCRIPTION_LEN,
+            "Skill description must be ≤240 chars"
+        );
+
+        let id = self.next_skill_id;
+        self.next_skill_id = self.next_skill_id.saturating_add(1);
+        let skill = Skill {
+            id,
+            name:          name_t.to_string(),
+            description:   desc_t.to_string(),
+            author:        author.clone(),
+            price_yocto:   price_yocto.into(),
+            install_count: 0,
+            created_at:    env::block_timestamp(),
+        };
+        self.skills.insert(id, skill);
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_created\",\"data\":{{\"id\":{},\"author\":\"{}\",\"name\":\"{}\"}}}}",
+            id, author, name_t
+        ));
+        id
+    }
+
+    pub fn install_skill(&mut self, skill_id: u64) {
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register an agent first"
+        );
+        let mut skill = self.skills.get(&skill_id).cloned()
+            .expect("Skill not found");
+        let mut installed = self.installed_skills.get(&owner).cloned().unwrap_or_default();
+        assert!(
+            !installed.contains(&skill_id),
+            "Skill already installed"
+        );
+        assert!(
+            installed.len() < MAX_INSTALLED_PER_AGENT,
+            "Installed-skills limit reached (25)"
+        );
+        installed.push(skill_id);
+        self.installed_skills.insert(owner.clone(), installed);
+
+        skill.install_count = skill.install_count.saturating_add(1);
+        self.skills.insert(skill_id, skill);
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_installed\",\"data\":{{\"owner\":\"{}\",\"skill_id\":{}}}}}",
+            owner, skill_id
+        ));
+    }
+
+    pub fn uninstall_skill(&mut self, skill_id: u64) {
+        let owner = env::predecessor_account_id();
+        let mut installed = self.installed_skills.get(&owner).cloned()
+            .expect("No skills installed");
+        let pos = installed.iter().position(|id| *id == skill_id)
+            .expect("Skill not installed");
+        installed.remove(pos);
+        self.installed_skills.insert(owner.clone(), installed);
+
+        if let Some(mut s) = self.skills.get(&skill_id).cloned() {
+            s.install_count = s.install_count.saturating_sub(1);
+            self.skills.insert(skill_id, s);
+        }
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"skill_uninstalled\",\"data\":{{\"owner\":\"{}\",\"skill_id\":{}}}}}",
+            owner, skill_id
+        ));
+    }
+
+    pub fn get_skill(&self, skill_id: u64) -> Option<Skill> {
+        self.skills.get(&skill_id).cloned()
+    }
+
+    /// Skill marketplace listing — newest first. Limit capped at 100.
+    pub fn list_skills(&self, limit: u32, offset: u32) -> Vec<Skill> {
+        let cap  = (limit as usize).min(100);
+        let skip = offset as usize;
+        let mut all: Vec<Skill> = self.skills.values().cloned().collect();
+        all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        all.into_iter().skip(skip).take(cap).collect()
+    }
+
+    pub fn get_installed_skills(&self, owner: AccountId) -> Vec<Skill> {
+        let ids = self.installed_skills.get(&owner).cloned().unwrap_or_default();
+        ids.iter().filter_map(|id| self.skills.get(id).cloned()).collect()
+    }
+
+    pub fn get_skills_count(&self) -> u64 {
+        self.next_skill_id
     }
 }

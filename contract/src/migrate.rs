@@ -111,11 +111,114 @@ impl StakingContract {
             vanguard_verified:      LookupSet::new(b"V"),
             vanguard_token_id_max:  1000,
 
-            // Agent profiles + points (initialized empty on Phase 1 → Phase 4 path)
+            // Agent profiles + points (initialized empty on Phase 1 → Phase 5 path)
             agent_profiles:      UnorderedMap::new(b"G"),
             agent_handles:       UnorderedMap::new(b"H"),
             total_points_issued: 0,
             agent_stats:         UnorderedMap::new(b"S"),
+            agent_tasks:         UnorderedMap::new(b"T"),
+            next_task_id:        0,
+            skills:              UnorderedMap::new(b"K"),
+            next_skill_id:       0,
+            installed_skills:    UnorderedMap::new(b"I"),
+            agent_flags:         UnorderedMap::new(b"F"),
+        }
+    }
+}
+
+/// Byte-for-byte mirror of the Phase-4 (post-`migrate_v4_agent_stats()`) shape.
+/// Used by `migrate_v5_tasks_skills()` to preserve state while adding the
+/// Phase 5 storage (agent_tasks, skills, installed_skills, agent_flags). Do
+/// NOT edit once the Phase 5 upgrade has run on mainnet.
+#[near(serializers=[borsh])]
+struct Phase4StakingContract {
+    owner_id:               AccountId,
+    ironclaw_token_id:      AccountId,
+    pools:                  OldVector<PoolInfo>,
+    user_info:              OldLookupMap<String, UserInfo>,
+    reward_per_ns:          Balance,
+    last_reward_time:       u64,
+    total_alloc_point:      u32,
+    paused:                 bool,
+    proposals:              OldVector<Proposal>,
+    votes:                  OldLookupMap<String, String>,
+    mission_results:        OldLookupMap<u32, MissionResult>,
+    orchestrator_id:        AccountId,
+    total_revenue:          Balance,
+    distributed_revenue:    Balance,
+    staker_share_bps:       u32,
+    contributor_share_bps:  u32,
+    reserve_share_bps:      u32,
+    proposer_share_bps:     u32,
+    contributor_wallet:     AccountId,
+    reserve_wallet:         AccountId,
+    proposer_wallet:        AccountId,
+    pretoken_mode:          bool,
+    contributors:           OldUnorderedMap<AccountId, ContributorInfo>,
+    pending_applications:   OldUnorderedMap<AccountId, ContributorApplication>,
+    vanguard_nft_contracts: OldVector<AccountId>,
+    vanguard_verified:      OldLookupSet<AccountId>,
+    vanguard_token_id_max:  u64,
+    agent_profiles:         OldUnorderedMap<AccountId, AgentProfile>,
+    agent_handles:          OldUnorderedMap<String, AccountId>,
+    total_points_issued:    Balance,
+    agent_stats:            OldUnorderedMap<AccountId, AgentStats>,
+}
+
+#[near]
+impl StakingContract {
+    /// Phase 4 → Phase 5 upgrade: preserves all existing state and seeds the
+    /// new task queue, skills catalog, installed-skills map, and agent flags.
+    /// Safe to call exactly once on a contract that has already run
+    /// `migrate_v4_agent_stats()`.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate_v5_tasks_skills() -> Self {
+        let old: Phase4StakingContract = env::state_read()
+            .expect("No state to migrate — was the contract ever initialized?");
+
+        env::log_str("EVENT_JSON:{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"state_migrated\",\"data\":{\"to\":\"phase5_tasks_skills\"}}");
+
+        Self {
+            owner_id:               old.owner_id,
+            ironclaw_token_id:      old.ironclaw_token_id,
+            pools:                  old.pools,
+            user_info:              old.user_info,
+            reward_per_ns:          old.reward_per_ns,
+            last_reward_time:       old.last_reward_time,
+            total_alloc_point:      old.total_alloc_point,
+            paused:                 old.paused,
+            proposals:              old.proposals,
+            votes:                  old.votes,
+            mission_results:        old.mission_results,
+            orchestrator_id:        old.orchestrator_id,
+            total_revenue:          old.total_revenue,
+            distributed_revenue:    old.distributed_revenue,
+            staker_share_bps:       old.staker_share_bps,
+            contributor_share_bps:  old.contributor_share_bps,
+            reserve_share_bps:      old.reserve_share_bps,
+            proposer_share_bps:     old.proposer_share_bps,
+            contributor_wallet:     old.contributor_wallet,
+            reserve_wallet:         old.reserve_wallet,
+            proposer_wallet:        old.proposer_wallet,
+            pretoken_mode:          old.pretoken_mode,
+            contributors:           old.contributors,
+            pending_applications:   old.pending_applications,
+            vanguard_nft_contracts: old.vanguard_nft_contracts,
+            vanguard_verified:      old.vanguard_verified,
+            vanguard_token_id_max:  old.vanguard_token_id_max,
+            agent_profiles:         old.agent_profiles,
+            agent_handles:          old.agent_handles,
+            total_points_issued:    old.total_points_issued,
+            agent_stats:            old.agent_stats,
+
+            // Phase 5 — empty collections, populated lazily
+            agent_tasks:      UnorderedMap::new(b"T"),
+            next_task_id:     0,
+            skills:           UnorderedMap::new(b"K"),
+            next_skill_id:    0,
+            installed_skills: UnorderedMap::new(b"I"),
+            agent_flags:      UnorderedMap::new(b"F"),
         }
     }
 }
@@ -205,6 +308,16 @@ impl StakingContract {
 
             // Phase 4 — empty stats map, populated lazily by award_points etc.
             agent_stats: UnorderedMap::new(b"S"),
+
+            // Phase 5 — empty collections (seeded here so a fresh contract
+            // built from the new lib.rs also works if the Phase-3 → Phase-4
+            // migration path is chosen over the dedicated Phase-5 one).
+            agent_tasks:      UnorderedMap::new(b"T"),
+            next_task_id:     0,
+            skills:           UnorderedMap::new(b"K"),
+            next_skill_id:    0,
+            installed_skills: UnorderedMap::new(b"I"),
+            agent_flags:      UnorderedMap::new(b"F"),
         }
     }
 }
@@ -292,6 +405,15 @@ impl StakingContract {
             agent_handles:       UnorderedMap::new(b"H"),
             total_points_issued: 0,
             agent_stats:         UnorderedMap::new(b"S"),
+
+            // Phase 5 seeds (empty; picked up once the Phase 5 migration runs
+            // or an owner calls assign_task/create_skill/set_public/etc.)
+            agent_tasks:         UnorderedMap::new(b"T"),
+            next_task_id:        0,
+            skills:              UnorderedMap::new(b"K"),
+            next_skill_id:       0,
+            installed_skills:    UnorderedMap::new(b"I"),
+            agent_flags:         UnorderedMap::new(b"F"),
         }
     }
 }

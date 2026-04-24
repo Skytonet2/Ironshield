@@ -522,6 +522,9 @@ export default function AgentDashboardPage({ openWallet }) {
     getOrchestratorInfo, delegateToOrchestrator, revokeDelegatedKey,
     listSubWalletKeys,
     getAgentStats, getAgentActivity, getProStatus,
+    getAgentTasks, cancelTask,
+    getAgentFlags, setSubscription, setPublicFlag,
+    getInstalledSkills, uninstallSkill,
   } = agent;
 
   const [subKeys, setSubKeys]       = useState([]);
@@ -536,6 +539,11 @@ export default function AgentDashboardPage({ openWallet }) {
   const [activity, setActivity]         = useState([]);
   const [isPro, setIsPro]               = useState(false);
   const [activeTab, setActiveTab]       = useState("overview");
+  // Phase 5 state — tasks, flags, installed skills
+  const [tasks, setTasks]               = useState([]);
+  const [flags, setFlags]               = useState({ public: false, subscribed_to_ironclaw: false });
+  const [installed, setInstalled]       = useState([]);
+  const [toggleBusy, setToggleBusy]     = useState(null); // "subscribe" | "public" | null
 
   // Mock overrides — applied *after* hook calls so React's order-of-hooks rule
   // stays stable. We substitute the values used for rendering but leave the
@@ -634,24 +642,87 @@ export default function AgentDashboardPage({ openWallet }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMock]);
 
-  // ── Real stats + activity + Pro ───────────────────────────────────────
+  // ── Real stats + activity + Pro + Phase 5 (tasks/flags/skills) ────────
   const fetchStatsBundle = useCallback(async () => {
     if (isMock || !connected || !address || !profile) return;
     try {
-      const [s, a, p] = await Promise.all([
+      const [s, a, p, ts, fg, sk] = await Promise.all([
         getAgentStats(address),
         getAgentActivity(address, 10),
         getProStatus(address),
+        getAgentTasks(address),
+        getAgentFlags(address),
+        getInstalledSkills(address),
       ]);
       setStats(s || null);
       setActivity(Array.isArray(a) ? a : []);
       setIsPro(Boolean(p));
+      setTasks(Array.isArray(ts) ? ts : []);
+      setFlags(fg || { public: false, subscribed_to_ironclaw: false });
+      setInstalled(Array.isArray(sk) ? sk : []);
     } catch (err) {
       console.warn("fetchStatsBundle:", err?.message || err);
     }
-  }, [isMock, connected, address, profile, getAgentStats, getAgentActivity, getProStatus]);
+  }, [isMock, connected, address, profile, getAgentStats, getAgentActivity, getProStatus, getAgentTasks, getAgentFlags, getInstalledSkills]);
 
   useEffect(() => { fetchStatsBundle(); }, [fetchStatsBundle]);
+
+  // Mock Phase 5 data when ?mock=1
+  useEffect(() => {
+    if (!isMock) return;
+    setTasks([
+      { id: 1, owner: "alice.near", description: "Post a Twitter thread about IronClaw governance", mission_id: null, status: "active", created_at: String(BigInt(Date.now() - 6 * 3600_000) * 1_000_000n), completed_at: "0", result: "" },
+      { id: 2, owner: "alice.near", description: "Audit the treasury rebalance proposal (#12)", mission_id: 12, status: "active", created_at: String(BigInt(Date.now() - 2 * 3600_000) * 1_000_000n), completed_at: "0", result: "" },
+      { id: 3, owner: "alice.near", description: "Hunt airdrops — Abstract, Linea, Berachain", mission_id: null, status: "completed", created_at: String(BigInt(Date.now() - 24 * 3600_000) * 1_000_000n), completed_at: String(BigInt(Date.now() - 18 * 3600_000) * 1_000_000n), result: "Found 3 eligible airdrops worth ~$420 est." },
+    ]);
+    setFlags({ public: true, subscribed_to_ironclaw: true });
+    setInstalled([
+      { id: 1, name: "Airdrop Hunter", description: "Scans chains for eligible airdrops and claims them.", author: "skyto.near", price_yocto: "0", install_count: 127, created_at: String(BigInt(Date.now() - 9 * 86_400_000) * 1_000_000n) },
+      { id: 3, name: "Alpha Scout", description: "Surfaces early plays from NEAR + AI-x-crypto timelines.", author: "near_legend.near", price_yocto: "0", install_count: 89, created_at: String(BigInt(Date.now() - 7 * 86_400_000) * 1_000_000n) },
+    ]);
+  }, [isMock]);
+
+  const handleToggleSubscription = async () => {
+    setToggleBusy("subscribe");
+    try {
+      await setSubscription(!flags.subscribed_to_ironclaw);
+      setFlags((f) => ({ ...f, subscribed_to_ironclaw: !f.subscribed_to_ironclaw }));
+    } catch (err) {
+      alert("Failed: " + (err?.message || err));
+    } finally {
+      setToggleBusy(null);
+    }
+  };
+
+  const handleTogglePublic = async () => {
+    setToggleBusy("public");
+    try {
+      await setPublicFlag(!flags.public);
+      setFlags((f) => ({ ...f, public: !f.public }));
+    } catch (err) {
+      alert("Failed: " + (err?.message || err));
+    } finally {
+      setToggleBusy(null);
+    }
+  };
+
+  const handleCancelTask = async (taskId) => {
+    try {
+      await cancelTask(taskId);
+      setTasks((ts) => ts.map(t => t.id === taskId ? { ...t, status: "cancelled", completed_at: String(BigInt(Date.now()) * 1_000_000n) } : t));
+    } catch (err) {
+      alert("Failed: " + (err?.message || err));
+    }
+  };
+
+  const handleUninstallSkill = async (skillId) => {
+    try {
+      await uninstallSkill(skillId);
+      setInstalled((s) => s.filter((x) => x.id !== skillId));
+    } catch (err) {
+      alert("Failed: " + (err?.message || err));
+    }
+  };
 
   // ── Sub-wallet state (keys + balance) ──────────────────────────────────
   const refreshSubWalletState = useCallback(async () => {
@@ -1067,21 +1138,73 @@ export default function AgentDashboardPage({ openWallet }) {
                 </div>
               </PanelShell>
 
-              {/* Missions */}
+              {/* Active Tasks */}
               <PanelShell t={t}>
-                <PanelHeader t={t} icon={Target} title="Missions Progress" accent={violet}
-                  rightSlot={<Link href="/earn" style={{ fontSize: 11, color: violet, textDecoration: "none", fontWeight: 700 }}>Browse all →</Link>}
+                <PanelHeader t={t} icon={Target} title="Active Tasks" accent={violet}
+                  rightSlot={<Link href="/earn" style={{ fontSize: 11, color: violet, textDecoration: "none", fontWeight: 700 }}>Assign new →</Link>}
                 />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
-                  <MiniKV t={t} label="Completed" value={fmt(missions)} mono />
-                  <MiniKV t={t} label="Approved" value={fmt(approved)} mono />
-                  <MiniKV t={t} label="Rejected" value={fmt(rejected)} mono />
-                </div>
-                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 12, lineHeight: 1.55 }}>
-                  Per-mission progress bars arrive with the mission-assignment slice —
-                  the orchestrator needs to bind individual missions to an agent before
-                  we can render X/Y completion here.
-                </div>
+                {tasks.length === 0 ? (
+                  <div style={{ fontSize: 12, color: t.textDim, textAlign: "center", padding: "18px 0", lineHeight: 1.55 }}>
+                    No tasks yet. Open <Link href="/earn" style={{ color: violet }}>Earn</Link> and click
+                    <span style={{ color: t.white, padding: "0 4px" }}>Assign to agent</span>
+                    on any mission to put your agent to work.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {tasks.slice().reverse().slice(0, 8).map((tk) => (
+                      <TaskRow key={tk.id} t={t} task={tk} onCancel={handleCancelTask} violet={violet} />
+                    ))}
+                  </div>
+                )}
+                {tasks.length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginTop: 14, borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+                    <MiniKV t={t} label="Total" value={fmt(tasks.length)} mono />
+                    <MiniKV t={t} label="Active" value={fmt(tasks.filter(x => x.status === "active").length)} mono />
+                    <MiniKV t={t} label="Completed" value={fmt(tasks.filter(x => x.status === "completed").length)} mono />
+                  </div>
+                )}
+              </PanelShell>
+
+              {/* My Skills */}
+              <PanelShell t={t}>
+                <PanelHeader t={t} icon={Zap} title="Installed Skills" accent={violet}
+                  rightSlot={<Link href="/skills" style={{ fontSize: 11, color: violet, textDecoration: "none", fontWeight: 700 }}>Browse marketplace →</Link>}
+                />
+                {installed.length === 0 ? (
+                  <div style={{ fontSize: 12, color: t.textDim, textAlign: "center", padding: "18px 0", lineHeight: 1.55 }}>
+                    No skills installed. Skills add capabilities to your agent —
+                    airdrop hunting, alpha scouting, content generation, etc.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {installed.map((sk) => (
+                      <SkillRow key={sk.id} t={t} skill={sk} onUninstall={handleUninstallSkill} violet={violet} />
+                    ))}
+                  </div>
+                )}
+              </PanelShell>
+
+              {/* Public + IronClaw settings */}
+              <PanelShell t={t}>
+                <PanelHeader t={t} icon={Settings} title="Agent Settings" accent={violet} />
+                <ToggleRow
+                  t={t}
+                  label="Publish as public agent"
+                  hint="Listed in the /agents directory — other users can discover your agent's profile, reputation, and skills."
+                  on={flags.public}
+                  onToggle={handleTogglePublic}
+                  busy={toggleBusy === "public"}
+                  violet={violet}
+                />
+                <ToggleRow
+                  t={t}
+                  label="Subscribe to IronClaw signals"
+                  hint="Your agent follows the IronClaw DAO feed (mission proposals, security alerts, alpha)."
+                  on={flags.subscribed_to_ironclaw}
+                  onToggle={handleToggleSubscription}
+                  busy={toggleBusy === "subscribe"}
+                  violet={violet}
+                />
               </PanelShell>
             </div>
 
@@ -1491,6 +1614,121 @@ function SecurityCheck({ t, ok, label }) {
         ? <CheckCircle2 size={14} color={t.green} />
         : <XCircle size={14} color={t.textDim} />}
       <span style={{ color: ok ? t.white : t.textMuted }}>{label}</span>
+    </div>
+  );
+}
+
+// ── Phase 5 row components ──────────────────────────────────────────────────
+function TaskRow({ t, task, onCancel, violet }) {
+  const created = task.created_at ? Number(BigInt(task.created_at) / 1_000_000n) : 0;
+  const rel = created ? fmtRelative(Date.now() - created) : "";
+  const statusColor =
+    task.status === "active"    ? t.accent :
+    task.status === "completed" ? t.green  :
+    task.status === "failed"    ? t.red    : t.textDim;
+  return (
+    <div style={{
+      background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+      padding: "10px 12px", display: "flex", gap: 10, alignItems: "flex-start",
+    }}>
+      <div style={{
+        width: 6, height: 6, marginTop: 7, borderRadius: "50%",
+        background: statusColor, flexShrink: 0,
+        boxShadow: task.status === "active" ? `0 0 8px ${statusColor}` : "none",
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: t.white, fontWeight: 600, lineHeight: 1.45 }}>
+          {task.description}
+        </div>
+        <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: t.textDim, marginTop: 3, flexWrap: "wrap" }}>
+          <span style={{ color: statusColor, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            {task.status}
+          </span>
+          {task.mission_id != null && <span>mission #{task.mission_id}</span>}
+          <span>{rel}</span>
+        </div>
+        {task.result && task.status !== "active" && (
+          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, fontStyle: "italic", lineHeight: 1.5 }}>
+            {task.result}
+          </div>
+        )}
+      </div>
+      {task.status === "active" && onCancel && (
+        <button onClick={() => onCancel(task.id)} style={{
+          background: "transparent", border: `1px solid ${t.red}44`, borderRadius: 6,
+          padding: "3px 8px", fontSize: 10, color: t.red, cursor: "pointer", fontWeight: 700, flexShrink: 0,
+        }}>
+          Cancel
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SkillRow({ t, skill, onUninstall, violet }) {
+  return (
+    <div style={{
+      background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+      padding: "10px 12px", display: "flex", gap: 10, alignItems: "flex-start",
+    }}>
+      <div style={{
+        background: `${violet}1a`, borderRadius: 8, width: 28, height: 28,
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+      }}>
+        <Zap size={13} color={violet} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: t.white, fontWeight: 700 }}>{skill.name}</div>
+        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.5 }}>
+          {skill.description}
+        </div>
+        <div style={{ fontSize: 10.5, color: t.textDim, marginTop: 4 }}>
+          by {skill.author} · {skill.install_count} installs
+        </div>
+      </div>
+      {onUninstall && (
+        <button onClick={() => onUninstall(skill.id)} style={{
+          background: "transparent", border: `1px solid ${t.border}`, borderRadius: 6,
+          padding: "3px 8px", fontSize: 10, color: t.textMuted, cursor: "pointer", fontWeight: 600, flexShrink: 0,
+        }}>
+          Remove
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ToggleRow({ t, label, hint, on, onToggle, busy, violet }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12,
+      padding: "12px 0", borderBottom: `1px solid ${t.border}`,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: t.white, fontWeight: 600 }}>{label}</div>
+        {hint && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3, lineHeight: 1.5 }}>{hint}</div>}
+      </div>
+      <button
+        disabled={busy}
+        onClick={onToggle}
+        role="switch"
+        aria-checked={on}
+        style={{
+          width: 42, height: 22, borderRadius: 999, border: "none",
+          background: on ? `linear-gradient(90deg, ${violet}, ${t.accent})` : t.bgSurface,
+          boxShadow: on ? `0 0 0 1px ${violet}88` : `0 0 0 1px ${t.border}`,
+          cursor: busy ? "wait" : "pointer", position: "relative", flexShrink: 0,
+          transition: "background 0.15s, box-shadow 0.15s",
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        <span style={{
+          position: "absolute", top: 2, left: on ? 22 : 2,
+          width: 18, height: 18, borderRadius: "50%", background: "#fff",
+          transition: "left 0.18s cubic-bezier(.2,.8,.2,1)",
+          boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+        }} />
+      </button>
     </div>
   );
 }

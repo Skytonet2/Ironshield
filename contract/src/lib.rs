@@ -17,7 +17,7 @@ mod agents;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
-pub use agents::{AgentProfile, AgentStats, ActivityEntry};
+pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, AgentFlags};
 
 pub type PoolId = u32;
 
@@ -154,6 +154,21 @@ pub struct StakingContract {
     /// as a separate map from `agent_profiles` so Phase 4 didn't need to
     /// rewrite existing profiles; each entry is lazy-created on first write.
     pub agent_stats: UnorderedMap<AccountId, AgentStats>,
+
+    // ── Agent tasks + skills marketplace (Phase 5) ─────────────────────
+    /// Active + historical tasks per agent owner (bounded ring, cap 10).
+    pub agent_tasks:      UnorderedMap<AccountId, Vec<AgentTask>>,
+    /// Monotonic task id so the frontend + orchestrator can reference tasks
+    /// without ambiguity across agents.
+    pub next_task_id:     u64,
+    /// Global skills catalog keyed by skill id.
+    pub skills:           UnorderedMap<u64, Skill>,
+    pub next_skill_id:    u64,
+    /// Per-owner list of installed skill ids (cap 25).
+    pub installed_skills: UnorderedMap<AccountId, Vec<u64>>,
+    /// Per-owner public-directory + IronClaw-subscription flags. Kept separate
+    /// from AgentProfile so Phase 4 profiles don't need a rewrite.
+    pub agent_flags:      UnorderedMap<AccountId, AgentFlags>,
 }
 
 #[near]
@@ -204,6 +219,14 @@ impl StakingContract {
             agent_handles:       UnorderedMap::new(b"H"),
             total_points_issued: 0,
             agent_stats:         UnorderedMap::new(b"S"),
+
+            // Phase 5 — tasks + skills + flags
+            agent_tasks:         UnorderedMap::new(b"T"),
+            next_task_id:        0,
+            skills:              UnorderedMap::new(b"K"),
+            next_skill_id:       0,
+            installed_skills:    UnorderedMap::new(b"I"),
+            agent_flags:         UnorderedMap::new(b"F"),
         }
     }
 }
