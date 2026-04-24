@@ -236,6 +236,50 @@ router.get("/list", async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/newscoin/by-creator?creator=<wallet>
+//
+// Alias for /creator/:wallet kept because several frontend surfaces
+// (FeedRightRail "Your Deploys", profile page) call this path with a
+// query-string creator rather than the path form. Must be registered
+// BEFORE the /:coinId route below or Express matches "by-creator" as
+// a coin id and the DB throws "invalid input syntax for type integer".
+// ---------------------------------------------------------------------------
+router.get("/by-creator", async (req, res, next) => {
+  try {
+    if (!ensureDb(res)) return;
+    const wallet = String(req.query.creator || "").trim();
+    if (!wallet) return res.status(400).json({ error: "creator query param required" });
+
+    const { rows } = await db.query(
+      `SELECT c.*,
+              COALESCE(h.balance, 0) AS holdings
+       FROM feed_newscoins c
+       LEFT JOIN feed_newscoin_holdings h ON h.coin_id = c.id AND h.wallet = $1
+       WHERE c.creator = $1
+       ORDER BY c.created_at DESC`,
+      [wallet]
+    );
+
+    const coins = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      ticker: r.ticker,
+      mcap: Number(r.mcap),
+      mcapUsd: Number(r.mcap_usd) || 0,
+      holdings: Number(r.holdings),
+      graduated: r.graduated,
+      created_at: r.created_at,
+      claimableFees: 0, // parity with /creator/:wallet until fee accumulator ships
+    }));
+
+    const totalClaimable = coins.reduce((s, c) => s + c.claimableFees, 0);
+    res.json({ coins, totalPnl: 0, totalClaimable });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/newscoin/:coinId
 // ---------------------------------------------------------------------------
 router.get("/:coinId", async (req, res, next) => {
