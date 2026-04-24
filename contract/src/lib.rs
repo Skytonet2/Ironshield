@@ -17,7 +17,7 @@ mod agents;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
-pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentFlags};
+pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentPermissions, AgentFlags};
 
 pub type PoolId = u32;
 
@@ -182,6 +182,14 @@ pub struct StakingContract {
     /// means the skill was created before Phase 7 and has no metadata
     /// set. Authors can call `update_skill_metadata` to populate it.
     pub skill_metadata: UnorderedMap<u64, SkillMetadata>,
+
+    // ── Phase 7 (Sub-PR B): agent capability mask + daily spend limit ─
+    /// Per-owner permission row keyed by AccountId. Parallel to
+    /// `agent_profiles` so the Phase 4 profile encoding stays stable;
+    /// absence means "default permissions" (read-only, no spend limit).
+    /// Owners flip bits + set a daily yocto cap via set_agent_permissions
+    /// / set_agent_daily_limit.
+    pub agent_permissions: UnorderedMap<AccountId, AgentPermissions>,
 }
 
 #[near]
@@ -242,6 +250,8 @@ impl StakingContract {
             // Phase 7 — skill metadata. Prefix b"M" — previously unused
             // (see migrate.rs for the full prefix inventory).
             skill_metadata:      UnorderedMap::new(b"M"),
+            // Phase 7 Sub-PR B — agent permissions. Prefix b"P".
+            agent_permissions:   UnorderedMap::new(b"P"),
             agent_flags:         UnorderedMap::new(b"F"),
 
             // Phase 6 — linked external IronClaw agents

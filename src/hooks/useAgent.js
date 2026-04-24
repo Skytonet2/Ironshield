@@ -5,6 +5,19 @@ import { useWallet, getReadAccount } from "@/lib/contexts";
 
 const LEADERBOARD_TTL_MS = 30_000;
 
+// ── Phase 7 Sub-PR B: capability bitmask (mirrors contract/src/agents.rs) ──
+// Bit positions MUST stay in lockstep with PERM_* on the contract side —
+// changing either without the other silently miscomputes the mask.
+export const PERM = {
+  READ_DATA:   1 << 0,
+  SIGN_TX:     1 << 1,
+  INTERACT:    1 << 2,
+  SEND_MSG:    1 << 3,
+  TRANSFER:    1 << 4,
+};
+export const PERM_ALL = PERM.READ_DATA | PERM.SIGN_TX | PERM.INTERACT | PERM.SEND_MSG | PERM.TRANSFER;
+export const PERM_DEFAULT = PERM.READ_DATA;
+
 // ── Sub-wallet constants ─────────────────────────────────────────────────────
 // Fixed prefix so each owner has at most one platform agent sub-wallet. Keeping
 // the name predictable lets other surfaces (future profile pages, agent-to-agent
@@ -278,6 +291,27 @@ export default function useAgent() {
   const getIronclawSource = useCallback(async (owner = address) => {
     if (!owner) return null;
     return viewMethod(STAKING_CONTRACT, "get_ironclaw_source", { owner });
+  }, [viewMethod, address]);
+
+  // ── Phase 7 Sub-PR B: agent permissions + daily spend limit ─────────────
+  // The mask is a u8 bitmask. Consumer code can import PERM from this file
+  // rather than guessing the bit positions — keeps the constant list in
+  // sync with the contract's PERM_* declarations in agents.rs.
+  const setAgentPermissions = useCallback(async (mask) => {
+    return callMethod(STAKING_CONTRACT, "set_agent_permissions", {
+      mask: Number(mask) & 0xff,
+    }, "0");
+  }, [callMethod]);
+
+  const setAgentDailyLimit = useCallback(async (yocto) => {
+    return callMethod(STAKING_CONTRACT, "set_agent_daily_limit", {
+      daily_limit_yocto: String(yocto ?? "0"),
+    }, "0");
+  }, [callMethod]);
+
+  const getAgentPermissions = useCallback(async (owner = address) => {
+    if (!owner) return null;
+    return viewMethod(STAKING_CONTRACT, "get_agent_permissions", { owner });
   }, [viewMethod, address]);
 
   // Pro-tier derivation from real staking balance. Pro = user has any stake
@@ -592,6 +626,8 @@ export default function useAgent() {
     getSkillMetadata,
     // Phase 6: link to existing IronClaw agent
     linkToIronclaw, unlinkFromIronclaw, getIronclawSource,
+    // Phase 7 Sub-PR B: agent capability mask + daily spend limit
+    setAgentPermissions, setAgentDailyLimit, getAgentPermissions,
     // leaderboard
     leaderboard,
     leaderboardLoading,

@@ -31,9 +31,10 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Pencil, MoreHorizontal, CheckCircle2, AlertTriangle,
   Shield, Package, ExternalLink, Loader2, Info, Trash2, Activity as ActivityIcon,
+  Eye, Coins, MessageSquare, DollarSign,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
-import useAgent from "@/hooks/useAgent";
+import useAgent, { PERM, PERM_DEFAULT } from "@/hooks/useAgent";
 
 const TABS = ["Overview", "Permissions", "Installed skills", "Activity", "Advanced"];
 
@@ -317,25 +318,323 @@ function OverviewTab({ t, profile, ironclawSource, stats }) {
   );
 }
 
-function PermissionsTab({ t }) {
+// ── Permissions tab (Phase 7 Sub-PR B) ──────────────────────────────
+// Reads get_agent_permissions(owner) on mount; writes via
+// set_agent_permissions (bitmask) and set_agent_daily_limit (yocto).
+// Non-owners see the same layout in read-only form — toggles render but
+// are disabled, limit field is read-only.
+function PermissionsTab({ t, profile, isOwner, agentRef }) {
+  const [perms, setPerms]         = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState(null);
+
+  // Local-edit staging so toggles and the limit feel instant; committed
+  // to chain only when the owner hits Save.
+  const [mask, setMask]           = useState(PERM_DEFAULT);
+  const [limitNear, setLimitNear] = useState("0");
+
+  // Load current permissions for the viewed profile. Deliberately omits
+  // the useAgent callbacks from deps — same ref-pinning rationale as the
+  // other tabs on this page.
+  useEffect(() => {
+    if (!profile?.owner) return;
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const row = await agentRef.current.getAgentPermissions(profile.owner);
+        if (!alive) return;
+        setPerms(row || null);
+        setMask(row?.mask ?? PERM_DEFAULT);
+        setLimitNear(yoctoToNearStr(row?.daily_limit_yocto ?? "0"));
+      } catch (e) {
+        if (!alive) return;
+        setError(e?.message || "Failed to load permissions");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [profile?.owner, agentRef]);
+
+  // Derived: did the user actually change anything vs. the on-chain row?
+  const currentMask  = perms?.mask ?? PERM_DEFAULT;
+  const currentLimit = perms?.daily_limit_yocto ?? "0";
+  const dirtyMask    = mask !== currentMask;
+  const dirtyLimit   = nearStrToYocto(limitNear) !== String(currentLimit);
+  const dirty        = dirtyMask || dirtyLimit;
+
+  const toggle = (bit) => {
+    if (!isOwner) return;
+    setMask(m => (m & bit) ? (m & ~bit) : (m | bit));
+  };
+
+  const save = async () => {
+    if (!isOwner || saving || !dirty) return;
+    setSaving(true);
+    setError(null);
+    try {
+      // The two writes are independent methods on the contract; fire
+      // them serially so we can show a better error if one fails.
+      if (dirtyMask)  await agentRef.current.setAgentPermissions(mask);
+      if (dirtyLimit) await agentRef.current.setAgentDailyLimit(nearStrToYocto(limitNear));
+      // Refresh in place so the "dirty" comparison resets.
+      const row = await agentRef.current.getAgentPermissions(profile.owner);
+      setPerms(row || null);
+    } catch (e) {
+      setError(e?.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const capabilities = [
+    { key: "read",     bit: PERM.READ_DATA, label: "Read data",           desc: "Allows the agent to read your wallet balances, transaction history, and account info.", accent: "#a855f7" },
+    { key: "sign",     bit: PERM.SIGN_TX,   label: "Sign transactions",   desc: "Allows the agent to sign and submit transactions on your behalf.",                     accent: "#3b82f6" },
+    { key: "contract", bit: PERM.INTERACT,  label: "Interact with contracts", desc: "Allows the agent to call smart contracts.",                                         accent: "#10b981" },
+    { key: "messages", bit: PERM.SEND_MSG,  label: "Send messages",       desc: "Allows the agent to send messages or interact in apps (e.g. social, DAO, etc).",        accent: "#fb923c" },
+    { key: "transfer", bit: PERM.TRANSFER,  label: "Transfer funds",      desc: "Allows the agent to transfer NEAR or tokens from your account.",                         accent: "#ef4444" },
+  ];
+
+  // Daily-spend progress, only meaningful once a limit is set.
+  const spentToday = perms?.daily_spent_yocto && perms?.daily_limit_yocto && BigInt(perms.daily_limit_yocto) > 0n
+    ? {
+        spent: yoctoToNearStr(perms.daily_spent_yocto),
+        limit: yoctoToNearStr(perms.daily_limit_yocto),
+        pct: (() => {
+          const s = Number(perms.daily_spent_yocto);
+          const l = Number(perms.daily_limit_yocto);
+          if (!l) return 0;
+          return Math.min(100, Math.round((s / l) * 100));
+        })(),
+      }
+    : null;
+
+  if (loading) {
+    return (
+      <Card t={t}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: t.textMuted }}>
+          <Loader2 size={14} style={{ animation: "cfg-spin 0.9s linear infinite" }} />
+          Loading permissions…
+        </div>
+      </Card>
+    );
+  }
+
   return (
-    <Card t={t}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <Info size={14} color={t.accent} />
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: t.white, margin: 0 }}>
-          Permissions
+    <>
+      <Card t={t}>
+        <h2 style={{ fontSize: 15, fontWeight: 800, color: t.white, margin: "0 0 4px" }}>
+          Agent capabilities
         </h2>
-      </div>
-      <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.6 }}>
-        Per-capability controls (read data, sign transactions, interact with
-        contracts, send messages, transfer funds) land with the Phase 7
-        contract migration. For now every registered agent operates with
-        the contract's default permission set, which is scoped to its
-        sub-wallet via a function-call access key — it cannot transfer
-        NEAR out of the owner's wallet.
-      </div>
-    </Card>
+        <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 16 }}>
+          {isOwner
+            ? "Control what your agent can access and do on your behalf."
+            : "What this agent's owner has authorised."}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {capabilities.map(cap => {
+            const on = (mask & cap.bit) !== 0;
+            return (
+              <div key={cap.key} className="cfg-cap-row" style={{
+                display: "flex", alignItems: "center", gap: 14,
+                padding: "14px 16px",
+                background: t.bgSurface, border: `1px solid ${t.border}`,
+                borderRadius: 12,
+              }}>
+                <span aria-hidden style={{
+                  width: 38, height: 38, flexShrink: 0, borderRadius: 10,
+                  background: `${cap.accent}22`, color: cap.accent,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {capabilityIcon(cap.key)}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 2 }}>
+                    {cap.label}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: t.textMuted, lineHeight: 1.5 }}>
+                    {cap.desc}
+                  </div>
+                </div>
+                <PermissionToggle t={t} on={on} disabled={!isOwner} onToggle={() => toggle(cap.bit)} />
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card t={t}>
+        <h2 style={{ fontSize: 15, fontWeight: 800, color: t.white, margin: "0 0 4px" }}>
+          Security settings
+        </h2>
+        <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 16 }}>
+          {isOwner
+            ? "Cap how much NEAR your agent can transact per UTC day. Set to 0 for no limit."
+            : "Daily transaction cap set by the owner."}
+        </div>
+
+        <div style={{
+          display: "flex", alignItems: "center", gap: 16,
+          padding: "14px 16px",
+          background: t.bgSurface, border: `1px solid ${t.border}`,
+          borderRadius: 12, flexWrap: "wrap",
+        }}>
+          <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: t.white, marginBottom: 4 }}>
+              Daily transaction limit
+            </div>
+            <div style={{ fontSize: 11.5, color: t.textMuted }}>
+              The maximum total value (in NEAR) the agent can transact per UTC day.
+            </div>
+          </div>
+          <label style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "8px 12px",
+            background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10,
+          }}>
+            <input
+              type="number" min={0} step="0.01"
+              value={limitNear}
+              onChange={(e) => isOwner && setLimitNear(e.target.value)}
+              disabled={!isOwner}
+              style={{
+                width: 90, border: "none", background: "transparent", outline: "none",
+                color: t.white, fontSize: 13, fontWeight: 700, textAlign: "right",
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+                opacity: isOwner ? 1 : 0.7,
+              }}
+            />
+            <span style={{ fontSize: 11, color: t.textDim, fontWeight: 600 }}>NEAR</span>
+          </label>
+        </div>
+
+        {spentToday && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              marginBottom: 6, fontSize: 11.5, color: t.textMuted,
+            }}>
+              <span>Today's spend</span>
+              <span style={{ fontFamily: "var(--font-jetbrains-mono), monospace", color: t.white }}>
+                {spentToday.spent} / {spentToday.limit} NEAR
+              </span>
+            </div>
+            <div style={{
+              height: 6, borderRadius: 999,
+              background: t.bgSurface, overflow: "hidden",
+              border: `1px solid ${t.border}`,
+            }}>
+              <div style={{
+                width: `${spentToday.pct}%`, height: "100%",
+                background: spentToday.pct >= 90
+                  ? "linear-gradient(90deg, #f59e0b, #ef4444)"
+                  : `linear-gradient(90deg, ${t.accent}, #a855f7)`,
+                transition: "width 180ms ease",
+              }} />
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div style={{
+            marginTop: 14, padding: "10px 14px",
+            borderRadius: 10,
+            border: `1px solid rgba(239,68,68,0.35)`,
+            background: "rgba(239,68,68,0.08)",
+            color: "#fecaca", fontSize: 12,
+          }}>
+            {error}
+          </div>
+        )}
+
+        {isOwner && (
+          <div style={{
+            marginTop: 16,
+            display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+          }}>
+            <button
+              type="button"
+              onClick={save}
+              disabled={!dirty || saving}
+              style={{
+                padding: "10px 18px",
+                background: dirty && !saving ? `linear-gradient(135deg, #a855f7, ${t.accent})` : t.bgSurface,
+                border: dirty && !saving ? "none" : `1px solid ${t.border}`,
+                borderRadius: 10,
+                fontSize: 12.5, fontWeight: 700,
+                color: dirty && !saving ? "#fff" : t.textDim,
+                cursor: dirty && !saving ? "pointer" : "not-allowed",
+                display: "inline-flex", alignItems: "center", gap: 6,
+                boxShadow: dirty && !saving ? `0 8px 22px rgba(168,85,247,0.35)` : "none",
+              }}
+            >
+              {saving
+                ? <><Loader2 size={12} style={{ animation: "cfg-spin 0.9s linear infinite" }} /> Saving…</>
+                : "Save changes"}
+            </button>
+            {dirty && !saving && (
+              <span style={{ fontSize: 11.5, color: t.textDim }}>
+                Signs {dirtyMask && dirtyLimit ? "two transactions" : "one transaction"}.
+              </span>
+            )}
+          </div>
+        )}
+      </Card>
+    </>
   );
+}
+
+function PermissionToggle({ t, on, disabled, onToggle }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      disabled={disabled}
+      style={{
+        width: 42, height: 24, borderRadius: 999,
+        border: "none",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+        background: on ? `linear-gradient(90deg, #a855f7, ${t.accent})` : t.bgSurface,
+        position: "relative", transition: "background 120ms ease",
+        flexShrink: 0,
+      }}
+    >
+      <span style={{
+        position: "absolute", top: 2, left: on ? 20 : 2,
+        width: 20, height: 20, borderRadius: "50%",
+        background: "#fff", boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+        transition: "left 120ms ease",
+      }} />
+    </button>
+  );
+}
+
+function capabilityIcon(key) {
+  const iconMap = {
+    read:     <Eye size={16} />,
+    sign:     <Pencil size={16} />,
+    contract: <Coins size={16} />,
+    messages: <MessageSquare size={16} />,
+    transfer: <DollarSign size={16} />,
+  };
+  return iconMap[key] || <Info size={16} />;
+}
+
+function nearStrToYocto(s) {
+  const n = String(s ?? "0").trim();
+  if (!n) return "0";
+  const [whole = "0", frac = ""] = n.split(".");
+  const fracPadded = (frac + "000000000000000000000000").slice(0, 24);
+  const w = whole.replace(/^0+/, "") || "0";
+  const y = BigInt(w) * 1_000_000_000_000_000_000_000_000n + BigInt(fracPadded || "0");
+  return y.toString();
 }
 
 function InstalledSkillsTab({ t, skills, loading, isOwner, onUninstall, busyId }) {
@@ -853,7 +1152,9 @@ export default function ConfigureAgentPage() {
           {tab === "Overview" && (
             <OverviewTab t={t} profile={profile} ironclawSource={ironclawSource} stats={stats} />
           )}
-          {tab === "Permissions" && <PermissionsTab t={t} />}
+          {tab === "Permissions" && (
+            <PermissionsTab t={t} profile={profile} isOwner={isOwner} agentRef={agentRef} />
+          )}
           {tab === "Installed skills" && (
             <InstalledSkillsTab
               t={t}
