@@ -1,7 +1,15 @@
 "use client";
-// Skills marketplace — browse, create, and install skills for your agent.
+// /skills — marketplace. Wraps the new MarketplacePage in SkillsShell.
+// The legacy SkillsMarketplacePage lives at src/components/SkillsMarketplacePage.jsx
+// and is now orphaned; kept around for one release in case we need to roll back.
 
-import { lazy } from "react";
-import LegacyRoute from "@/components/shell/LegacyRoute";
-const SkillsMarketplacePage = lazy(() => import("@/components/SkillsMarketplacePage"));
-export default function Page() { return <LegacyRoute Component={SkillsMarketplacePage} />; }
+import SkillsShell from "@/components/skills/SkillsShell";
+import MarketplacePage from "@/components/skills/MarketplacePage";
+
+export default function Page() {
+  return (
+    <SkillsShell>
+      <MarketplacePage />
+    </SkillsShell>
+  );
+}
