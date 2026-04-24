@@ -49,8 +49,12 @@ export default function ProfilePage() {
     } catch {}
   }, [viewerAddress]);
 
+  // Defensive String() in case upstream wallet adapters ever return a
+  // non-string address (e.g. null or a Buffer from a misbehaving wallet
+  // extension). `.toLowerCase()` on those throws and crashes the page
+  // before the early-return can show the disconnected state.
   const isSelf = !!(viewerAddress && targetAddress &&
-    viewerAddress.toLowerCase() === targetAddress.toLowerCase());
+    String(viewerAddress).toLowerCase() === String(targetAddress).toLowerCase());
 
   const [tab, setTab] = useState("posts");
   const [posts, setPosts] = useState([]);
@@ -94,8 +98,11 @@ export default function ProfilePage() {
       setLoading(true);
       fetch(`${BACKEND_BASE}/api/newscoin/by-creator?creator=${encodeURIComponent(keyForApi)}`, { signal: ctl.signal })
         .then(r => r.ok ? r.json() : { coins: [] })
-        .then(j => setDeploys(j.coins || []))
-        .catch(() => {})
+        // Defend against the backend occasionally returning `null` in
+        // `coins` (e.g. during a 503 → JSON-wrapped error response) so
+        // `deploys.map(...)` never blows up the page.
+        .then(j => setDeploys(Array.isArray(j?.coins) ? j.coins : []))
+        .catch(() => setDeploys([]))
         .finally(() => setLoading(false));
       return () => ctl.abort();
     }
@@ -107,8 +114,8 @@ export default function ProfilePage() {
       signal: ctl.signal,
     })
       .then(r => r.ok ? r.json() : { posts: [] })
-      .then(j => setPosts(j.posts || []))
-      .catch(() => {})
+      .then(j => setPosts(Array.isArray(j?.posts) ? j.posts.filter(Boolean) : []))
+      .catch(() => setPosts([]))
       .finally(() => setLoading(false));
     return () => ctl.abort();
   }, [targetKey, targetAddress, tab, viewerAddress]);
