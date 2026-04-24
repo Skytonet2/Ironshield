@@ -28,12 +28,13 @@ export const metadata = {
   title: "IronShield | NEAR Protocol",
   description: "AI Security. On-Chain. Unstoppable.",
   icons: {
-    icon: "/icon.svg",
-    // Apple touch icon now uses the branded app-icon (rounded-square
-    // container + shield) rather than the raw mascot photo — the OS
-    // renders these with its own mask, so a solid-bg crest works best.
-    apple: "/brand/app-icon.svg",
-    shortcut: "/icon.svg",
+    // Mascot raster is now the single brand mark. The 346KB PNG gives
+    // browsers and OS launchers enough pixels for crisp rendering at
+    // every tile size; smaller surfaces pick mascot-sm.png via the
+    // manifest's 256×256 entry.
+    icon:     "/mascot.png",
+    apple:    "/mascot.png",
+    shortcut: "/mascot.png",
   },
   manifest: "/manifest.json",
   appleWebApp: {
@@ -57,7 +58,7 @@ export default function RootLayout({ children }) {
         <meta name="theme-color" content="#0b0e1c" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <link rel="apple-touch-icon" href="/brand/app-icon.svg" />
+        <link rel="apple-touch-icon" href="/mascot.png" />
         <style dangerouslySetInnerHTML={{ __html: `
           /* Pre-React loader — pure CSS, no JS required for animation.
              Designed to feel premium rather than "a spinner with a
@@ -132,17 +133,26 @@ export default function RootLayout({ children }) {
             box-shadow: 0 0 14px #60a5fa;
             width: 5px; height: 5px; top: -3px;
           }
-          /* Shield logo — uses the existing gradient palette. The glow
-             pulses with the same 3.6s cadence as the float. */
-          #ic-pre-loader .ic-shield {
-            position: absolute; inset: 0;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #a855f7, #3b82f6);
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 12px 44px rgba(168,85,247,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-            animation: ic-pulse 3.6s ease-in-out infinite;
+          /* Mascot — raster portrait rendered inside the pulsing halo.
+             The halo lives on the wrapper so the image itself doesn't
+             need filters (they're expensive on mobile and would re-encode
+             the 31KB WebP each pulse). The ::before pseudo-element draws
+             the glow underneath. */
+          #ic-pre-loader .ic-mascot {
+            position: absolute; inset: 0; margin: auto;
+            display: block;
+            width: 100%; height: 100%;
+            object-fit: contain;
+            z-index: 1;
           }
-          #ic-pre-loader .ic-shield svg { width: 54px; height: 54px; color: #fff; }
+          #ic-pre-loader .ic-crest::before {
+            content: "";
+            position: absolute; inset: 10%;
+            border-radius: 50%;
+            background: radial-gradient(circle at center, rgba(168,85,247,0.55), transparent 65%);
+            animation: ic-pulse 3.6s ease-in-out infinite;
+            pointer-events: none;
+          }
           #ic-pre-loader .ic-brand {
             font-size: 26px; font-weight: 800; color: #fff;
             letter-spacing: -0.7px; margin-bottom: 6px;
@@ -199,8 +209,8 @@ export default function RootLayout({ children }) {
           @keyframes ic-stars   { to { background-position: 120px 120px, 240px 240px; } }
           @keyframes ic-float   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
           @keyframes ic-pulse   {
-            0%, 100% { box-shadow: 0 12px 44px rgba(168,85,247,0.5), inset 0 1px 0 rgba(255,255,255,0.2); }
-            50%      { box-shadow: 0 16px 60px rgba(168,85,247,0.75), 0 0 44px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.25); }
+            0%, 100% { opacity: 0.55; transform: scale(1); }
+            50%      { opacity: 0.9;  transform: scale(1.08); }
           }
           @keyframes ic-ring-spin { to { transform: rotate(360deg); } }
           @keyframes ic-sweep {
@@ -209,7 +219,7 @@ export default function RootLayout({ children }) {
           }
           @media (prefers-reduced-motion: reduce) {
             #ic-pre-loader .ic-crest,
-            #ic-pre-loader .ic-shield,
+            #ic-pre-loader .ic-crest::before,
             #ic-pre-loader .ic-ring,
             #ic-pre-loader::before,
             #ic-pre-loader::after,

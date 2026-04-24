@@ -1058,207 +1058,73 @@ function LinkSubWalletModal({ t, subAccountId, onClose, onLinked, linkSubWallet 
   );
 }
 
-// ─── EarnPage hero (title + CTA + mascot + agent status card) ───────────────
-function EarnHero({ t, address, connected, profile, profileLoading, openWallet, onCreate, onScrollToMissions, isNarrow }) {
+// ─── EarnPage hero (title + CTAs) ────────────────────────────────────────────
+// The agent profile card and decorative mascot previously embedded here have
+// moved: agent-profile UI lives at /agents/me (My Agent in the sidebar) and
+// /agent (IronClaw). Telegram + X in-app WebViews were OOMing on the hero's
+// extra image + nested card subtree, so Earn now stays focused on missions.
+function EarnHero({ t, onScrollToMissions }) {
   const violet = "#a855f7";
-  const pts = profile?.points ? Number(BigInt(profile.points)) : 0;
-
-  // Small card on the right of the hero that condenses the agent state into
-  // one glanceable panel. Three states: disconnected, no-agent, agent.
-  const AgentCard = (() => {
-    if (!connected) {
-      return (
-        <div style={agentCardShell(t, violet)}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.textDim }} />
-            <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase" }}>
-              Not connected
-            </span>
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 4 }}>Your On-Chain Agent</div>
-          <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55, marginBottom: 14 }}>
-            Connect a NEAR wallet to see your agent profile, points, and sub-wallet status here.
-          </div>
-          <Btn primary onClick={openWallet} style={{ width: "100%", justifyContent: "center", fontSize: 12 }}>
-            <Wallet size={13} /> Connect
-          </Btn>
-        </div>
-      );
-    }
-    if (profileLoading && !profile) {
-      return (
-        <div style={agentCardShell(t, violet)}>
-          <div style={{ fontSize: 12, color: t.textMuted }}>Loading agent…</div>
-        </div>
-      );
-    }
-    if (!profile) {
-      return (
-        <div style={agentCardShell(t, violet)}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.amber }} />
-            <span style={{ fontSize: 11, color: t.amber, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase" }}>
-              No agent yet
-            </span>
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 4 }}>Your On-Chain Agent</div>
-          <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55, marginBottom: 14 }}>
-            Claim a handle and your agent joins the platform. Takes ~30 seconds.
-          </div>
-          <Btn primary onClick={onCreate} style={{ width: "100%", justifyContent: "center", fontSize: 12 }}>
-            <Bot size={13} /> Create Agent
-          </Btn>
-        </div>
-      );
-    }
-    return (
-      <div style={agentCardShell(t, violet)}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.green, boxShadow: `0 0 8px ${t.green}` }} />
-          <span style={{ fontSize: 11, color: t.green, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}>
-            Connected
-          </span>
-        </div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 2 }}>@{profile.handle}</div>
-        <div style={{ fontSize: 11, color: t.textDim, fontFamily: "'JetBrains Mono', monospace", marginBottom: 12, wordBreak: "break-all" }}>
-          {profile.agent_account || "sub-wallet pending"}
-        </div>
-
-        <div style={{ display: "flex", gap: 10, marginBottom: 12, padding: "8px 10px", background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8 }}>
-          <Star size={12} color={t.green} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>on-chain points</div>
-            <div style={{ fontSize: 13, color: t.white, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
-              {fmt(pts)}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 10, marginBottom: 12, padding: "8px 10px", background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 8 }}>
-          <Wallet size={12} color={t.accent} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>near wallet</div>
-            <div style={{ fontSize: 12, color: t.white, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>
-              {truncAddr(address)}
-            </div>
-          </div>
-        </div>
-
-        <a href="/agents/me" style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-          width: "100%", background: `${violet}22`, border: `1px solid ${violet}66`, borderRadius: 8,
-          padding: "8px 12px", fontSize: 12, fontWeight: 700, color: violet, textDecoration: "none",
-        }}>
-          Manage <ArrowRight size={12} />
-        </a>
-      </div>
-    );
-  })();
-
   return (
     <div style={{
       position: "relative", overflow: "hidden", borderRadius: 20,
       background: `radial-gradient(ellipse at 65% 50%, ${violet}24 0%, transparent 60%), linear-gradient(135deg, ${t.bgCard} 0%, ${t.bgSurface} 100%)`,
       border: `1px solid ${t.border}`, marginBottom: 24,
+      padding: "36px 36px 32px",
     }}>
-      <div
-        className="earn-hero-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1.35fr) minmax(220px, 0.85fr) minmax(250px, 0.9fr)",
-          gap: 20, padding: "36px 36px 32px", alignItems: "center",
-        }}
-      >
-        {/* Left: copy + CTAs */}
-        <div style={{ minWidth: 0 }}>
-          <Badge color={t.green}>EARN &amp; COMPETE</Badge>
-          <h1 style={{
-            fontSize: "clamp(26px, 3.2vw, 36px)", lineHeight: 1.12,
-            fontWeight: 800, color: t.white, marginTop: 12, marginBottom: 10,
-            letterSpacing: -0.4,
-          }}>
-            Earn Points. Shape{" "}
-            <span style={{
-              background: `linear-gradient(90deg, ${violet}, ${t.accent})`,
-              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-            }}>
-              IronClaw.
-            </span>
-          </h1>
-          <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.65, marginBottom: 20, maxWidth: 520 }}>
-            Complete missions, create content, help the community. IronClaw judges your work and allocates
-            points from the <strong style={{ color: t.green }}>22,000,000 pt</strong> pool over 7 weeks.
-          </p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={onScrollToMissions}
-              style={{
-                background: `linear-gradient(135deg, ${violet}, ${t.accent})`,
-                border: "none", borderRadius: 10, padding: "12px 20px",
-                fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
-                display: "inline-flex", alignItems: "center", gap: 8,
-                boxShadow: `0 8px 22px ${violet}44`,
-              }}
-            >
-              Explore Missions <ArrowRight size={14} />
-            </button>
-            <a
-              href="/docs"
-              style={{
-                background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
-                padding: "12px 18px", fontSize: 13, fontWeight: 600, color: t.text,
-                textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8,
-              }}
-            >
-              <Play size={13} /> How It Works
-            </a>
-          </div>
-        </div>
-
-        {/* Middle: mascot. Completely skipped on narrow viewports to avoid
-            the image decode on phones where it's invisible anyway. Still
-            WebP + no CSS filters on desktop to stay OOM-safe. */}
-        {!isNarrow && (
-          <div style={{ position: "relative", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 220 }}>
-            <div style={{
-              position: "absolute", inset: 0,
-              background: `radial-gradient(circle at center, ${violet}2a 0%, transparent 60%)`,
-            }} />
-            <img
-              src="/mascot.webp"
-              alt="IronClaw agent mascot"
-              width={200} height={300}
-              decoding="async"
-              loading="lazy"
-              style={{ position: "relative", maxWidth: "100%", height: "auto" }}
-            />
-          </div>
-        )}
-
-        {/* Right: agent status card */}
-        <div style={{ minWidth: 0 }}>
-          {AgentCard}
-        </div>
+      <Badge color={t.green}>EARN &amp; COMPETE</Badge>
+      <h1 style={{
+        fontSize: "clamp(26px, 3.2vw, 36px)", lineHeight: 1.12,
+        fontWeight: 800, color: t.white, marginTop: 12, marginBottom: 10,
+        letterSpacing: -0.4,
+      }}>
+        Earn Points. Shape{" "}
+        <span style={{
+          background: `linear-gradient(90deg, ${violet}, ${t.accent})`,
+          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+        }}>
+          IronClaw.
+        </span>
+      </h1>
+      <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.65, marginBottom: 20, maxWidth: 680 }}>
+        Complete missions, create content, help the community. IronClaw judges your work and allocates
+        points from the <strong style={{ color: t.green }}>22,000,000 pt</strong> pool over 7 weeks.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button
+          onClick={onScrollToMissions}
+          style={{
+            background: `linear-gradient(135deg, ${violet}, ${t.accent})`,
+            border: "none", borderRadius: 10, padding: "12px 20px",
+            fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer",
+            display: "inline-flex", alignItems: "center", gap: 8,
+            boxShadow: `0 8px 22px ${violet}44`,
+          }}
+        >
+          Explore Missions <ArrowRight size={14} />
+        </button>
+        <a
+          href="/agents/me"
+          style={{
+            background: `${violet}18`, border: `1px solid ${violet}66`, borderRadius: 10,
+            padding: "12px 18px", fontSize: 13, fontWeight: 700, color: violet,
+            textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8,
+          }}
+        >
+          <Bot size={13} /> My Agent
+        </a>
+        <a
+          href="/docs"
+          style={{
+            background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+            padding: "12px 18px", fontSize: 13, fontWeight: 600, color: t.text,
+            textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8,
+          }}
+        >
+          <Play size={13} /> How It Works
+        </a>
       </div>
-
-      <style jsx>{`
-        /* Mascot (middle column) is now skipped in JS on narrow viewports via
-           isNarrow, so the old nth-child(2) display:none would incorrectly
-           hide the agent status card once the mascot was gone. The grid just
-           collapses to 2 cols (text + status) <=1024px, 1 col <=680px. */
-        @media (max-width: 1024px) {
-          .earn-hero-grid {
-            grid-template-columns: 1fr 1fr !important;
-          }
-        }
-        @media (max-width: 680px) {
-          .earn-hero-grid {
-            grid-template-columns: 1fr !important;
-            padding: 28px 22px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
@@ -1531,14 +1397,12 @@ export default function EarnPage({ openWallet }) {
   const t                                        = useTheme();
   const { connected, address }                   = useWallet();
   const { proposals, loading: proposalsLoading } = useProposals();
+  // Agent profile + handle registration now live at /agents/me and /agent
+  // — Earn only needs `agentProfile` to decide whether to expose "Assign
+  // to agent" on each mission card, plus the on-chain leaderboard view and
+  // the assignTask call that the assign modal uses.
   const {
     profile: agentProfile,
-    profileLoading: agentLoading,
-    fetchProfile: refreshAgent,
-    registerAgent,
-    isHandleAvailable,
-    linkSubWallet,
-    getSubAccountId,
     leaderboard: chainLeaderboard,
     fetchLeaderboard,
     assignTask,
@@ -1551,8 +1415,6 @@ export default function EarnPage({ openWallet }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [weekProgress, setWeekProgress] = useState({ pct: 0, countdown: "…" });
   const [currentWeek, setCurrentWeek]   = useState(() => getCurrentWeek());
-  const [showCreateAgent, setShowCreateAgent] = useState(false);
-  const [showLinkWallet, setShowLinkWallet]   = useState(false);
   const [assigningTask, setAssigningTask]     = useState(null); // task object or null
 
   // Track narrow viewport so we can SKIP the heavy right-rail subtree + agent
@@ -1698,16 +1560,9 @@ export default function EarnPage({ openWallet }) {
     <>
     <Section style={{ paddingTop: 100 }}>
 
-      {/* ── Hero with mascot + agent status ───────────────────────────────── */}
+      {/* ── Hero (missions-focused; agent UI has moved to /agents/me) ─────── */}
       <EarnHero
         t={t}
-        address={address}
-        connected={connected}
-        profile={agentProfile}
-        profileLoading={agentLoading}
-        openWallet={openWallet}
-        isNarrow={isNarrow}
-        onCreate={() => setShowCreateAgent(true)}
         onScrollToMissions={() => {
           setActiveTab(live ? "missions" : "daily");
           if (typeof window !== "undefined") {
@@ -1715,22 +1570,6 @@ export default function EarnPage({ openWallet }) {
           }
         }}
       />
-
-      {/* Kept for the connected+profile state so users can still link sub-wallet
-          + access full profile. Hidden when there is no profile (hero handles that). */}
-      {connected && agentProfile && (
-        <AgentProfileCard
-          t={t}
-          profile={agentProfile}
-          address={address}
-          connected={connected}
-          loading={agentLoading}
-          openWallet={openWallet}
-          onCreate={() => setShowCreateAgent(true)}
-          onLinkWallet={() => setShowLinkWallet(true)}
-          onRefresh={() => refreshAgent().catch(() => {})}
-        />
-      )}
 
 
       {/* ── Pre-launch countdown banner ─────────────────────────────────────── */}
@@ -2272,28 +2111,6 @@ export default function EarnPage({ openWallet }) {
         onSubmit={handleSubmit}
         connected={connected}
         openWallet={openWallet}
-      />
-    )}
-
-    {/* ── Create agent modal ───────────────────────────────────────────────── */}
-    {showCreateAgent && (
-      <CreateAgentModal
-        t={t}
-        onClose={() => setShowCreateAgent(false)}
-        onCreated={() => refreshAgent().catch(() => {})}
-        registerAgent={registerAgent}
-        isHandleAvailable={isHandleAvailable}
-      />
-    )}
-
-    {/* ── Link sub-wallet modal ────────────────────────────────────────────── */}
-    {showLinkWallet && (
-      <LinkSubWalletModal
-        t={t}
-        subAccountId={getSubAccountId(address)}
-        onClose={() => setShowLinkWallet(false)}
-        onLinked={() => refreshAgent().catch(() => {})}
-        linkSubWallet={linkSubWallet}
       />
     )}
 
