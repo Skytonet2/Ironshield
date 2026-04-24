@@ -1,19 +1,17 @@
 "use client";
 // Manage agents — /agents/me. Reads the connected wallet's on-chain
-// profile (one agent per wallet on the current contract — multi-agent
-// support lands with the Phase 7 migration).
+// profile PLUS any Phase 7C sub-agents the owner has added on top.
 //
 // Contract reads:
-//   • fetchProfile()            → current viewer's AgentProfile
+//   • fetchProfile()            → current viewer's AgentProfile (primary)
+//   • listSubAgents(owner)      → Phase 7C secondary agents on this wallet
 //   • getIronclawSource(owner)  → linked external IronClaw source, if any
 //   • getInstalledSkills(owner) → count used for the "Skills enabled" stat
 //   • getAgentStats(owner)      → "last active" for the Active/Idle chip
 //
-// Removed from the design pass:
-//   • Hardcoded Ironclaw + Openclaw row fixtures.
-//   • "Available connections" cards (no directory view on-chain; comes
-//     back in the functionality PR as a link to the agents directory +
-//     NEAR AI agent registry once it ships).
+// "Connect new agent" clicks through to `createSubAgent`, which signs a
+// batched CreateAccount + register_sub_agent transaction in one wallet
+// approval.
 //
 // Empty states:
 //   • Not connected → "Connect a wallet" prompt
@@ -25,7 +23,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, ExternalLink, MoreHorizontal, CheckCircle2, Shield,
-  Package, ArrowRight, Wallet, Loader2, Settings, Info,
+  Package, ArrowRight, Wallet, Loader2, Settings, X,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
@@ -114,12 +112,13 @@ function PageHeader({ t, onCreate, disabled }) {
 
 /* ──────────────────── Stats strip ──────────────────── */
 
-function StatsStrip({ t, hasProfile, installedCount }) {
+function StatsStrip({ t, hasProfile, installedCount, totalAgents }) {
+  const connected = totalAgents ?? (hasProfile ? 1 : 0);
   const stats = [
-    { value: hasProfile ? "1" : "0", label: "Connected agents"  },
-    { value: "0",                    label: "Pending connections" },
-    { value: hasProfile ? "1" : "0", label: "Total installations" },
-    { value: String(installedCount ?? 0), label: "Skills enabled" },
+    { value: String(connected),              label: "Connected agents"  },
+    { value: "0",                            label: "Pending connections" },
+    { value: String(connected),              label: "Total installations" },
+    { value: String(installedCount ?? 0),    label: "Skills enabled" },
   ];
   return (
     <div className="ma-stats" style={{
@@ -171,7 +170,10 @@ function StatsStrip({ t, hasProfile, installedCount }) {
 
 /* ──────────────────── Connected row ──────────────────── */
 
-function ConnectedRow({ t, profile, address, stats, ironclawSource, installedCount }) {
+function ConnectedRow({
+  t, profile, address, stats, ironclawSource, installedCount,
+  variant = "primary", agentAccount, onRemove, removing,
+}) {
   const active = isAgentActive(stats);
   const permissionLines = [
     { icon: Shield,  label: "Read profile data" },
@@ -181,6 +183,7 @@ function ConnectedRow({ t, profile, address, stats, ironclawSource, installedCou
     permissionLines.push({ icon: ExternalLink, label: "Bridge IronClaw posts" });
   }
   const configureHref = `/agents/configure?handle=${encodeURIComponent(profile.handle)}`;
+  const isSub = variant === "sub";
 
   return (
     <div className="ma-row" style={{
@@ -207,10 +210,11 @@ function ConnectedRow({ t, profile, address, stats, ironclawSource, installedCou
             </span>
             <span style={{
               fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-              background: "rgba(16,185,129,0.18)", color: "#10b981",
+              background: isSub ? "rgba(168,85,247,0.18)" : "rgba(16,185,129,0.18)",
+              color: isSub ? "#c4b8ff" : "#10b981",
               display: "inline-flex", alignItems: "center", gap: 4,
             }}>
-              <CheckCircle2 size={10} /> Registered
+              <CheckCircle2 size={10} /> {isSub ? "Sub-agent" : "Primary"}
             </span>
           </div>
           <div style={{
@@ -219,7 +223,7 @@ function ConnectedRow({ t, profile, address, stats, ironclawSource, installedCou
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             maxWidth: 320,
           }}>
-            {truncAddr(profile.owner)}
+            {truncAddr(isSub ? agentAccount : profile.owner)}
           </div>
           <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>
             Joined {profileCreatedDate(profile.created_at)}
@@ -298,13 +302,32 @@ function ConnectedRow({ t, profile, address, stats, ironclawSource, installedCou
         }}>
           <Settings size={12} /> Configure
         </Link>
-        <button type="button" aria-label="More" style={{
-          width: 34, height: 34, borderRadius: 10,
-          background: t.bgSurface, border: `1px solid ${t.border}`, color: t.textMuted,
-          cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <MoreHorizontal size={14} />
-        </button>
+        {isSub ? (
+          <button
+            type="button"
+            aria-label="Remove sub-agent"
+            title="Remove this sub-agent"
+            onClick={() => onRemove?.(agentAccount, profile.handle)}
+            disabled={removing}
+            style={{
+              width: 34, height: 34, borderRadius: 10,
+              background: t.bgSurface, border: `1px solid ${t.border}`, color: t.textMuted,
+              cursor: removing ? "not-allowed" : "pointer",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              opacity: removing ? 0.5 : 1,
+            }}
+          >
+            {removing ? <Loader2 size={14} style={{ animation: "ma-spin 0.9s linear infinite" }} /> : <X size={14} />}
+          </button>
+        ) : (
+          <button type="button" aria-label="More" style={{
+            width: 34, height: 34, borderRadius: 10,
+            background: t.bgSurface, border: `1px solid ${t.border}`, color: t.textMuted,
+            cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <MoreHorizontal size={14} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -385,25 +408,6 @@ function NoProfileState({ t }) {
   );
 }
 
-/* ──────────────────── Multi-agent info banner ──────────────────── */
-
-function MultiAgentNotice({ t }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: 10,
-      padding: "12px 18px", marginBottom: 22,
-      background: `linear-gradient(135deg, ${t.accent}14, rgba(168,85,247,0.10))`,
-      border: `1px solid ${t.border}`, borderRadius: 12,
-    }}>
-      <Info size={14} color={t.accent} style={{ marginTop: 2, flexShrink: 0 }} />
-      <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.55 }}>
-        <strong style={{ color: t.white }}>Heads up —</strong> the current contract allows one agent per wallet.
-        Multi-agent support with independent NEAR accounts per agent lands in Phase 7.
-      </div>
-    </div>
-  );
-}
-
 /* ──────────────────── Security banner ──────────────────── */
 
 function SecurityBanner({ t }) {
@@ -447,6 +451,10 @@ export default function ManageAgentsPage() {
   const [ironclawSource, setIronclawSource] = useState(null);
   const [installed, setInstalled]           = useState([]);
   const [stats, setStats]                   = useState(null);
+  const [subAgents, setSubAgents]           = useState([]);
+  const [creating, setCreating]             = useState(false);
+  const [removingAccount, setRemovingAccount] = useState(null);
+  const [error, setError]                   = useState(null);
 
   // Auxiliary reads once we have a profile owner. Deps are primitives
   // only — the hook callbacks are ref-unstable and would retrigger
@@ -456,21 +464,24 @@ export default function ManageAgentsPage() {
       setIronclawSource(null);
       setInstalled([]);
       setStats(null);
+      setSubAgents([]);
       return;
     }
     let alive = true;
     (async () => {
       try {
         const a = agentRef.current;
-        const [src, inst, st] = await Promise.all([
+        const [src, inst, st, subs] = await Promise.all([
           a.getIronclawSource(profile.owner).catch(() => null),
           a.getInstalledSkills(profile.owner).catch(() => []),
           a.getAgentStats(profile.owner).catch(() => null),
+          a.listSubAgents(profile.owner).catch(() => []),
         ]);
         if (!alive) return;
         setIronclawSource(src || null);
         setInstalled(Array.isArray(inst) ? inst : []);
         setStats(st || null);
+        setSubAgents(Array.isArray(subs) ? subs : []);
       } catch {
         // Non-fatal — stats are decoration, absence is fine.
       }
@@ -478,30 +489,87 @@ export default function ManageAgentsPage() {
     return () => { alive = false; };
   }, [profile?.owner]);
 
-  // useAgent self-refetches on address change — we don't need a second
-  // effect here, and having one made this page's "no profile" state
-  // spin a fetch every render.
+  // Reload sub-agents after a mutation. Kept narrow so we don't refetch
+  // the whole dashboard payload every time.
+  const refreshSubAgents = useCallback(async () => {
+    if (!profile?.owner) return;
+    const rows = await agentRef.current.listSubAgents(profile.owner).catch(() => []);
+    setSubAgents(Array.isArray(rows) ? rows : []);
+  }, [profile?.owner]);
 
-  const handleCreate = useCallback(() => {
+  const handleCreate = useCallback(async () => {
+    setError(null);
     if (!connected) { showModal?.(); return; }
-    // Without a profile, route to the agent creator flow; with a profile
-    // the current contract has no multi-agent support.
     if (!profile) {
       if (typeof window !== "undefined") window.location.href = "/agent";
       return;
     }
-    alert("Multi-agent support lands with the Phase 7 contract migration.");
-  }, [connected, showModal, profile]);
+
+    // Prompt for a handle. Deliberately lightweight — the dedicated
+    // create-agent wizard covers richer UX for the primary; sub-agent
+    // creation is "name it and go".
+    const handle = typeof window !== "undefined"
+      ? window.prompt("New agent handle (3–32 chars, letters/numbers/_/-):")
+      : null;
+    if (!handle) return;
+    const trimmed = handle.trim();
+    if (trimmed.length < 3 || trimmed.length > 32) {
+      setError("Handle must be between 3 and 32 characters.");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      await agentRef.current.createSubAgent({ handle: trimmed });
+      await refreshSubAgents();
+    } catch (err) {
+      setError(err?.message || "Failed to create sub-agent");
+    } finally {
+      setCreating(false);
+    }
+  }, [connected, showModal, profile, refreshSubAgents]);
+
+  const handleRemove = useCallback(async (agentAccount, handle) => {
+    if (typeof window !== "undefined" &&
+        !window.confirm(`Remove @${handle}? The NEAR sub-account ${agentAccount} stays under your control; only the on-chain agent registration is cleared.`)) {
+      return;
+    }
+    setRemovingAccount(agentAccount);
+    setError(null);
+    try {
+      await agentRef.current.removeSubAgent(agentAccount);
+      await refreshSubAgents();
+    } catch (err) {
+      setError(err?.message || "Failed to remove sub-agent");
+    } finally {
+      setRemovingAccount(null);
+    }
+  }, [refreshSubAgents]);
 
   const installedCount = installed.length;
+  const totalAgents = (profile ? 1 : 0) + subAgents.length;
 
   return (
     <>
-      <PageHeader t={t} onCreate={handleCreate} disabled={false} />
+      <PageHeader t={t} onCreate={handleCreate} disabled={creating || !profile} />
 
-      {connected && <MultiAgentNotice t={t} />}
+      {error && (
+        <div style={{
+          padding: "10px 14px", marginBottom: 16, borderRadius: 10,
+          border: `1px solid ${t.border}`,
+          background: "rgba(239,68,68,0.12)", color: "#fca5a5",
+          fontSize: 13,
+        }}>
+          {error}
+        </div>
+      )}
 
-      <StatsStrip t={t} hasProfile={!!profile} installedCount={installedCount} />
+      <StatsStrip
+        t={t}
+        hasProfile={!!profile}
+        installedCount={installedCount}
+        totalAgents={totalAgents}
+      />
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 16, fontWeight: 800, color: t.white, margin: "0 0 12px" }}>
@@ -521,14 +589,32 @@ export default function ManageAgentsPage() {
         {connected && !profileLoading && !profile && <NoProfileState t={t} />}
 
         {connected && profile && (
-          <ConnectedRow
-            t={t}
-            profile={profile}
-            address={address}
-            stats={stats}
-            ironclawSource={ironclawSource}
-            installedCount={installedCount}
-          />
+          <>
+            <ConnectedRow
+              t={t}
+              profile={profile}
+              address={address}
+              stats={stats}
+              ironclawSource={ironclawSource}
+              installedCount={installedCount}
+              variant="primary"
+            />
+            {subAgents.map(sub => (
+              <ConnectedRow
+                key={sub.agent_account}
+                t={t}
+                profile={sub}
+                address={address}
+                stats={null}
+                ironclawSource={null}
+                installedCount={0}
+                variant="sub"
+                agentAccount={sub.agent_account}
+                onRemove={handleRemove}
+                removing={removingAccount === sub.agent_account}
+              />
+            ))}
+          </>
         )}
       </section>
 

@@ -19,10 +19,24 @@ export const PERM_ALL = PERM.READ_DATA | PERM.SIGN_TX | PERM.INTERACT | PERM.SEN
 export const PERM_DEFAULT = PERM.READ_DATA;
 
 // ── Sub-wallet constants ─────────────────────────────────────────────────────
-// Fixed prefix so each owner has at most one platform agent sub-wallet. Keeping
-// the name predictable lets other surfaces (future profile pages, agent-to-agent
-// DMs) resolve the agent identity from the owner alone, without a view call.
+// Primary platform agent sub-wallet. `agent.<owner>` is the single agent the
+// owner registered pre-Phase-7C and remains the default when someone clicks
+// "link sub-wallet" without specifying an index.
 const AGENT_SUBACCOUNT_PREFIX = "agent";
+
+// Phase 7C multi-agent: secondary sub-wallets are named `agent<N>.<owner>`
+// with N = 2, 3, ... Index 1 is reserved for the primary (no suffix) so
+// the frontend can compute the next free slot without a view call.
+const subAgentSubAccountId = (owner, index) => {
+  if (!owner || !index) return null;
+  if (index === 1) return `${AGENT_SUBACCOUNT_PREFIX}.${owner}`;
+  return `${AGENT_SUBACCOUNT_PREFIX}${index}.${owner}`;
+};
+
+// Phase 7C: cap mirrors the contract constant MAX_SUB_AGENTS_PER_OWNER.
+// Change together with contract/src/agents.rs — the contract rejects the
+// N+1'th registration, so a UI drift just means a wasted wallet prompt.
+export const MAX_SUB_AGENTS_PER_OWNER = 10;
 
 // Initial NEAR transferred to the new sub-account. Covers ~1 year of storage
 // for a few access keys plus a buffer for future state the agent may accrete.
@@ -474,6 +488,120 @@ export default function useAgent() {
     return { subAccountId, publicKey, result };
   }, [address, selector, getSubAccountId, subAccountExists, fetchProfile]);
 
+  // ── Phase 7 Sub-PR C: multi-agent per wallet ─────────────────────────────
+  // Secondary agents live on separate NEAR sub-accounts named agent<N>.<owner>
+  // with N = 2, 3, ... Each one carries its own handle + bio + points ledger
+  // on-chain. The primary (original) agent keeps its own map — views split
+  // cleanly: `getAgent(owner)` for primary, `listSubAgents(owner)` for extras.
+
+  const listSubAgents = useCallback(async (owner = address) => {
+    if (!owner) return [];
+    const rows = await viewMethod(STAKING_CONTRACT, "list_sub_agents", { owner });
+    return Array.isArray(rows) ? rows : [];
+  }, [viewMethod, address]);
+
+  const getSubAgent = useCallback(async (owner, agentAccount) => {
+    if (!owner || !agentAccount) return null;
+    return viewMethod(STAKING_CONTRACT, "get_sub_agent", {
+      owner,
+      agent_account: agentAccount,
+    });
+  }, [viewMethod]);
+
+  const updateSubAgentBio = useCallback(async (agentAccount, bio) => {
+    return callMethod(STAKING_CONTRACT, "update_sub_agent_bio", {
+      agent_account: agentAccount,
+      bio: bio || "",
+    }, "0");
+  }, [callMethod]);
+
+  const removeSubAgent = useCallback(async (agentAccount) => {
+    return callMethod(STAKING_CONTRACT, "remove_sub_agent", {
+      agent_account: agentAccount,
+    }, "0");
+  }, [callMethod]);
+
+  // Create a new sub-agent end-to-end in a single wallet approval batch:
+  //   1. CreateAccount agent<N>.<owner> + transfer 0.1 NEAR + AddKey
+  //      (full-access, generated client-side, stored in localStorage
+  //      keyed by the sub-account id)
+  //   2. FunctionCall register_sub_agent on ironshield.near
+  //
+  // `index` defaults to the next free slot = existing_sub_agents.length + 2
+  // (skipping 1 because `agent.<owner>` is the primary's slot). Callers
+  // that want to force a specific index can pass it explicitly.
+  const createSubAgent = useCallback(async ({ handle, bio = "", index } = {}) => {
+    if (!address) throw new Error("Connect a wallet first");
+    if (!selector) throw new Error("Wallet selector not initialized");
+    if (!handle || handle.length < 3) throw new Error("Handle required (min 3 chars)");
+
+    let idx = Number(index);
+    if (!Number.isFinite(idx) || idx < 2) {
+      const existing = await listSubAgents(address);
+      idx = existing.length + 2;
+    }
+    if (idx > MAX_SUB_AGENTS_PER_OWNER + 1) {
+      throw new Error(`Sub-agent limit reached (${MAX_SUB_AGENTS_PER_OWNER}).`);
+    }
+    const subAccountId = subAgentSubAccountId(address, idx);
+    if (!subAccountId) throw new Error("Could not derive sub-account id");
+
+    const exists = await subAccountExists(subAccountId).catch(() => false);
+    if (exists) {
+      throw new Error(
+        `${subAccountId} already exists. Either remove the prior sub-agent or pick a different index.`
+      );
+    }
+
+    const naj = await import("near-api-js");
+    const { KeyPair, transactions: tx, utils: { PublicKey } } = naj;
+    const keyPair   = KeyPair.fromRandom("ed25519");
+    const publicKey = keyPair.getPublicKey().toString();
+    const privateKey = keyPair.toString();
+
+    const transactions = [
+      {
+        signerId:   address,
+        receiverId: subAccountId,
+        actions: [
+          tx.createAccount(),
+          tx.transfer(BigInt(SUBWALLET_INITIAL_NEAR)),
+          tx.addKey(PublicKey.from(publicKey), tx.fullAccessKey()),
+        ],
+      },
+      {
+        signerId:   address,
+        receiverId: STAKING_CONTRACT,
+        actions: [
+          tx.functionCall(
+            "register_sub_agent",
+            { agent_account: subAccountId, handle, bio: bio || null },
+            30_000_000_000_000n,
+            0n,
+          ),
+        ],
+      },
+    ];
+
+    const wallet = await selector.wallet();
+    const result = await wallet.signAndSendTransactions({ transactions });
+
+    try {
+      window.localStorage.setItem(lsKey(subAccountId), JSON.stringify({
+        owner:      address,
+        subAccount: subAccountId,
+        publicKey,
+        privateKey,
+        createdAt:  new Date().toISOString(),
+        note:       "Phase 7C sub-agent key. 0.1 NEAR initial balance; full-access key lives in browser only.",
+      }));
+    } catch {
+      console.warn("Sub-agent linked on-chain, but local key storage failed.");
+    }
+
+    return { subAccountId, publicKey, index: idx, result };
+  }, [address, selector, listSubAgents, subAccountExists]);
+
   // ── Orchestrator delegation ────────────────────────────────────────────────
   // Fetch the orchestrator account id from the contract + its public keys via
   // RPC. The dashboard picks one full-access key from the returned list (stable
@@ -628,6 +756,8 @@ export default function useAgent() {
     linkToIronclaw, unlinkFromIronclaw, getIronclawSource,
     // Phase 7 Sub-PR B: agent capability mask + daily spend limit
     setAgentPermissions, setAgentDailyLimit, getAgentPermissions,
+    // Phase 7 Sub-PR C: multi-agent per wallet
+    listSubAgents, getSubAgent, createSubAgent, updateSubAgentBio, removeSubAgent,
     // leaderboard
     leaderboard,
     leaderboardLoading,

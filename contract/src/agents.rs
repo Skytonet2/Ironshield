@@ -35,6 +35,12 @@ pub const MAX_SKILL_IMAGE_URL_LEN:   usize = 256;
 pub const PLATFORM_FEE_BPS:          u32 = 100;
 pub const BPS_DENOM:                 u32 = 10_000;
 
+// ── Phase 7 (Sub-PR C): multi-agent caps ──────────────────────────────────
+/// An owner can register up to this many **sub-agents** on top of their
+/// primary `AgentProfile`. Keeps the per-owner Vec bounded so a single
+/// `list_sub_agents` call can never exceed contract gas limits.
+pub const MAX_SUB_AGENTS_PER_OWNER: usize = 10;
+
 // ── Phase 7 (Sub-PR B): capability bitmask ─────────────────────────────────
 // Five flags that the owner flips to authorise what their agent can do. The
 // contract stores the mask but does NOT enforce it on every call path here —
@@ -141,6 +147,28 @@ pub struct AgentPermissions {
     pub daily_limit_yocto: u128,
     pub daily_spent_yocto: u128,
     pub daily_spent_day:   u32,
+}
+
+/// Phase 7 (Sub-PR C): a secondary agent owned by the same wallet as the
+/// primary `AgentProfile`. Each one is a separate on-chain NEAR account
+/// (e.g. `agent2.alice.near`) with its own handle, bio, and point balance.
+///
+/// Stored as entries in `owner_agents: UnorderedMap<owner, Vec<SubAgent>>`
+/// so the primary `AgentProfile` encoding stays stable — same strategy as
+/// `AgentPermissions` and `SkillMetadata`. Handles are deduped across the
+/// primary + sub namespaces via a parallel `sub_agent_handles` map.
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct SubAgent {
+    /// The sub-account the owner registered for this agent. Must be a
+    /// child of the caller — e.g. `agent2.alice.near` for owner
+    /// `alice.near`. Enforced at registration time.
+    pub agent_account: AccountId,
+    pub handle:        String,
+    pub bio:           String,
+    pub points:        u128,
+    pub reputation:    u32,
+    pub created_at:    u64,
 }
 
 /// One row in an agent's recent-activity ring buffer. The `kind` is a short
@@ -258,21 +286,8 @@ impl StakingContract {
             "Agent already registered for this account"
         );
 
+        let lower = self.validate_fresh_handle(&handle);
         let trimmed = handle.trim().to_string();
-        assert!(
-            trimmed.len() >= 3 && trimmed.len() <= 32,
-            "Handle must be between 3 and 32 characters"
-        );
-        assert!(
-            trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
-            "Handle may only contain letters, digits, '_' and '-'"
-        );
-
-        let lower = trimmed.to_ascii_lowercase();
-        assert!(
-            self.agent_handles.get(&lower).is_none(),
-            "Handle already taken"
-        );
 
         let bio_str = bio.unwrap_or_default();
         assert!(bio_str.len() <= 280, "Bio must be ≤280 characters");
@@ -789,6 +804,183 @@ impl StakingContract {
     /// the current bucket". Keeps clients honest across timezones.
     pub fn get_current_day_index(&self) -> u32 {
         current_day_index()
+    }
+
+    // ── Phase 7 Sub-PR C: multi-agent per wallet ───────────────────────────
+    //
+    // `register_agent` keeps writing the *primary* profile into
+    // `agent_profiles`. Each owner can also attach up to
+    // MAX_SUB_AGENTS_PER_OWNER additional agents here — each one a fresh
+    // NEAR sub-account the owner created before calling in. The contract
+    // trusts the caller for account creation (NEAR enforces that only the
+    // parent can spawn `*.<parent>` accounts) but still validates the
+    // string shape defensively so a typo can't cross-register under the
+    // wrong owner.
+    //
+    // Handles are globally unique across the primary + sub namespaces —
+    // enforced by checking both `agent_handles` and `sub_agent_handles`
+    // before inserting.
+
+    /// Returns true iff `child` is a direct sub-account of `parent`,
+    /// e.g. `agent2.alice.near` is a child of `alice.near`. We check
+    /// "ends with .parent" and also require that the label before the
+    /// dot is non-empty — so `alice.near` is NOT considered its own
+    /// child, and `.alice.near` is rejected.
+    fn is_child_subaccount(child: &AccountId, parent: &AccountId) -> bool {
+        let c = child.as_str();
+        let p = parent.as_str();
+        let suffix = format!(".{}", p);
+        if !c.ends_with(&suffix) { return false; }
+        let prefix_len = c.len().saturating_sub(suffix.len());
+        prefix_len > 0
+    }
+
+    /// Shared handle-validation + uniqueness check used by both primary
+    /// `register_agent` and `register_sub_agent`. Kept out of a free
+    /// function so it can read `self.agent_handles` / `self.sub_agent_handles`.
+    fn validate_fresh_handle(&self, handle: &str) -> String {
+        let trimmed = handle.trim().to_string();
+        assert!(
+            trimmed.len() >= 3 && trimmed.len() <= 32,
+            "Handle must be between 3 and 32 characters"
+        );
+        assert!(
+            trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "Handle may only contain letters, digits, '_' and '-'"
+        );
+        let lower = trimmed.to_ascii_lowercase();
+        assert!(
+            self.agent_handles.get(&lower).is_none(),
+            "Handle already taken"
+        );
+        assert!(
+            self.sub_agent_handles.get(&lower).is_none(),
+            "Handle already taken"
+        );
+        lower
+    }
+
+    /// Register a secondary agent owned by the caller. Requires a primary
+    /// profile to already exist (so the caller has established platform
+    /// identity). `agent_account` must be a direct child of the caller —
+    /// the frontend creates it in the same wallet-approval batch, so by
+    /// the time we're executing here the sub-account is guaranteed to
+    /// exist at the NEAR layer.
+    pub fn register_sub_agent(
+        &mut self,
+        agent_account: AccountId,
+        handle: String,
+        bio: Option<String>,
+    ) {
+        assert!(!self.paused, "Contract is paused");
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register a primary agent before adding sub-agents"
+        );
+        assert!(
+            Self::is_child_subaccount(&agent_account, &owner),
+            "agent_account must be a direct sub-account of the caller"
+        );
+
+        // Cap per-owner list + reject duplicate sub-account registration.
+        let mut list = self.owner_agents.get(&owner).cloned().unwrap_or_default();
+        assert!(
+            list.len() < MAX_SUB_AGENTS_PER_OWNER,
+            "Sub-agent limit reached ({} per owner)",
+            MAX_SUB_AGENTS_PER_OWNER
+        );
+        assert!(
+            !list.iter().any(|s| s.agent_account == agent_account),
+            "Sub-agent already registered for this account"
+        );
+
+        let bio_str = bio.unwrap_or_default();
+        assert!(bio_str.len() <= 280, "Bio must be ≤280 characters");
+        let lower = self.validate_fresh_handle(&handle);
+        let trimmed = handle.trim().to_string();
+
+        let entity = SubAgent {
+            agent_account: agent_account.clone(),
+            handle:        trimmed.clone(),
+            bio:           bio_str,
+            points:        0,
+            reputation:    0,
+            created_at:    env::block_timestamp(),
+        };
+        list.push(entity);
+        self.owner_agents.insert(owner.clone(), list);
+        self.sub_agent_handles.insert(lower, owner.clone());
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"sub_agent_registered\",\"data\":{{\"owner\":\"{}\",\"agent_account\":\"{}\",\"handle\":\"{}\"}}}}",
+            owner, agent_account, trimmed
+        ));
+    }
+
+    /// Owner-only: rewrite one sub-agent's bio. Leaves the handle +
+    /// account id untouched — those two are the stable identity.
+    pub fn update_sub_agent_bio(&mut self, agent_account: AccountId, bio: String) {
+        let owner = env::predecessor_account_id();
+        assert!(bio.len() <= 280, "Bio must be ≤280 characters");
+        let mut list = self.owner_agents.get(&owner).cloned()
+            .expect("No sub-agents for this owner");
+        let pos = list.iter().position(|s| s.agent_account == agent_account)
+            .expect("Sub-agent not found");
+        list[pos].bio = bio;
+        self.owner_agents.insert(owner, list);
+    }
+
+    /// Owner-only: drop a sub-agent. Frees the handle so the owner
+    /// (or someone else) can reuse it on a future `register_sub_agent`.
+    /// Does **not** touch the NEAR sub-account itself — the owner
+    /// retains the keys and can repurpose it off-platform.
+    pub fn remove_sub_agent(&mut self, agent_account: AccountId) {
+        let owner = env::predecessor_account_id();
+        let mut list = self.owner_agents.get(&owner).cloned()
+            .expect("No sub-agents for this owner");
+        let pos = list.iter().position(|s| s.agent_account == agent_account)
+            .expect("Sub-agent not found");
+        let removed = list.remove(pos);
+
+        if list.is_empty() {
+            self.owner_agents.remove(&owner);
+        } else {
+            self.owner_agents.insert(owner.clone(), list);
+        }
+        let lower = removed.handle.to_ascii_lowercase();
+        self.sub_agent_handles.remove(&lower);
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"sub_agent_removed\",\"data\":{{\"owner\":\"{}\",\"agent_account\":\"{}\"}}}}",
+            owner, agent_account
+        ));
+    }
+
+    /// All sub-agents owned by `owner`. Primary agent (from
+    /// `get_agent`) is NOT included — surface both in the UI to show
+    /// the full roster.
+    pub fn list_sub_agents(&self, owner: AccountId) -> Vec<SubAgent> {
+        self.owner_agents.get(&owner).cloned().unwrap_or_default()
+    }
+
+    /// Fetch one sub-agent by its `agent_account`. Linear scan over the
+    /// owner's small list — fine inside the 10-item cap.
+    pub fn get_sub_agent(&self, owner: AccountId, agent_account: AccountId) -> Option<SubAgent> {
+        self.owner_agents.get(&owner).and_then(|list| {
+            list.iter().find(|s| s.agent_account == agent_account).cloned()
+        })
+    }
+
+    /// Total number of sub-agents across all owners. Useful for admin
+    /// telemetry; linear over the owner map so bounded by
+    /// MAX_SUB_AGENTS_PER_OWNER × owner_count.
+    pub fn get_sub_agents_total(&self) -> u32 {
+        let mut total: u32 = 0;
+        for (_, list) in self.owner_agents.iter() {
+            total = total.saturating_add(list.len() as u32);
+        }
+        total
     }
 
     // ── IronClaw subscription + public toggle ──────────────────────────────

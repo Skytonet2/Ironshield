@@ -17,7 +17,7 @@ mod agents;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
-pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentPermissions, AgentFlags};
+pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentPermissions, AgentFlags, SubAgent};
 
 pub type PoolId = u32;
 
@@ -190,6 +190,18 @@ pub struct StakingContract {
     /// Owners flip bits + set a daily yocto cap via set_agent_permissions
     /// / set_agent_daily_limit.
     pub agent_permissions: UnorderedMap<AccountId, AgentPermissions>,
+
+    // ── Phase 7 (Sub-PR C): multi-agent per wallet ────────────────────
+    /// Per-owner list of secondary agents (capped at
+    /// MAX_SUB_AGENTS_PER_OWNER). The primary agent still lives in
+    /// `agent_profiles`; this map only holds the extras. Absence
+    /// means "owner has zero sub-agents." Prefix b"O".
+    pub owner_agents: UnorderedMap<AccountId, Vec<SubAgent>>,
+    /// Sub-agent handle → owner. Parallel to `agent_handles` so
+    /// Phase 3's handle encoding stays stable. Both maps are
+    /// consulted when checking uniqueness so a handle can't collide
+    /// across the primary + sub namespaces. Prefix b"Q".
+    pub sub_agent_handles: UnorderedMap<String, AccountId>,
 }
 
 #[near]
@@ -256,6 +268,10 @@ impl StakingContract {
 
             // Phase 6 — linked external IronClaw agents
             ironclaw_sources:    UnorderedMap::new(b"L"),
+
+            // Phase 7 Sub-PR C — multi-agent per wallet. Prefixes b"O" + b"Q".
+            owner_agents:        UnorderedMap::new(b"O"),
+            sub_agent_handles:   UnorderedMap::new(b"Q"),
         }
     }
 }
