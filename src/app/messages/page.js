@@ -24,7 +24,7 @@ import {
   UserX, Flag, Sparkles, DollarSign, Briefcase, BarChart3, Zap,
   Calendar, Wallet, ExternalLink, Hash, TrendingUp, Check,
   ChevronRight, Star, Trophy, Crown, Video, MoreHorizontal,
-  Image as ImageIcon, Smile, AtSign,
+  Image as ImageIcon, Smile, AtSign, CornerUpLeft,
 } from "lucide-react";
 import {
   getOrCreateKeypair, exportPublicKey,
@@ -618,6 +618,11 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState(null);
   const [actionOpen, setActionOpen] = useState(false);
+  // Group-only: the specific message the user is quoting/replying to.
+  // Cleared after send. Direct DMs don't support reply_to in the
+  // schema yet — groups got it first because threaded discussion in
+  // groups is the higher-value ask.
+  const [replyingTo, setReplyingTo] = useState(null);
   const scrollRef = useRef(null);
 
   // Composer height — user-resizable via the drag handle that sits on
@@ -742,10 +747,24 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           from_id: r.message.from_id,
         });
       } else if (conv.kind === "group") {
+        const replyToId = replyingTo?.id || null;
         const r = await api(`/api/dm/groups/${conv.id}/send`, {
-          method: "POST", wallet, body: { content: body },
+          method: "POST", wallet,
+          body: { content: body, ...(replyToId ? { replyToId } : {}) },
         });
-        onSent?.(r.message);
+        // Synthesize the quoted-preview fields the render path expects
+        // so the just-sent bubble shows its quote without waiting for
+        // the next refetch. The backend SELECT will populate these
+        // naturally on reload.
+        const hydrated = replyToId ? {
+          ...r.message,
+          reply_to_id:      replyToId,
+          reply_to_content: replyingTo.content,
+          reply_to_display: replyingTo.from_display,
+          reply_to_wallet:  replyingTo.from_wallet,
+        } : r.message;
+        onSent?.(hydrated);
+        setReplyingTo(null);
       }
     } catch (e) {
       setErr(e.message || "Send failed");
@@ -753,7 +772,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
     } finally {
       setSending(false);
     }
-  }, [conv, wallet, keypair, sending, onSent]);
+  }, [conv, wallet, keypair, sending, onSent, replyingTo]);
 
   const send = useCallback(async () => {
     const body = text.trim();
@@ -987,6 +1006,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
               <MessageBubble
                 key={key} m={seg.m} t={t} wallet={wallet} conv={conv} keypair={keypair}
                 fresh={freshIds.has(key)}
+                onReply={conv.kind === "group" ? () => setReplyingTo(seg.m) : null}
               />
             );
           });
@@ -1032,6 +1052,48 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
           onClose={() => setActionOpen(false)}
           onAction={(type, data) => insertChip(type, data)}
         />
+      )}
+
+      {/* Reply preview bar — only when user tapped Reply on a group
+          message. Shows who they're replying to + a truncated preview
+          + a dismiss X. Rendered ABOVE the drag handle so it lives
+          in the composer zone, not inside the scroll area. */}
+      {replyingTo && (
+        <div style={{
+          flexShrink: 0,
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "8px 12px",
+          borderTop: `1px solid ${t.border}`,
+          background: "var(--bg-surface)",
+        }}>
+          <div style={{
+            width: 3, alignSelf: "stretch", borderRadius: 2,
+            background: t.accent, flexShrink: 0,
+          }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: t.accent, letterSpacing: 0.3 }}>
+              Replying to {replyingTo.from_display || shortAddr(replyingTo.from_wallet)}
+            </div>
+            <div style={{
+              fontSize: 12, color: t.textDim,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {(replyingTo.content || "").slice(0, 140).replace(/\s+/g, " ")}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReplyingTo(null)}
+            aria-label="Cancel reply"
+            style={{
+              width: 24, height: 24, borderRadius: 999, border: "none",
+              background: "transparent", color: t.textDim, cursor: "pointer",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <XIcon size={12} />
+          </button>
+        </div>
       )}
 
       {/* Draggable divider between the thread scroller and the
@@ -1199,21 +1261,40 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
       </form>
 
       <style jsx global>{`
-        /* Context pane: docked on desktop, overlay on tablet/mobile. */
+        /* Context pane: docked on desktop, overlay on tablet/mobile.
+           !important guards against the inline \`display: flex\` the
+           JSX ships — same class of bug as the list/thread split.
+           Without the override, the context pane auto-flowed into an
+           implicit grid row BELOW the thread on phones, stacking the
+           Details subtree under the conversation instead of covering
+           it. */
         @media (min-width: 1180px) {
-          .ix-msg-context { position: static; width: auto; }
+          .ix-msg-context { position: static !important; width: auto !important; transform: none !important; }
         }
         @media (max-width: 1179px) {
           .ix-msg-context {
-            position: absolute;
+            position: fixed !important;
             top: 0; right: 0; bottom: 0;
-            width: min(92vw, 340px);
+            width: min(92vw, 360px) !important;
             transform: translateX(100%);
             transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
-            z-index: 5;
+            z-index: 50;
             box-shadow: -14px 0 38px rgba(0,0,0,0.35);
           }
           .ix-msg-context[data-open="true"] { transform: translateX(0); }
+          /* When the pane is closed on mobile, also zero its visual
+             footprint so it can't leak through in the grid flow under
+             any circumstance. Belt-and-suspenders with the transform. */
+          .ix-msg-context[data-open="false"] { pointer-events: none; }
+        }
+        @media (max-width: 640px) {
+          /* On true phones go full-width — a 92vw panel with 8vw of
+             blurred backdrop looks weirdly tight; just take the
+             screen. */
+          .ix-msg-context {
+            width: 100vw !important;
+            max-width: 100vw !important;
+          }
         }
         .ix-msg-root { position: relative; }
         .ix-msg-grid { position: relative; }
@@ -1261,7 +1342,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
   );
 }
 
-function MessageBubble({ m, t, wallet, conv, keypair, fresh }) {
+function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
   const isMine = conv.kind === "group"
     ? (m.from_wallet && wallet && m.from_wallet.toLowerCase() === wallet.toLowerCase())
     : (m._decrypted ? true : (conv.peer?.id != null ? m.from_id !== conv.peer.id : false));
@@ -1298,13 +1379,52 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh }) {
     boxShadow: isMine ? "0 4px 10px rgba(168,85,247,0.25)" : "none",
   };
 
+  // Quoted reply preview — rendered inside the bubble above the body
+  // when the backend flagged this message as a reply. Styled as a
+  // muted inset card with a left bar accent, so visually clearly
+  // "this message is replying to that one" without being loud.
+  const isReply = !!m.reply_to_id;
+  const quoteLabel  = m.reply_to_display || (m.reply_to_wallet ? shortAddr(m.reply_to_wallet) : "a message");
+  const quotePreview = m.reply_to_content
+    ? m.reply_to_content.slice(0, 120).replace(/\s+/g, " ")
+    : "(deleted)";
+
   return (
     <div style={{
       display: "flex",
       justifyContent: isMine ? "flex-end" : "flex-start",
       paddingLeft: isMine ? 40 : 0,
       paddingRight: isMine ? 0 : 40,
-    }}>
+      position: "relative",
+    }}
+    // Group messages get a Reply button on hover. We track hover at
+    // the container level so the button slides in/out consistently
+    // without flickering when the pointer crosses inner children.
+    onMouseEnter={(e) => { if (onReply) e.currentTarget.dataset.hover = "1"; }}
+    onMouseLeave={(e) => { if (onReply) delete e.currentTarget.dataset.hover; }}
+    >
+      {onReply && (
+        <button
+          type="button"
+          onClick={onReply}
+          className="ix-msg-reply-btn"
+          aria-label="Reply"
+          title="Reply"
+          style={{
+            position: "absolute",
+            top: -10, right: isMine ? "auto" : 10, left: isMine ? 10 : "auto",
+            padding: "3px 8px", borderRadius: 999,
+            border: `1px solid ${t.border}`,
+            background: "var(--bg-card)",
+            color: t.text, fontSize: 10, fontWeight: 700,
+            cursor: "pointer",
+            display: "inline-flex", alignItems: "center", gap: 4,
+            zIndex: 2,
+          }}
+        >
+          <CornerUpLeft size={10} /> Reply
+        </button>
+      )}
       <div
         className="ix-msg-bubble"
         data-fresh={fresh && !isMine ? "true" : "false"}
@@ -1322,6 +1442,31 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh }) {
             color: t.accent, marginBottom: 3, opacity: 0.8,
           }}>
             {m.from_display || shortAddr(m.from_wallet)}
+          </div>
+        )}
+        {isReply && !hasOnlyChips && (
+          <div style={{
+            marginBottom: 6,
+            paddingLeft: 8, paddingRight: 8, paddingTop: 4, paddingBottom: 4,
+            borderLeft: `3px solid ${isMine ? "rgba(255,255,255,0.6)" : t.accent}`,
+            background: isMine ? "rgba(255,255,255,0.10)" : "rgba(168,85,247,0.10)",
+            borderRadius: 6,
+            fontSize: 12,
+            opacity: 0.85,
+          }}>
+            <div style={{
+              fontWeight: 700, fontSize: 10,
+              color: isMine ? "rgba(255,255,255,0.9)" : t.accent,
+              marginBottom: 1,
+            }}>
+              {quoteLabel}
+            </div>
+            <div style={{
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              color: isMine ? "rgba(255,255,255,0.85)" : t.textDim,
+            }}>
+              {quotePreview}
+            </div>
           </div>
         )}
         <BodySegments segs={segs} t={t} isMine={isMine} />

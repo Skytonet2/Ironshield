@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IronShield — Clearing state</title>
+  <meta http-equiv="refresh" content="3;url=/earn/">
+  <style>
+    html, body { margin: 0; background: #050816; color: #e6ecf7; font-family: -apple-system, Segoe UI, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .wrap { max-width: 520px; padding: 28px; text-align: center; }
+    h1 { font-size: 22px; margin: 0 0 10px; }
+    p  { color: #9aa4bd; font-size: 14px; line-height: 1.6; margin: 0 0 16px; }
+    .spinner { width: 28px; height: 28px; border: 3px solid #1d2540; border-top-color: #a855f7; border-radius: 50%; animation: s 1s linear infinite; margin: 0 auto 14px; }
+    @keyframes s { to { transform: rotate(360deg); } }
+    a.btn { display: inline-block; margin-top: 14px; background: linear-gradient(135deg, #a855f7, #3b82f6); color: #fff; padding: 10px 18px; border-radius: 10px; text-decoration: none; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="spinner"></div>
+    <h1>🧹 Clearing IronShield state</h1>
+    <p>
+      The browser is wiping cookies, cache, and service workers for this origin
+      via the <code>Clear-Site-Data</code> HTTP header served on this page.
+      You&rsquo;ll be redirected to <strong>/earn</strong> in a few seconds.
+    </p>
+    <p style="font-size: 12px;">If the redirect doesn&rsquo;t fire:</p>
+    <a class="btn" href="/earn/">Open /earn</a>
+  </div>
+  <script>
+    // Belt-and-braces: also try to unregister any SW + delete any cache from
+    // JS. The Clear-Site-Data header should have already done this, but doing
+    // it twice is harmless and helps browsers that honor the header partially.
+    (async function () {
+      try {
+        if ("serviceWorker" in navigator) {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          for (var i = 0; i < regs.length; i++) {
+            try { await regs[i].unregister(); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+      try {
+        if ("caches" in window) {
+          var keys = await caches.keys();
+          for (var j = 0; j < keys.length; j++) {
+            try { await caches.delete(keys[j]); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    })();
+  </script>
+</body>
+</html>

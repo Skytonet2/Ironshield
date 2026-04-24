@@ -159,6 +159,107 @@ router.post("/ref-code", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ─── Inviter tracking (who referred this user) ────────────────────
+// Same in-process fallback pattern as the code lookup above. When
+// the schema lands (feed_users.referrer_id), both readers +
+// writers route to the column transparently.
+const memoryReferrers = new Map(); // userId → referrerUserId
+
+async function readReferrer(user) {
+  if (await hasRefSchema()) {
+    const r = await db.query(
+      "SELECT referrer_id FROM feed_users WHERE id=$1",
+      [user.id]
+    );
+    return r.rows[0]?.referrer_id || null;
+  }
+  return memoryReferrers.get(user.id) || null;
+}
+
+async function writeReferrer(user, referrerId) {
+  if (await hasRefSchema()) {
+    await db.query(
+      "UPDATE feed_users SET referrer_id=$1 WHERE id=$2 AND referrer_id IS NULL",
+      [referrerId, user.id]
+    );
+  } else {
+    if (!memoryReferrers.has(user.id)) {
+      memoryReferrers.set(user.id, referrerId);
+    }
+  }
+}
+
+async function resolveCodeToUserId(code) {
+  if (await hasRefSchema()) {
+    const r = await db.query(
+      "SELECT id FROM feed_users WHERE LOWER(ref_code)=LOWER($1) LIMIT 1",
+      [code]
+    );
+    return r.rows[0]?.id || null;
+  }
+  return memoryReverse.get(code) || null;
+}
+
+// POST /api/rewards/claim-referrer  body: { code }
+// Viewer claims the given referral code as the user who invited them.
+// Only lands once — subsequent calls no-op so users can't game this
+// by swapping referrers later. Self-referral blocked. Returns
+// { claimed, referrer? } so the client can decide whether to show
+// the "follow your inviter" prompt.
+router.post("/claim-referrer", requireWallet, async (req, res, next) => {
+  try {
+    const code = String(req.body?.code || "").trim().toLowerCase();
+    if (!HANDLE_RE.test(code)) return res.status(400).json({ error: "invalid code" });
+    const user = await getOrCreateUser(req.wallet);
+    const existing = await readReferrer(user);
+    if (existing) return res.json({ claimed: false, reason: "already_set" });
+    const referrerId = await resolveCodeToUserId(code);
+    if (!referrerId) return res.status(404).json({ error: "code not found" });
+    if (referrerId === user.id) return res.status(400).json({ error: "self_referral" });
+    await writeReferrer(user, referrerId);
+    // Hydrate the referrer for the UI so the follow-prompt has
+    // avatar + handle without another round trip.
+    const rr = await db.query(
+      "SELECT id, wallet_address, username, display_name, pfp_url FROM feed_users WHERE id=$1",
+      [referrerId]
+    );
+    const r = rr.rows[0] || {};
+    res.json({
+      claimed: true,
+      referrer: {
+        wallet: r.wallet_address,
+        username: r.username,
+        displayName: r.display_name,
+        pfpUrl: r.pfp_url,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// GET /api/rewards/referrer — who invited me? Returns {} when nobody
+// or when the viewer hasn't claimed a code yet.
+router.get("/referrer", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const referrerId = await readReferrer(user);
+    if (!referrerId) return res.json({ referrer: null });
+    const rr = await db.query(
+      "SELECT id, wallet_address, username, display_name, pfp_url FROM feed_users WHERE id=$1",
+      [referrerId]
+    );
+    const r = rr.rows[0];
+    if (!r) return res.json({ referrer: null });
+    res.json({
+      referrer: {
+        wallet: r.wallet_address,
+        username: r.username,
+        displayName: r.display_name,
+        pfpUrl: r.pfp_url,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
 // GET /api/rewards/ref/:code — resolve a code to its owner. Public.
 // Used when a visitor lands with ?ref=foo; we stamp the code into
 // localStorage and attach it on signup so the referrer gets credit.

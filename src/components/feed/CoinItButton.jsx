@@ -146,10 +146,11 @@ function CoinItModal({
   return (
     <div
       onClick={onClose}
+      className="ix-coinit-backdrop"
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.55)",
+        background: "rgba(0,0,0,0.72)",
         backdropFilter: "blur(6px)",
         zIndex: 200,
         display: "flex",
@@ -158,8 +159,34 @@ function CoinItModal({
         padding: 20,
       }}
     >
+      {/* Mobile-first takeover: on phones the modal fills the viewport
+          as a full-screen sheet instead of a tiny centered card, so
+          users aren't squinting at a 310px-wide pill with the feed
+          bleeding through the backdrop. Desktop keeps the centered
+          card. See the styled-jsx block at the end of this component. */}
+      <style jsx global>{`
+        @media (max-width: 640px) {
+          .ix-coinit-backdrop {
+            background: var(--bg-app, #050816) !important;
+            backdrop-filter: none !important;
+            padding: 0 !important;
+            align-items: stretch !important;
+          }
+          .ix-coinit-modal {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 100dvh !important;
+            border-radius: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 18px !important;
+            overflow-y: auto !important;
+          }
+        }
+      `}</style>
       <div
         onClick={(e) => e.stopPropagation()}
+        className="ix-coinit-modal"
         style={{
           width: "100%",
           maxWidth: 460,

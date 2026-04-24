@@ -50,10 +50,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
       <head>
-        {/* Preload mascot raster used in the landing hero + CTA band.
-            Browser prefers .webp but the file doesn't ship yet — preload
-            the .png we actually have. */}
-        <link rel="preload" as="image" href="/mascot.png" />
+        {/* Preload lightweight mascot WebP (31KB, 520×780). Was previously
+            preloading the 346KB PNG which decoded to ~4MB and OOM'd Telegram
+            in-app WebView. */}
+        <link rel="preload" as="image" href="/mascot.webp" type="image/webp" />
         <meta name="theme-color" content="#0b0e1c" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -237,6 +237,25 @@ export default function RootLayout({ children }) {
             try {
               if (location.search && /[?&]_r=/.test(location.search)) {
                 history.replaceState(null, '', location.pathname + location.hash);
+              }
+            } catch(e) {}
+
+            // Capture ?ref=<code> on first hit so the referrer gets
+            // credit when the visitor later connects a wallet. Store
+            // in localStorage under \`ironshield:ref-pending\`. On
+            // wallet connect, src/lib/contexts.js claims it via
+            // POST /api/rewards/claim-referrer and clears the flag.
+            try {
+              var q = new URLSearchParams(location.search);
+              var ref = (q.get('ref') || '').trim().toLowerCase();
+              if (/^[a-z0-9_]{4,20}$/.test(ref)) {
+                localStorage.setItem('ironshield:ref-pending', ref);
+                // Strip the query param so share links don't follow
+                // the user around the app. Use replaceState to avoid
+                // a history entry.
+                q.delete('ref');
+                var search = q.toString();
+                history.replaceState(null, '', location.pathname + (search ? '?' + search : '') + location.hash);
               }
             } catch(e) {}
 

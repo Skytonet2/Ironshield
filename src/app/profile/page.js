@@ -13,6 +13,8 @@ import FeedCard from "@/components/feed/FeedCard";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import { Coins, Camera, X as XIcon, Loader2 } from "lucide-react";
 import { primeViewerProfile } from "@/lib/hooks/useViewerProfile";
+import FollowButton from "@/components/profile/FollowButton";
+import ReferralCard from "@/components/profile/ReferralCard";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -217,11 +219,25 @@ export default function ProfilePage() {
             </div>
           ) : (
             <>
-              <div style={{ fontSize: 18, fontWeight: 800, color: t.white }}>
-                {profile?.displayName || short || "anon"}
-              </div>
-              <div style={{ fontSize: 13, color: t.textDim }}>
-                @{profile?.username || short} · {profile?.followers ?? 0} followers · {profile?.posts ?? 0} posts
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: t.white }}>
+                    {profile?.displayName || short || "anon"}
+                  </div>
+                  <div style={{ fontSize: 13, color: t.textDim }}>
+                    @{profile?.username || short} · {profile?.followers ?? 0} followers · {profile?.posts ?? 0} posts
+                  </div>
+                </div>
+                {/* Follow button — self-profile returns null so it
+                    only shows on other people's pages. Bumps the
+                    local follower count optimistically so the meta
+                    line moves without waiting on a refetch. */}
+                {!isSelf && (targetAddress || profile?.wallet_address) && (
+                  <FollowButton
+                    targetWallet={targetAddress || profile?.wallet_address}
+                    onCountChange={(delta) => setProfile((p) => p ? ({ ...p, followers: Math.max(0, (p.followers ?? 0) + delta) }) : p)}
+                  />
+                )}
               </div>
               {profile?.bio && (
                 <div style={{ fontSize: 14, color: t.text, marginTop: 8, whiteSpace: "pre-wrap" }}>
@@ -231,6 +247,10 @@ export default function ProfilePage() {
             </>
           )}
         </div>
+
+        {/* Referral card — self-profile only. Renders null on other
+            users' pages so we don't leak invite prompts into them. */}
+        {isSelf && <ReferralCard />}
 
         {/* Tabs */}
         <div style={{

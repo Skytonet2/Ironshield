@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IronShield — Recovery</title>
+  <style>
+    html, body { margin: 0; background: #050816; color: #e6ecf7; font-family: -apple-system, Segoe UI, sans-serif; min-height: 100vh; }
+    .wrap { max-width: 640px; margin: 60px auto; padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p  { color: #9aa4bd; font-size: 14px; line-height: 1.6; margin: 0 0 18px; }
+    .card { background: #0e1324; border: 1px solid #1d2540; border-radius: 12px; padding: 18px; }
+    .log { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; color: #9aa4bd; white-space: pre-wrap; line-height: 1.7; }
+    .done { color: #10b981; font-weight: 700; }
+    a { color: #a855f7; }
+    .btn { display: inline-block; background: linear-gradient(135deg, #a855f7, #3b82f6); color: #fff; padding: 10px 18px; border-radius: 10px; text-decoration: none; font-weight: 700; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🛠 Recovering IronShield</h1>
+    <p>
+      A stale service worker from a previous deploy can leave the site with
+      broken chunks — the symptom is a "This page couldn&rsquo;t load" error.
+      This page runs outside the Next.js bundle, unregisters every service
+      worker the origin owns, clears Cache Storage, and redirects you back.
+    </p>
+    <div class="card">
+      <div id="log" class="log">Starting…</div>
+    </div>
+    <p id="doneMsg" style="display: none; margin-top: 18px;" class="done">
+      ✓ Recovery complete — redirecting…
+    </p>
+    <p style="margin-top: 18px; font-size: 12px;">
+      Not redirecting? <a href="/earn/">Open /earn manually</a> or click here:
+    </p>
+    <a id="manualGo" class="btn" href="/earn/">Go to /earn</a>
+  </div>
+
+  <script>
+    // Script is inline so we don't have to fetch a separate JS file that
+    // might get intercepted by the old SW. Every step is defensive —
+    // failures log but don't halt the recovery flow.
+    (function () {
+      var logEl = document.getElementById("log");
+      function push(msg) {
+        if (!logEl) return;
+        var line = document.createElement("div");
+        line.textContent = msg;
+        logEl.appendChild(line);
+      }
+
+      function targetUrl() {
+        try {
+          var q = new URL(location.href).searchParams.get("to");
+          if (q && q.charAt(0) === "/") return q;
+        } catch (_) {}
+        return "/earn/";
+      }
+
+      function finish() {
+        var done = document.getElementById("doneMsg");
+        if (done) done.style.display = "block";
+        var target = targetUrl();
+        var sep = target.indexOf("?") >= 0 ? "&" : "?";
+        var go   = document.getElementById("manualGo");
+        if (go) go.href = target + sep + "recovered=" + Date.now();
+        setTimeout(function () {
+          location.replace(target + sep + "recovered=" + Date.now());
+        }, 2000);
+      }
+
+      async function runSwCleanup() {
+        if (!("serviceWorker" in navigator)) {
+          push("navigator.serviceWorker unavailable — skipping SW step");
+          return;
+        }
+        try {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          push("Found " + regs.length + " service worker registration" +
+               (regs.length === 1 ? "" : "s"));
+          for (var i = 0; i < regs.length; i++) {
+            try {
+              var ok = await regs[i].unregister();
+              push("• unregister " + regs[i].scope + ": " + (ok ? "ok" : "failed"));
+            } catch (e) {
+              push("• unregister error: " + (e && e.message || e));
+            }
+          }
+        } catch (e) {
+          push("SW cleanup error: " + (e && e.message || e));
+        }
+      }
+
+      async function runCacheCleanup() {
+        if (!("caches" in window)) {
+          push("window.caches unavailable — skipping cache step");
+          return;
+        }
+        try {
+          var keys = await caches.keys();
+          push("Found " + keys.length + " cache bucket" + (keys.length === 1 ? "" : "s"));
+          for (var i = 0; i < keys.length; i++) {
+            try {
+              var ok = await caches.delete(keys[i]);
+              push("• delete " + keys[i] + ": " + (ok ? "ok" : "failed"));
+            } catch (e) {
+              push("• delete error: " + (e && e.message || e));
+            }
+          }
+        } catch (e) {
+          push("cache cleanup error: " + (e && e.message || e));
+        }
+      }
+
+      (async function () {
+        logEl.textContent = "";
+        push("Starting recovery…");
+        await runSwCleanup();
+        await runCacheCleanup();
+        push("Done.");
+        finish();
+      })();
+    })();
+  </script>
+</body>
+</html>

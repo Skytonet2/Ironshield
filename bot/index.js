@@ -35,6 +35,17 @@ if (USE_WEBHOOK && WEBHOOK_URL) {
 
 bot.setMyCommands([
   { command: "start",        description: "Link your wallet & get started" },
+  // Trading surface — these were handled by commandHandler but not
+  // listed here, so users never saw them in Telegram's command menu
+  // and assumed "buy / withdraw aren't live." They are. They're just
+  // invisible until now.
+  { command: "balance",      description: "Your custodial balance" },
+  { command: "deposit",      description: "Deposit to your trading account" },
+  { command: "buy",          description: "Buy a token (alias for /swap)" },
+  { command: "swap",         description: "Swap one token for another" },
+  { command: "send",         description: "Send tokens to an address" },
+  { command: "withdraw",     description: "Withdraw to your main wallet" },
+  { command: "activate",     description: "Activate trading ($5 NEAR)" },
   { command: "portfolio",    description: "Instant portfolio overview" },
   { command: "wallets",      description: "Switch or list linked wallets" },
   { command: "addwallet",    description: "Add another wallet" },
