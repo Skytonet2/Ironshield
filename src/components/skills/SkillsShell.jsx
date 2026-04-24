@@ -30,7 +30,6 @@ import {
   Compass, LayoutGrid, Trophy, Sparkles, Crown, TrendingUp,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
-import ConnectAccountModal from "./ConnectAccountModal";
 
 const TOP_TABS = [
   { key: "marketplace",    label: "Marketplace",    href: "/skills"        },
@@ -375,13 +374,16 @@ function EarnCta({ t }) {
 
 export default function SkillsShell({ children }) {
   const t = useTheme();
-  const { showModal: openNearWalletSelector } = useWallet?.() || {};
-  const [drawerOpen, setDrawerOpen]     = useState(false);
-  const [connectOpen, setConnectOpen]   = useState(false);
+  // `showModal` from the wallet context now opens the unified Connect
+  // Account dialog (NEAR / Google / EVM / Solana) directly — no more
+  // nested ConnectAccountModal layer. Each pick triggers its connect
+  // function on the first click, no double-tap bounce.
+  const { showModal: openConnect } = useWallet?.() || {};
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Close drawer + connect modal when route changes or on resize-up past mobile.
+  // Close drawer on route change or resize-up past mobile.
   const pathname = usePathname();
-  useEffect(() => { setDrawerOpen(false); setConnectOpen(false); }, [pathname]);
+  useEffect(() => { setDrawerOpen(false); }, [pathname]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onResize = () => { if (window.innerWidth >= 768) setDrawerOpen(false); };
@@ -397,13 +399,7 @@ export default function SkillsShell({ children }) {
       <TopNav
         t={t}
         onToggleDrawer={() => setDrawerOpen(v => !v)}
-        onOpenConnect={() => setConnectOpen(true)}
-      />
-
-      <ConnectAccountModal
-        open={connectOpen}
-        onClose={() => setConnectOpen(false)}
-        onPickNear={() => openNearWalletSelector?.()}
+        onOpenConnect={() => openConnect?.()}
       />
 
       <div style={{ display: "flex", alignItems: "flex-start" }}>
