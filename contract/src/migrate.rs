@@ -126,6 +126,8 @@ impl StakingContract {
             // Phase 7 — empty on every upgrade path; `create_skill` and
             // `update_skill_metadata` populate it lazily. Prefix b"M".
             skill_metadata:      UnorderedMap::new(b"M"),
+            // Phase 7B — empty on every upgrade path. Prefix b"P".
+            agent_permissions:   UnorderedMap::new(b"P"),
         }
     }
 }
@@ -173,6 +175,117 @@ struct Phase5StakingContract {
     next_skill_id:          u64,
     installed_skills:       OldUnorderedMap<AccountId, Vec<u64>>,
     agent_flags:            OldUnorderedMap<AccountId, AgentFlags>,
+}
+
+/// Byte-for-byte mirror of the Phase-7A (post-`migrate_v7_skill_metadata()`)
+/// shape. Used by `migrate_v7b_agent_permissions()` to add the
+/// `agent_permissions` map. Do NOT edit once the Phase 7B upgrade has run
+/// on mainnet.
+#[near(serializers=[borsh])]
+struct Phase7AStakingContract {
+    owner_id:               AccountId,
+    ironclaw_token_id:      AccountId,
+    pools:                  OldVector<PoolInfo>,
+    user_info:              OldLookupMap<String, UserInfo>,
+    reward_per_ns:          Balance,
+    last_reward_time:       u64,
+    total_alloc_point:      u32,
+    paused:                 bool,
+    proposals:              OldVector<Proposal>,
+    votes:                  OldLookupMap<String, String>,
+    mission_results:        OldLookupMap<u32, MissionResult>,
+    orchestrator_id:        AccountId,
+    total_revenue:          Balance,
+    distributed_revenue:    Balance,
+    staker_share_bps:       u32,
+    contributor_share_bps:  u32,
+    reserve_share_bps:      u32,
+    proposer_share_bps:     u32,
+    contributor_wallet:     AccountId,
+    reserve_wallet:         AccountId,
+    proposer_wallet:        AccountId,
+    pretoken_mode:          bool,
+    contributors:           OldUnorderedMap<AccountId, ContributorInfo>,
+    pending_applications:   OldUnorderedMap<AccountId, ContributorApplication>,
+    vanguard_nft_contracts: OldVector<AccountId>,
+    vanguard_verified:      OldLookupSet<AccountId>,
+    vanguard_token_id_max:  u64,
+    agent_profiles:         OldUnorderedMap<AccountId, AgentProfile>,
+    agent_handles:          OldUnorderedMap<String, AccountId>,
+    total_points_issued:    Balance,
+    agent_stats:            OldUnorderedMap<AccountId, AgentStats>,
+    agent_tasks:            OldUnorderedMap<AccountId, Vec<AgentTask>>,
+    next_task_id:           u64,
+    skills:                 OldUnorderedMap<u64, Skill>,
+    next_skill_id:          u64,
+    installed_skills:       OldUnorderedMap<AccountId, Vec<u64>>,
+    agent_flags:            OldUnorderedMap<AccountId, AgentFlags>,
+    ironclaw_sources:       OldUnorderedMap<AccountId, String>,
+    skill_metadata:         OldUnorderedMap<u64, SkillMetadata>,
+}
+
+#[near]
+impl StakingContract {
+    /// Phase 7A → Phase 7B: adds an empty `agent_permissions` map under
+    /// prefix b"P". O(1) runtime — no per-profile iteration, no
+    /// re-encoding. Existing agent_profiles stay on their Phase 4 byte
+    /// layout. Owners get the default (no entry → read-only, no spend
+    /// limit) until they call set_agent_permissions for the first time.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate_v7b_agent_permissions() -> Self {
+        let old: Phase7AStakingContract = env::state_read()
+            .expect("No state to migrate — was the contract ever initialized?");
+
+        env::log_str("EVENT_JSON:{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"state_migrated\",\"data\":{\"to\":\"phase7b_agent_permissions\"}}");
+
+        Self {
+            owner_id:               old.owner_id,
+            ironclaw_token_id:      old.ironclaw_token_id,
+            pools:                  old.pools,
+            user_info:              old.user_info,
+            reward_per_ns:          old.reward_per_ns,
+            last_reward_time:       old.last_reward_time,
+            total_alloc_point:      old.total_alloc_point,
+            paused:                 old.paused,
+            proposals:              old.proposals,
+            votes:                  old.votes,
+            mission_results:        old.mission_results,
+            orchestrator_id:        old.orchestrator_id,
+            total_revenue:          old.total_revenue,
+            distributed_revenue:    old.distributed_revenue,
+            staker_share_bps:       old.staker_share_bps,
+            contributor_share_bps:  old.contributor_share_bps,
+            reserve_share_bps:      old.reserve_share_bps,
+            proposer_share_bps:     old.proposer_share_bps,
+            contributor_wallet:     old.contributor_wallet,
+            reserve_wallet:         old.reserve_wallet,
+            proposer_wallet:        old.proposer_wallet,
+            pretoken_mode:          old.pretoken_mode,
+            contributors:           old.contributors,
+            pending_applications:   old.pending_applications,
+            vanguard_nft_contracts: old.vanguard_nft_contracts,
+            vanguard_verified:      old.vanguard_verified,
+            vanguard_token_id_max:  old.vanguard_token_id_max,
+            agent_profiles:         old.agent_profiles,
+            agent_handles:          old.agent_handles,
+            total_points_issued:    old.total_points_issued,
+            agent_stats:            old.agent_stats,
+            agent_tasks:            old.agent_tasks,
+            next_task_id:           old.next_task_id,
+            skills:                 old.skills,
+            next_skill_id:          old.next_skill_id,
+            installed_skills:       old.installed_skills,
+            agent_flags:            old.agent_flags,
+            ironclaw_sources:       old.ironclaw_sources,
+            skill_metadata:         old.skill_metadata,
+
+            // Phase 7B — empty. Populated by set_agent_permissions +
+            // set_agent_daily_limit. Prefix b"P" (previously unused,
+            // see lib.rs + prefix inventory).
+            agent_permissions:      UnorderedMap::new(b"P"),
+        }
+    }
 }
 
 /// Byte-for-byte mirror of the Phase-6 (post-`migrate_v6_ironclaw_link()`)
@@ -283,6 +396,8 @@ impl StakingContract {
             // legacy ones. Prefix b"M" is previously unused (see
             // migrate.rs header for full prefix inventory).
             skill_metadata:         UnorderedMap::new(b"M"),
+            // Phase 7B — empty on every upgrade path. Prefix b"P".
+            agent_permissions:      UnorderedMap::new(b"P"),
         }
     }
 }
@@ -344,6 +459,8 @@ impl StakingContract {
             // Phase 7 — empty on every upgrade path; `create_skill` and
             // `update_skill_metadata` populate it lazily. Prefix b"M".
             skill_metadata:   UnorderedMap::new(b"M"),
+            // Phase 7B — empty on every upgrade path. Prefix b"P".
+            agent_permissions: UnorderedMap::new(b"P"),
         }
     }
 }
@@ -445,6 +562,8 @@ impl StakingContract {
             // Phase 7 — empty on every upgrade path; `create_skill` and
             // `update_skill_metadata` populate it lazily. Prefix b"M".
             skill_metadata:   UnorderedMap::new(b"M"),
+            // Phase 7B — empty on every upgrade path. Prefix b"P".
+            agent_permissions: UnorderedMap::new(b"P"),
         }
     }
 }
@@ -548,6 +667,8 @@ impl StakingContract {
             // Phase 7 — empty on every upgrade path; `create_skill` and
             // `update_skill_metadata` populate it lazily. Prefix b"M".
             skill_metadata:   UnorderedMap::new(b"M"),
+            // Phase 7B — empty on every upgrade path. Prefix b"P".
+            agent_permissions: UnorderedMap::new(b"P"),
         }
     }
 }
@@ -648,6 +769,8 @@ impl StakingContract {
             // Phase 7 — empty on every upgrade path; `create_skill` and
             // `update_skill_metadata` populate it lazily. Prefix b"M".
             skill_metadata:      UnorderedMap::new(b"M"),
+            // Phase 7B — empty on every upgrade path. Prefix b"P".
+            agent_permissions:   UnorderedMap::new(b"P"),
         }
     }
 }

@@ -35,6 +35,35 @@ pub const MAX_SKILL_IMAGE_URL_LEN:   usize = 256;
 pub const PLATFORM_FEE_BPS:          u32 = 100;
 pub const BPS_DENOM:                 u32 = 10_000;
 
+// ── Phase 7 (Sub-PR B): capability bitmask ─────────────────────────────────
+// Five flags that the owner flips to authorise what their agent can do. The
+// contract stores the mask but does NOT enforce it on every call path here —
+// enforcement lives wherever an orchestrator/off-chain service reads the
+// mask before acting. Storing the authorisation on-chain makes it auditable
+// and lets the owner revoke from their own wallet with a single tx.
+pub const PERM_READ_DATA:   u8 = 1 << 0; // Read wallet balances, history, account info
+pub const PERM_SIGN_TX:     u8 = 1 << 1; // Sign + submit transactions on the owner's behalf
+pub const PERM_INTERACT:    u8 = 1 << 2; // Call smart contracts
+pub const PERM_SEND_MSG:    u8 = 1 << 3; // Post social messages / interact in apps
+pub const PERM_TRANSFER:    u8 = 1 << 4; // Transfer NEAR or tokens out of the owner's wallet
+pub const PERM_ALL:         u8 = PERM_READ_DATA
+                                | PERM_SIGN_TX
+                                | PERM_INTERACT
+                                | PERM_SEND_MSG
+                                | PERM_TRANSFER;
+/// Default permissions for a brand-new profile: read-only. Anything more
+/// has to be explicitly granted — least-privilege by default.
+pub const PERM_DEFAULT:     u8 = PERM_READ_DATA;
+
+/// Days-since-epoch helper. Used to reset the daily-spend counter when the
+/// UTC date rolls over. Keeping it at UTC instead of a user timezone keeps
+/// the comparison cheap on-chain and matches the existing weekly-bucket
+/// anchor (see `current_week_index` just below).
+const NS_PER_DAY: u64 = 24 * 3600 * 1_000_000_000;
+fn current_day_index() -> u32 {
+    (env::block_timestamp() / NS_PER_DAY) as u32
+}
+
 fn current_week_index() -> u64 {
     env::block_timestamp().saturating_sub(WEEK_ANCHOR_NS) / NS_PER_WEEK
 }
@@ -90,6 +119,28 @@ pub struct SkillMetadata {
     /// marketplace; skills start `false` and can only be flipped by
     /// `owner_id` via `set_skill_verified`.
     pub verified:  bool,
+}
+
+/// Phase 7 (Sub-PR B): per-agent capability mask + daily spend guard.
+/// Stored in a parallel map keyed by owner so AgentProfile's on-chain
+/// encoding stays stable — same migration strategy as SkillMetadata.
+///
+/// `mask` is a bitmask of PERM_* constants. `daily_limit_yocto == 0`
+/// means no limit. `daily_spent_*` form a rolling counter: if the
+/// current UTC day index differs from `daily_spent_day`, the spent
+/// counter is reset to 0 before the incoming amount is charged.
+///
+/// The contract does NOT automatically dock the counter on every
+/// transfer — the orchestrator calls `record_agent_spend(owner, yocto)`
+/// when it forwards a spend, so the owner gets a single source of
+/// truth for "how much has my agent spent today" across every runtime.
+#[near(serializers=[borsh, json])]
+#[derive(Clone, Default)]
+pub struct AgentPermissions {
+    pub mask:              u8,
+    pub daily_limit_yocto: u128,
+    pub daily_spent_yocto: u128,
+    pub daily_spent_day:   u32,
 }
 
 /// One row in an agent's recent-activity ring buffer. The `kind` is a short
@@ -634,6 +685,110 @@ impl StakingContract {
 
     pub fn get_agent_tasks(&self, owner: AccountId) -> Vec<AgentTask> {
         self.agent_tasks.get(&owner).cloned().unwrap_or_default()
+    }
+
+    // ── Phase 7 Sub-PR B: agent permissions + spend limit ──────────────────
+
+    /// Owner updates the capability bitmask on their own agent profile.
+    /// Any bits outside PERM_ALL are rejected up front so the on-chain
+    /// representation can't drift. Pass 0 to revoke everything.
+    pub fn set_agent_permissions(&mut self, mask: u8) {
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register an agent first"
+        );
+        assert!(mask & !PERM_ALL == 0, "Unknown permission bits set");
+
+        let mut row = self.agent_permissions.get(&owner).cloned().unwrap_or_default();
+        row.mask = mask;
+        self.agent_permissions.insert(owner.clone(), row);
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"agent_permissions_changed\",\"data\":{{\"owner\":\"{}\",\"mask\":{}}}}}",
+            owner, mask
+        ));
+    }
+
+    /// Owner sets the max yoctoNEAR their agent can spend in a rolling
+    /// UTC day. Pass 0 for "unlimited". Resets the spent counter if the
+    /// day has rolled over since the last recorded spend.
+    pub fn set_agent_daily_limit(&mut self, daily_limit_yocto: U128) {
+        let owner = env::predecessor_account_id();
+        assert!(
+            self.agent_profiles.get(&owner).is_some(),
+            "Register an agent first"
+        );
+        let limit: u128 = daily_limit_yocto.into();
+
+        let mut row = self.agent_permissions.get(&owner).cloned().unwrap_or_default();
+        row.daily_limit_yocto = limit;
+        // If the day rolled over since the last spend, reset the counter
+        // so the new limit isn't blown immediately by stale state.
+        let today = current_day_index();
+        if row.daily_spent_day != today {
+            row.daily_spent_day   = today;
+            row.daily_spent_yocto = 0;
+        }
+        self.agent_permissions.insert(owner.clone(), row);
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"agent_daily_limit_changed\",\"data\":{{\"owner\":\"{}\",\"daily_limit_yocto\":\"{}\"}}}}",
+            owner, limit
+        ));
+    }
+
+    /// Orchestrator-only: report a spend. The contract resets the day
+    /// counter if today differs from the last recorded day, then bumps
+    /// the spent amount. Aborts when the would-be new total exceeds the
+    /// configured daily limit (0 = unlimited, so no guard).
+    ///
+    /// Exposed as a contract method so the owner's daily cap is the
+    /// single source of truth across any runtime the orchestrator
+    /// forwards through.
+    pub fn record_agent_spend(&mut self, owner: AccountId, amount_yocto: U128) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            self.orchestrator_id,
+            "Only the orchestrator can record agent spend"
+        );
+        let amount: u128 = amount_yocto.into();
+        let mut row = self.agent_permissions.get(&owner).cloned().unwrap_or_default();
+
+        let today = current_day_index();
+        if row.daily_spent_day != today {
+            row.daily_spent_day   = today;
+            row.daily_spent_yocto = 0;
+        }
+        let new_total = row.daily_spent_yocto.saturating_add(amount);
+        if row.daily_limit_yocto > 0 {
+            assert!(
+                new_total <= row.daily_limit_yocto,
+                "Daily spend limit exceeded: {}/{} yoctoNEAR",
+                new_total, row.daily_limit_yocto
+            );
+        }
+        row.daily_spent_yocto = new_total;
+        self.agent_permissions.insert(owner.clone(), row);
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"agent_spend_recorded\",\"data\":{{\"owner\":\"{}\",\"amount_yocto\":\"{}\",\"day\":{}}}}}",
+            owner, amount, today
+        ));
+    }
+
+    /// View: current permission row for an owner. Returns `None` when
+    /// the owner hasn't touched permissions yet — callers should treat
+    /// `None` as PERM_DEFAULT (read-only) + 0 daily limit.
+    pub fn get_agent_permissions(&self, owner: AccountId) -> Option<AgentPermissions> {
+        self.agent_permissions.get(&owner).cloned()
+    }
+
+    /// View: today's UTC day-index. Exposed so frontends can
+    /// reconcile the `daily_spent_day` they read against "is this
+    /// the current bucket". Keeps clients honest across timezones.
+    pub fn get_current_day_index(&self) -> u32 {
+        current_day_index()
     }
 
     // ── IronClaw subscription + public toggle ──────────────────────────────
