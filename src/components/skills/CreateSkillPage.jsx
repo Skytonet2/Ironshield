@@ -1,23 +1,18 @@
 "use client";
-// Create a skill — /skills/create. Wired to the contract's
-// create_skill(name, description, price_yocto) call via useAgent.
-//
-// The Phase-5 Skill struct on-chain is {id, name, description, author,
-// price_yocto, install_count, created_at}. Category + tag fields from
-// the design mock are NOT stored on-chain yet — they'd have to round-trip
-// through an off-chain metadata table that doesn't exist, so we dropped
-// them from this page. They come back as first-class fields after the
-// Phase 7 contract migration adds `category` and `tags: Vec<String>`.
+// Create a skill — /skills/create. Wired to the Phase 7 contract:
+// create_skill(name, description, price_yocto, category, tags, image_url).
 //
 // Wizard contract:
-//   Step 1 Details  → validate + collect name, short/long description, price
+//   Step 1 Details  → collect name, short/long description, category,
+//                     tags, price
 //   Step 2 Permissions → placeholder (no on-chain permission model yet)
 //   Step 3 Configure   → placeholder (ditto)
 //   Step 4 Review      → confirm + call create_skill. On success redirect
 //                        to /skills.
 //
-// Until steps 2 + 3 have real fields, advancing through them is
-// cosmetic — the Review step has all the data we actually need.
+// Category and tags were removed in the design pass because no on-chain
+// slot existed for them; Phase 7 Sub-PR A adds SkillMetadata so they're
+// back as first-class fields here.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -25,17 +20,36 @@ import { useMemo, useState } from "react";
 import {
   Zap, X as XIcon, CheckCircle2, Check, ArrowRight, ArrowLeft,
   ShieldCheck, Lightbulb, HelpCircle, Store, Eye, Package,
-  Info, CircleCheck, Loader2,
+  Info, CircleCheck, Loader2, Tag, ChevronDown, Gift,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 
 const STEPS = ["Details", "Permissions", "Configure", "Review"];
 
-const NAME_MAX       = 48;
-const SHORT_MAX      = 120;
-const LONG_MAX       = 240; // contract cap on description
-const YOCTO_PER_NEAR = 1_000_000_000_000_000_000_000_000n;
+const NAME_MAX           = 48;
+const SHORT_MAX          = 120;
+const LONG_MAX           = 240; // contract cap on description
+const CATEGORY_MAX       = 32;  // contract cap on category
+const TAG_MAX            = 24;  // contract cap per tag
+const MAX_TAGS           = 5;   // contract cap on tag count
+const IMAGE_URL_MAX      = 256; // contract cap on image_url
+const YOCTO_PER_NEAR     = 1_000_000_000_000_000_000_000_000n;
+
+// Canonical categories surfaced in the marketplace sidebar. Free-form
+// strings are allowed on-chain but the picker constrains new listings
+// so the filter UX stays coherent.
+const CATEGORIES = [
+  { key: "defi",        label: "DeFi" },
+  { key: "airdrops",    label: "Airdrops & Rewards" },
+  { key: "trading",     label: "Trading" },
+  { key: "analytics",   label: "Analytics" },
+  { key: "social",      label: "Social" },
+  { key: "security",    label: "Security" },
+  { key: "gaming",      label: "Gaming" },
+  { key: "productivity",label: "Productivity" },
+  { key: "other",       label: "Other" },
+];
 
 function nearToYocto(nearStr) {
   // Accepts "0", "0.1", "1.23". Returns a stringified yoctoNEAR integer.
@@ -231,6 +245,117 @@ function Field({ t, label, value, onChange, maxLength, placeholder, multiline, h
           {hint}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Phase 7: category + tags fields moved back in once SkillMetadata
+// landed on-chain. Both stay author-editable after publish via
+// update_skill_metadata (exposed by the hook but UI-ed in a later slice).
+function CategoryField({ t, value, onChange }) {
+  const current = CATEGORIES.find(c => c.key === value) || CATEGORIES[0];
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ marginBottom: 6 }}>
+        <label style={{ fontSize: 12.5, fontWeight: 700, color: t.white }}>Category</label>
+        <div style={{ fontSize: 11.5, color: t.textDim, marginTop: 2 }}>
+          Choose the best fit for your skill.
+        </div>
+      </div>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "11px 14px",
+        background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+      }}>
+        <Gift size={14} color={t.accent} />
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none",
+            color: t.white, fontSize: 13, cursor: "pointer", appearance: "none",
+          }}
+        >
+          {CATEGORIES.map(c => (
+            <option key={c.key} value={c.key} style={{ background: t.bgCard, color: t.white }}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={14} color={t.textDim} style={{ pointerEvents: "none" }} />
+      </div>
+    </div>
+  );
+}
+
+function TagsField({ t, tags, draft, onDraftChange, onAdd, onRemove }) {
+  const full = tags.length >= MAX_TAGS;
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+        <label style={{ fontSize: 12.5, fontWeight: 700, color: t.white }}>
+          Tags{" "}
+          <span style={{ color: t.textDim, fontWeight: 500, fontSize: 11.5 }}>
+            (up to {MAX_TAGS}, {TAG_MAX} chars each)
+          </span>
+        </label>
+        <span style={{ fontSize: 11, color: t.textDim, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
+          {tags.length}/{MAX_TAGS}
+        </span>
+      </div>
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center",
+        padding: "8px 12px",
+        background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+        minHeight: 40,
+      }}>
+        {tags.map((tag) => (
+          <span key={tag} style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            padding: "3px 10px", borderRadius: 999,
+            background: t.bgCard, border: `1px solid ${t.border}`,
+            fontSize: 11.5, fontWeight: 600, color: t.textMuted,
+          }}>
+            {tag}
+            <button
+              type="button" aria-label={`Remove ${tag}`}
+              onClick={() => onRemove(tag)}
+              style={{
+                width: 14, height: 14, borderRadius: "50%",
+                background: "transparent", border: "none", color: t.textDim,
+                cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <XIcon size={9} />
+            </button>
+          </span>
+        ))}
+        {!full && (
+          <input
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value.slice(0, TAG_MAX))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                onAdd(draft);
+              } else if (e.key === "Backspace" && !draft && tags.length) {
+                onRemove(tags[tags.length - 1]);
+              }
+            }}
+            onBlur={() => { if (draft) onAdd(draft); }}
+            placeholder={tags.length ? "Add another…" : "e.g. trading"}
+            maxLength={TAG_MAX}
+            style={{
+              flex: 1, minWidth: 120,
+              border: "none", background: "transparent", outline: "none",
+              color: t.white, fontSize: 12,
+            }}
+          />
+        )}
+      </div>
+      <div style={{ fontSize: 11.5, color: t.textDim, marginTop: 6 }}>
+        Lowercased + deduped on save. Press Enter or comma to add.
+      </div>
     </div>
   );
 }
@@ -518,6 +643,34 @@ function ReviewStep({ t, state, author, yoctoPrice, submitting, error, onBack, o
         <div style={{ color: t.textMuted, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
           {state.longDesc || <em style={{ color: t.textDim }}>empty</em>}
         </div>
+        <div style={{ color: t.textDim }}>Category</div>
+        <div style={{ color: t.white }}>
+          {(CATEGORIES.find(c => c.key === state.category) || {}).label || state.category || <em style={{ color: t.textDim }}>none</em>}
+        </div>
+        <div style={{ color: t.textDim }}>Tags</div>
+        <div style={{ color: t.textMuted, display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {state.tags.length
+            ? state.tags.map(tag => (
+                <span key={tag} style={{
+                  padding: "2px 8px", borderRadius: 999,
+                  background: t.bgCard, border: `1px solid ${t.border}`,
+                  fontSize: 11, fontWeight: 600,
+                }}>{tag}</span>
+              ))
+            : <em style={{ color: t.textDim }}>none</em>}
+        </div>
+        {state.imageUrl && (
+          <>
+            <div style={{ color: t.textDim }}>Image URL</div>
+            <div style={{
+              color: t.textMuted, fontSize: 11.5,
+              fontFamily: "var(--font-jetbrains-mono), monospace",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {state.imageUrl}
+            </div>
+          </>
+        )}
         <div style={{ color: t.textDim }}>Install price</div>
         <div style={{ color: t.white, fontFamily: "var(--font-jetbrains-mono), monospace" }}>
           {Number(state.price) > 0 ? `${state.price} NEAR` : "Free"}
@@ -646,7 +799,11 @@ export default function CreateSkillPage() {
     shortDesc: "",
     longDesc:  "",
     price:     "0",
+    category:  "defi",
+    tags:      [],
+    imageUrl:  "",
   });
+  const [tagDraft, setTagDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -683,10 +840,14 @@ export default function CreateSkillPage() {
       // Concatenate short + long within the 240-char contract cap.
       const combined = [state.shortDesc.trim(), state.longDesc.trim()]
         .filter(Boolean).join("\n\n").slice(0, LONG_MAX);
+      const categoryLabel = (CATEGORIES.find(c => c.key === state.category) || {}).label || state.category;
       await createSkill({
         name:        state.name.trim().slice(0, NAME_MAX),
         description: combined,
         priceYocto:  yoctoPrice,
+        category:    categoryLabel.slice(0, CATEGORY_MAX),
+        tags:        state.tags.slice(0, MAX_TAGS),
+        imageUrl:    state.imageUrl.trim().slice(0, IMAGE_URL_MAX),
       });
       router.push("/skills");
     } catch (e) {
@@ -723,6 +884,32 @@ export default function CreateSkillPage() {
                   placeholder="Explain what your skill does in detail"
                   multiline
                   hint={`Short + detailed are merged and capped at ${LONG_MAX} chars on-chain.`} />
+
+                <CategoryField t={t}
+                  value={state.category}
+                  onChange={(v) => patch({ category: v })} />
+
+                <TagsField t={t}
+                  tags={state.tags}
+                  draft={tagDraft}
+                  onDraftChange={setTagDraft}
+                  onAdd={(raw) => {
+                    const clean = String(raw || "").trim().toLowerCase();
+                    if (!clean) return;
+                    if (clean.length > TAG_MAX) return;
+                    if (state.tags.includes(clean)) return;
+                    if (state.tags.length >= MAX_TAGS) return;
+                    patch({ tags: [...state.tags, clean] });
+                    setTagDraft("");
+                  }}
+                  onRemove={(tag) => patch({ tags: state.tags.filter(x => x !== tag) })} />
+
+                <Field t={t} label="Image URL (optional)"
+                  value={state.imageUrl}
+                  onChange={(v) => patch({ imageUrl: v })}
+                  placeholder="https://…/skill.png"
+                  maxLength={IMAGE_URL_MAX}
+                  hint="Square tile used in the marketplace card. Falls back to a placeholder if empty." />
               </FormSection>
 
               <PricingSection t={t} price={state.price} onChange={(v) => patch({ price: v })} />
@@ -735,9 +922,10 @@ export default function CreateSkillPage() {
               }}>
                 <Store size={16} color={t.accent} />
                 <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: t.textMuted }}>
-                  <strong style={{ color: t.white }}>Early access:</strong> Publishing is free during beta.
+                  <strong style={{ color: t.white }}>Paid installs live.</strong> Phase 7 install fees
+                  split 99% to the author and 1% to the IronShield treasury.
                   <div style={{ marginTop: 2, fontSize: 11.5, color: t.textDim }}>
-                    Categories + tags land with the Phase 7 marketplace migration.
+                    Set price to 0 to keep the skill free.
                   </div>
                 </div>
               </div>

@@ -17,7 +17,7 @@ mod agents;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
-pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, AgentFlags};
+pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentFlags};
 
 pub type PoolId = u32;
 
@@ -175,6 +175,13 @@ pub struct StakingContract {
     /// owner has linked an existing ironclaw.com agent to their on-platform
     /// profile. Lazy-populated; absence means no linked external agent.
     pub ironclaw_sources: UnorderedMap<AccountId, String>,
+
+    // ── Phase 7 (Sub-PR A): skill metadata + paid installs ────────────
+    /// Per-skill metadata keyed by skill_id. Parallel to `skills` so we
+    /// don't rewrite existing skill entries during migration; absence
+    /// means the skill was created before Phase 7 and has no metadata
+    /// set. Authors can call `update_skill_metadata` to populate it.
+    pub skill_metadata: UnorderedMap<u64, SkillMetadata>,
 }
 
 #[near]
@@ -232,6 +239,9 @@ impl StakingContract {
             skills:              UnorderedMap::new(b"K"),
             next_skill_id:       0,
             installed_skills:    UnorderedMap::new(b"I"),
+            // Phase 7 — skill metadata. Prefix b"M" — previously unused
+            // (see migrate.rs for the full prefix inventory).
+            skill_metadata:      UnorderedMap::new(b"M"),
             agent_flags:         UnorderedMap::new(b"F"),
 
             // Phase 6 — linked external IronClaw agents
