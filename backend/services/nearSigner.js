@@ -1,44 +1,61 @@
 // backend/services/nearSigner.js
-// Loads the IronClaw agent NEAR account from env and exposes an Account
-// instance that can sign and send transactions to ironshield.near.
+// Loads NEAR accounts from env and exposes Account instances that can
+// sign and send transactions to ironshield.near.
 //
-// Required env vars:
-//   AGENT_ACCOUNT_ID  — e.g. "ironclaw-agent.near"
-//   AGENT_PRIVATE_KEY — full key string, e.g. "ed25519:..."
+// Two distinct identities:
+//   - Agent account (AGENT_ACCOUNT_ID / AGENT_PRIVATE_KEY): signs
+//     finalize_proposal / execute_proposal for governanceListener.
+//   - Orchestrator account (ORCHESTRATOR_ACCOUNT / ORCHESTRATOR_KEY):
+//     signs award_points, record_submission, record_mission_complete,
+//     complete_task, set_agent_reputation, submit_mission_result.
+//     Must match `orchestrator_id` on the contract (currently
+//     orchestrator.ironshield.near).
 //
-// If either is missing, getAgentAccount() returns null and callers should
-// log + skip — never throw at startup, so the listener can keep running in
-// read-only mode for the Telegram pusher.
+// Both loaders fail soft: if creds are missing, they return null and
+// callers should log + skip. Never throw at startup — the listener
+// keeps running in read-only mode for the Telegram pusher, and the
+// orchestrator bot keeps polling so it can surface the missing-creds
+// state in logs for the operator.
 
 const { Account, KeyPair, KeyPairSigner, providers } = require("near-api-js");
 
 const NODE_URL = process.env.NEAR_RPC_URL || "https://rpc.mainnet.near.org";
 
-let cached = null;
-
-function getAgentAccount() {
-  if (cached !== null) return cached;
-
-  const accountId  = process.env.AGENT_ACCOUNT_ID;
-  const privateKey = process.env.AGENT_PRIVATE_KEY;
-
-  if (!accountId || !privateKey) {
-    cached = false; // memoize the negative so we don't re-check on every poll
-    return null;
-  }
-
+function loadAccount(accountId, privateKey, label) {
+  if (!accountId || !privateKey) return null;
   try {
     const keyPair  = KeyPair.fromString(privateKey);
     const signer   = new KeyPairSigner(keyPair);
     const provider = new providers.JsonRpcProvider({ url: NODE_URL });
-    cached = new Account(accountId, provider, signer);
-    console.log(`[nearSigner] Agent account loaded: ${accountId}`);
-    return cached;
+    const account  = new Account(accountId, provider, signer);
+    console.log(`[nearSigner] ${label} account loaded: ${accountId}`);
+    return account;
   } catch (err) {
-    console.error(`[nearSigner] Failed to load agent account: ${err.message}`);
-    cached = false;
+    console.error(`[nearSigner] Failed to load ${label} account: ${err.message}`);
     return null;
   }
 }
 
-module.exports = { getAgentAccount };
+let cachedAgent = null;
+function getAgentAccount() {
+  if (cachedAgent !== null) return cachedAgent || null;
+  cachedAgent = loadAccount(
+    process.env.AGENT_ACCOUNT_ID,
+    process.env.AGENT_PRIVATE_KEY,
+    "Agent",
+  ) || false;
+  return cachedAgent || null;
+}
+
+let cachedOrchestrator = null;
+function getOrchestratorAccount() {
+  if (cachedOrchestrator !== null) return cachedOrchestrator || null;
+  cachedOrchestrator = loadAccount(
+    process.env.ORCHESTRATOR_ACCOUNT,
+    process.env.ORCHESTRATOR_KEY,
+    "Orchestrator",
+  ) || false;
+  return cachedOrchestrator || null;
+}
+
+module.exports = { getAgentAccount, getOrchestratorAccount };
