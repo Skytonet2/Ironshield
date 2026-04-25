@@ -125,11 +125,64 @@ should:
 4. After deploy, owner can call `set_pretoken_mode(true)` to switch
    mainnet to contributor/vanguard governance until $IRONCLAW launches.
 
-## Day 4.4 — Mission proposal dry run
+## Day 4.4 — Mission proposal evidence
 
-The same protocol applies for `Mission`-type proposals; the only
-difference is `applyExecutedToRuntime` writes to `agent_state.activeMission`
-instead of `activePrompt`. Re-running the whole sequence with
-`proposal_type: "Mission"` and re-running `scripts/day4-evidence.js` (after
-adjusting the assertion key) would close that loop too. Deferred until
-needed — the load-bearing mechanism is identical.
+Same protocol as 4.3 with `proposal_type: "Mission"`; `applyExecutedToRuntime`
+writes to `agent_state.activeMission` (not `activePrompt`), and
+`agentConnector.researchSystemPrompt()` prefixes the value as
+`Current mission: <content>` instead of `Governance instructions: <content>`.
+
+**Sentinel:** `sprint-day-4-mission-sentinel-1777151426`
+
+| Step | tx hash | Explorer |
+|------|---------|----------|
+| `create_proposal` (Mission id=1) | `GMRk6R3bk5Vt4hiX4wV8QDk5a9onVJ1fEvLyTUFsKpbe` | [link](https://testnet.nearblocks.io/txns/GMRk6R3bk5Vt4hiX4wV8QDk5a9onVJ1fEvLyTUFsKpbe) |
+| Alice `vote("for")` | `FBgjocoKmJtYtDw6SYbkEYe2kQHf6GRFYpfcC7Dsez7i` | [link](https://testnet.nearblocks.io/txns/FBgjocoKmJtYtDw6SYbkEYe2kQHf6GRFYpfcC7Dsez7i) |
+| `finalize_proposal(1)` after the 60s window | `74joeJAmb6Czyq2ohFGLwsc9ZiS5TP2q3cx6PJrNWUoC` | [link](https://testnet.nearblocks.io/txns/74joeJAmb6Czyq2ohFGLwsc9ZiS5TP2q3cx6PJrNWUoC) |
+| `execute_proposal(1)` | `BfLHSgj4fQPrAbsTBedzSjsCEGe5eRBHq78jfiWYVLvn` | [link](https://testnet.nearblocks.io/txns/BfLHSgj4fQPrAbsTBedzSjsCEGe5eRBHq78jfiWYVLvn) |
+
+Final on-chain state, both proposals:
+
+```js
+{ id: 0, proposal_type: 'PromptUpdate', content: 'sprint-day-4-sentinel-1777150716',
+  status: 'executed', passed: true, executed: true }
+{ id: 1, proposal_type: 'Mission',      content: 'sprint-day-4-mission-sentinel-1777151426',
+  status: 'executed', passed: true, executed: true }
+```
+
+Mission execute-event:
+```
+EVENT_JSON:{"standard":"ironshield","version":"1.0","event":"proposal_executed",
+            "data":{"id":1,"type":"Mission","title":"Day 4.4 Mission sentinel"}}
+```
+
+`scripts/day4-evidence.js` output (now handles both types in one pass):
+
+```
+Read 2 proposal(s) from ironshield-test.testnet
+
+=== Step B: replay applyExecutedToRuntime ===
+Wrote agent_state.activePrompt  ← proposal #0 (PromptUpdate) content="sprint-day-4-sentinel-1777150716"
+Wrote agent_state.activeMission ← proposal #1 (Mission)      content="sprint-day-4-mission-sentinel-1777151426"
+
+=== Step C: rebuild /api/research system prompt ===
+  PASS activePrompt:  sentinel landed (sprint-day-4-sentinel-1777150716)
+  PASS activeMission: sentinel landed (sprint-day-4-mission-sentinel-1777151426)
+
+--- prompt excerpts ---
+intelligence agent built on NEAR Protocol.
+Current mission: sprint-day-4-mission-sentinel-1777151426
+Governance instructions: sprint-day-4-sentinel-1777150716
+
+--- raw gov context ---
+{
+  govPrompt:  'sprint-day-4-sentinel-1777150716',
+  govMission: 'sprint-day-4-mission-sentinel-1777151426'
+}
+```
+
+Both halves of the autonomous brain — mission-setting and prompt-updates —
+close their loops via the same governance machinery. The contract patch
+described above (vote() honouring pretoken_mode) is the unblock for both;
+the `applyExecutedToRuntime` branch dispatches by `proposal_type` to the
+right `agent_state` key with no other shape difference.

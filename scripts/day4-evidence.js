@@ -66,50 +66,60 @@ const agentConnector = require("../backend/services/agentConnector");
   });
   console.log(`Read ${proposals.length} proposal(s) from ${TESTNET_CONTRACT}`);
 
-  // 2. Reproduce applyExecutedToRuntime: filter executed PromptUpdate proposals
-  //    and write each into agent_state. Uses agentState.set — exact same call
-  //    the live listener makes after Day-3.2.
+  // 2. Reproduce applyExecutedToRuntime: filter executed proposals and
+  //    write each into the appropriate agent_state key. Same logic as
+  //    backend/services/governanceListener.js after Day-3.2.
   console.log("\n=== Step B: replay applyExecutedToRuntime ===");
-  const executedPromptUpdates = proposals.filter(
-    (p) => p.executed && p.passed && p.proposal_type === "PromptUpdate"
-  );
-  if (executedPromptUpdates.length === 0) {
-    console.error("FAIL: no executed PromptUpdate proposals found on-chain.");
-    process.exit(1);
-  }
-  for (const p of executedPromptUpdates) {
-    await agentState.set("activePrompt", {
+  const TYPES = {
+    PromptUpdate: "activePrompt",
+    Mission:      "activeMission",
+  };
+  const latest = {}; // key → latest content seen for that type
+  for (const p of proposals.filter((p) => p.executed && p.passed)) {
+    const key = TYPES[p.proposal_type];
+    if (!key) continue;
+    await agentState.set(key, {
       content: p.content,
       updatedAt: new Date().toISOString(),
       proposalId: p.id,
     });
-    console.log(`Wrote agent_state.activePrompt ← proposal #${p.id} content="${p.content}"`);
+    latest[key] = p.content;
+    console.log(`Wrote agent_state.${key} ← proposal #${p.id} (${p.proposal_type}) content="${p.content}"`);
+  }
+  if (Object.keys(latest).length === 0) {
+    console.error("FAIL: no executed governance proposals found on-chain.");
+    process.exit(1);
   }
 
   // 3. Prime the agentState cache so the next sync read is hot.
-  await agentState.prime("activePrompt");
+  await Promise.all(Object.keys(latest).map((k) => agentState.prime(k)));
 
   // 4. Build the actual research system prompt that /api/research would send.
   console.log("\n=== Step C: rebuild /api/research system prompt ===");
   const systemPrompt = agentConnector._systemPromptForTesting({ kind: "research" });
+  const ctx = agentConnector._govContextForTesting();
 
-  // 5. Assert the sentinel is in there.
-  const latestSentinel = executedPromptUpdates[executedPromptUpdates.length - 1].content;
-  if (!SENTINEL_RE.test(latestSentinel)) {
-    console.warn(`WARN: latest content ${latestSentinel} doesn't match SENTINEL_RE — proceeding anyway`);
+  // 5. Assert each sentinel made it in. Mission → "Current mission: ...",
+  //    PromptUpdate → "Governance instructions: ...".
+  let allOk = true;
+  for (const [key, content] of Object.entries(latest)) {
+    const ok = systemPrompt.includes(content);
+    console.log(`  ${ok ? "PASS" : "FAIL"} ${key}: sentinel ${ok ? "landed" : "MISSING"} (${content})`);
+    if (!ok) allOk = false;
   }
 
-  if (systemPrompt.includes(latestSentinel)) {
-    console.log("PASS: sentinel landed in the AI system prompt.");
-    const idx = systemPrompt.indexOf(latestSentinel);
-    console.log("\n--- prompt excerpt ---");
-    console.log(systemPrompt.slice(Math.max(0, idx - 80), Math.min(systemPrompt.length, idx + 80)));
-    console.log("---");
+  if (allOk) {
+    console.log("\n--- prompt excerpts ---");
+    for (const content of Object.values(latest)) {
+      const idx = systemPrompt.indexOf(content);
+      console.log(systemPrompt.slice(Math.max(0, idx - 60), Math.min(systemPrompt.length, idx + content.length + 60)));
+      console.log("…");
+    }
+    console.log("\n--- raw gov context ---");
+    console.log(ctx);
     process.exit(0);
   }
 
-  console.error("FAIL: sentinel NOT present in system prompt.");
-  console.error("Sentinel sought:", latestSentinel);
   console.error("\n--- full system prompt ---");
   console.error(systemPrompt);
   process.exit(1);

@@ -563,3 +563,10 @@ exports._systemPromptForTesting = ({ kind }) => {
     default: throw new Error(`unknown kind: ${kind}`);
   }
 };
+
+// Test seam (Day 4.4): exposes the cached governance context so the evidence
+// script can directly assert both activePrompt and activeMission landed.
+// researchSystemPrompt() prefixes mission as "Current mission: ..." and prompt
+// as "Governance instructions: ..." so the same systemPrompt assertion already
+// covers both keys, but exposing the raw context keeps the assertion narrow.
+exports._govContextForTesting = () => getGovContext();
