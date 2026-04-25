@@ -128,11 +128,13 @@ router.get("/comments/:postId", async (req, res, next) => {
 // without the "Follow → Following" flip on mount. Returns false for
 // unauthed viewers, self-follow attempts, or when the target user
 // row doesn't exist yet (nothing to follow).
-router.get("/following-state", requireWallet, async (req, res, next) => {
+router.get("/following-state", async (req, res, next) => {
   try {
     const target = String(req.query.target || "").trim();
     if (!target) return res.json({ following: false });
-    const viewer = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ following: false });
+    const viewer = await getOrCreateUser(wallet);
     // Don't auto-create the target on a state-read — avoids inflating
     // the users table with drive-by lookups of handles that don't
     // exist. Look up strictly.

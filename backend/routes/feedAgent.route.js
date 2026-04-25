@@ -68,10 +68,13 @@ router.get("/:id/status", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/feed-agent/mine — current user's agent
-router.get("/mine/info", requireWallet, async (req, res, next) => {
+// GET /api/feed-agent/mine — current user's agent. Unsigned read: identity
+// from the bare x-wallet header.
+router.get("/mine/info", async (req, res, next) => {
   try {
-    const user = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ agent: null });
+    const user = await getOrCreateUser(wallet);
     const r = await db.query("SELECT * FROM feed_ironclaw_agents WHERE owner_id=$1 AND active=TRUE ORDER BY deployed_at DESC LIMIT 1", [user.id]);
     res.json({ agent: r.rows[0] || null });
   } catch (e) { next(e); }

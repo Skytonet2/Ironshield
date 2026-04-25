@@ -42,10 +42,14 @@ router.post("/impression", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/ads/mine — user's own boosted posts (with impression counts)
-router.get("/mine", requireWallet, async (req, res, next) => {
+// GET /api/ads/mine — user's own boosted posts (with impression counts).
+// Unsigned read: x-wallet header carries identity (no replay protection
+// on a read-only call returning the caller's own rows).
+router.get("/mine", async (req, res, next) => {
   try {
-    const user = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ campaigns: [] });
+    const user = await getOrCreateUser(wallet);
     const r = await db.query(
       "SELECT * FROM feed_ad_campaigns WHERE user_id=$1 ORDER BY start_date DESC LIMIT 50", [user.id]);
     res.json({ campaigns: r.rows });

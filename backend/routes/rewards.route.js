@@ -88,12 +88,16 @@ async function codeInUse(code, exceptUserId = null) {
 // without crashing on missing fields. Numbers are all 0 until the real
 // accrual pipeline lands. `refCode` is included so the Referrals tab
 // doesn't need a second round-trip.
-router.get("/me", requireWallet, async (req, res, next) => {
+// Unsigned read — wallet identity comes from the bare x-wallet header
+// (matches the pre-Day-1 trust posture for personalization GETs).
+router.get("/me", async (req, res, next) => {
   try {
-    const user = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "x-wallet header required" });
+    const user = await getOrCreateUser(wallet);
     let code = await readCode(user);
     if (!code) {
-      code = autoGenerate(req.wallet);
+      code = autoGenerate(wallet);
       await writeCode(user, code);
     }
     // Referral count: how many users register us as their referrer.
@@ -129,12 +133,14 @@ router.get("/me", requireWallet, async (req, res, next) => {
 });
 
 // GET /api/rewards/ref-code — just the code (lightweight).
-router.get("/ref-code", requireWallet, async (req, res, next) => {
+router.get("/ref-code", async (req, res, next) => {
   try {
-    const user = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "x-wallet header required" });
+    const user = await getOrCreateUser(wallet);
     let code = await readCode(user);
     if (!code) {
-      code = autoGenerate(req.wallet);
+      code = autoGenerate(wallet);
       await writeCode(user, code);
     }
     res.json({ refCode: code });
@@ -239,9 +245,11 @@ router.post("/claim-referrer", requireWallet, async (req, res, next) => {
 
 // GET /api/rewards/referrer — who invited me? Returns {} when nobody
 // or when the viewer hasn't claimed a code yet.
-router.get("/referrer", requireWallet, async (req, res, next) => {
+router.get("/referrer", async (req, res, next) => {
   try {
-    const user = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ referrer: null });
+    const user = await getOrCreateUser(wallet);
     const referrerId = await readReferrer(user);
     if (!referrerId) return res.json({ referrer: null });
     const rr = await db.query(

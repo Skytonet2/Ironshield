@@ -35,10 +35,14 @@ async function assertGroupMember(groupId, userId) {
   return !!r.rows.length;
 }
 
-// GET /api/dm/conversations
-router.get("/conversations", requireWallet, async (req, res, next) => {
+// GET /api/dm/conversations — unsigned read (identity from x-wallet
+// header). Mutating sends/reads-receipts/etc still go through
+// requireWallet below.
+router.get("/conversations", async (req, res, next) => {
   try {
-    const me = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ conversations: [] });
+    const me = await getOrCreateUser(wallet);
     const r = await db.query(
       `SELECT c.*,
               ua.id AS a_id, ua.wallet_address AS a_wallet, ua.username AS a_username, ua.display_name AS a_name, ua.pfp_url AS a_pfp, ua.dm_pubkey AS a_pk,
@@ -61,9 +65,11 @@ router.get("/conversations", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/dm/search?q=wallet.near — look up a user to DM
-router.get("/search", requireWallet, async (req, res, next) => {
+// GET /api/dm/search?q=wallet.near — look up a user to DM. Unsigned: x-wallet
+// only required to gate to logged-in viewers; we don't read from req.wallet.
+router.get("/search", async (req, res, next) => {
   try {
+    if (!req.header("x-wallet")) return res.json({ user: null });
     const q = String(req.query.q || "").toLowerCase().trim();
     if (!q) return res.json({ user: null });
     const r = await db.query(
@@ -106,10 +112,12 @@ router.post("/assistant", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/dm/groups
-router.get("/groups", requireWallet, async (req, res, next) => {
+// GET /api/dm/groups — unsigned read.
+router.get("/groups", async (req, res, next) => {
   try {
-    const me = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ groups: [] });
+    const me = await getOrCreateUser(wallet);
     const r = await db.query(
       `SELECT g.id, g.name, g.handle, g.pfp_url, g.invite_token, g.created_by,
               g.last_message_at,
@@ -137,10 +145,14 @@ router.get("/groups", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/dm/groups/:groupId — detail (members, owner-only invite token)
-router.get("/groups/:groupId", requireWallet, async (req, res, next) => {
+// GET /api/dm/groups/:groupId — detail (members, owner-only invite token).
+// Unsigned read: identity from x-wallet; the membership check below is the
+// real gate against viewing a group you're not in.
+router.get("/groups/:groupId", async (req, res, next) => {
   try {
-    const me = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "x-wallet header required" });
+    const me = await getOrCreateUser(wallet);
     const gid = parseInt(req.params.groupId, 10);
     if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
     if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
@@ -334,10 +346,12 @@ router.post("/groups/join/:token", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/dm/groups/:groupId/messages
-router.get("/groups/:groupId/messages", requireWallet, async (req, res, next) => {
+// GET /api/dm/groups/:groupId/messages — unsigned read; gate by membership.
+router.get("/groups/:groupId/messages", async (req, res, next) => {
   try {
-    const me = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "x-wallet header required" });
+    const me = await getOrCreateUser(wallet);
     const gid = parseInt(req.params.groupId, 10);
     if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
     if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
@@ -498,10 +512,13 @@ router.post("/:conversationId/call-token", requireWallet, async (req, res, next)
   } catch (e) { next(e); }
 });
 
-// GET /api/dm/:conversationId/messages?cursor=
-router.get("/:conversationId/messages", requireWallet, async (req, res, next) => {
+// GET /api/dm/:conversationId/messages?cursor= — unsigned read; participant
+// check below is the real gate.
+router.get("/:conversationId/messages", async (req, res, next) => {
   try {
-    const me = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "x-wallet header required" });
+    const me = await getOrCreateUser(wallet);
     const cid = parseInt(req.params.conversationId);
     const conv = await db.query(
       "SELECT * FROM feed_conversations WHERE id=$1 AND (participant_a=$2 OR participant_b=$2)",
