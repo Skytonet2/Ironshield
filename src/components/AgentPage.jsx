@@ -322,21 +322,23 @@ export default function AgentPage({ openWallet }) {
       </div>
 
       {/* Action row — refresh + create. Create New Agent is gradient
-          primary; refresh is secondary outlined. */}
+          primary; refresh is secondary outlined.
+          Routes to /agents/create — the real wizard handles primary
+          registration vs sub-agent creation based on on-chain state. */}
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          onClick={() => alert("Agent builder — coming next build.")}
+        <a
+          href="/agents/create"
           style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             padding: "9px 14px", borderRadius: 10, border: "none",
             background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
             color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
             boxShadow: "0 10px 24px rgba(168,85,247,0.35)",
+            textDecoration: "none",
           }}
         >
           <Zap size={13} /> Create New Agent
-        </button>
+        </a>
         <button
           type="button"
           onClick={refresh}

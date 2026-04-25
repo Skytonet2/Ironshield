@@ -91,20 +91,23 @@ export default function AutomationsPage() {
               Manage your AI automations and workflow pipelines.
             </h1>
           </div>
-          <button
-            type="button"
-            onClick={() => alert("Automation builder — coming next build.")}
+          {/* Real automation rules live per-agent on /agents/view.
+              This route is the legacy overview; route the action
+              there so it does something instead of alerting a stub. */}
+          <a
+            href="/agents/me"
             style={{
               display: "inline-flex", alignItems: "center", gap: 6,
               padding: "8px 14px", borderRadius: 999, border: "none",
               background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
               color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer",
               boxShadow: "0 8px 20px rgba(168,85,247,0.35)",
+              textDecoration: "none",
             }}
           >
             <Plus size={14} />
             New Automation
-          </button>
+          </a>
         </div>
 
         {/* Status strip — 10 NEAR gate */}
