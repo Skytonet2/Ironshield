@@ -897,3 +897,16 @@ CREATE TABLE IF NOT EXISTS agent_avatars (
   UNIQUE (owner, sha256)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_avatars_owner ON agent_avatars(owner);
+
+-- ── Auth nonces (NEP-413 signed-message auth) ─────────────────────────
+-- One row per nonce issued via GET /api/auth/nonce. Marked used by
+-- the requireWallet middleware on the first valid signed request that
+-- consumes it. Layout, TTL, and verification rules: docs/auth-contract.md.
+CREATE TABLE IF NOT EXISTS auth_nonces (
+  nonce      TEXT        PRIMARY KEY,         -- base64url of 32 random bytes
+  wallet     TEXT,                            -- NULL until consumed
+  issued_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  used_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS auth_nonces_active_idx
+  ON auth_nonces (issued_at) WHERE used_at IS NULL;

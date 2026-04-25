@@ -16,6 +16,9 @@ app.use(express.json({
 }));
 app.use(require("cors")());
 
+// Routes — Auth (nonce issuance for signed-message middleware; public)
+app.use("/api/auth",      require("./routes/auth.route"));
+
 // Routes — AI-powered
 app.use("/api/summary",   require("./routes/summary.route"));
 app.use("/api/research",  require("./routes/research.route"));
