@@ -21,7 +21,7 @@ const STAKE_MIN_FOR_MULT = 1_000;
 const STAKE_MULT = 1.5;
 const NEW_CREATOR_DAYS = 90;
 const NEW_CREATOR_MATCH = 0.20;
-const MONTHLY_POOL_USD = 5_000;        // mock pool for MVP
+const MONTHLY_POOL_USD = Number(process.env.REVENUE_POOL_USD) || 5_000;
 const PERIOD_DAYS = 30;
 
 // Build a CTE that returns one row per author with the raw counts +

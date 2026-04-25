@@ -5,18 +5,6 @@ const db = require("../db/client");
 const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
 const { createAndPush } = require("../services/pushNotify");
 
-// Holding-period proxy: users created ≥ 7 days ago count as "held
-// $IRONCLAW 7+ days" for the purposes of the 10% treasury split. New
-// wallets can still tip but their tips waive the treasury cut.
-// TODO: replace with real ft_transfer-history index once $IRONCLAW launches.
-const HOLDING_DAYS = 7;
-
-function isSeasoned(user) {
-  if (!user?.created_at) return false;
-  const ageMs = Date.now() - new Date(user.created_at).getTime();
-  return ageMs >= HOLDING_DAYS * 24 * 3600 * 1000;
-}
-
 // POST /api/tips  body: { postId, tokenContract, tokenSymbol, tokenDecimals,
 //                         amountBase, amountHuman, amountUsd, anonymous, txHash }
 router.post("/", requireWallet, async (req, res, next) => {
@@ -56,7 +44,7 @@ router.post("/", requireWallet, async (req, res, next) => {
       });
     }
 
-    const waived = !isSeasoned(tipper);
+    const waived = false;
 
     const ins = await db.query(
       `INSERT INTO feed_tips

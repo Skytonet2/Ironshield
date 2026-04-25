@@ -249,24 +249,15 @@ router.post("/automations/:id/fire", async (req, res) => {
   }
 });
 
-// Webhook fire: public — no x-wallet — meant for upstream services
-// pinging us. The id alone authenticates because the URL is the
-// shared secret. Rotate by deleting + recreating the rule.
-router.post("/automations/:id/webhook", async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
-  let rule;
-  try { rule = await automationStore.findById(id); }
-  catch (err) { return res.status(500).json({ error: err.message }); }
-  if (!rule)              return res.status(404).json({ error: "Not found" });
-  if (!rule.enabled)      return res.status(409).json({ error: "Rule disabled" });
-  if (rule.trigger?.type !== "webhook") return res.status(409).json({ error: "Rule isn't webhook-triggered" });
-  try {
-    const result = await automationExecutor.run({ automation: rule, source: "webhook" });
-    res.json({ ok: result.status === "ok", ...result });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
+// Public webhook trigger is gated until per-rule webhook tokens land.
+// The previous implementation treated `:id` as a shared secret, but
+// agent_automations.id is SERIAL — enumerable, not secret. A real fix
+// adds a random webhook_token column + UI to reveal it once on create.
+router.post("/automations/:id/webhook", (_req, res) => {
+  res.status(501).json({
+    error: "feature.unavailable",
+    feature: "agent_automation_webhook",
+  });
 });
 
 router.get("/automations/:id/runs", async (req, res) => {
