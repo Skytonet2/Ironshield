@@ -117,11 +117,22 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Error handler — surface DB-offline state clearly instead of a generic 500
+// Error handler — surface known categories clearly instead of a generic 500.
 app.use((err, req, res, next) => {
   console.error("IronClaw API error:", err);
   const msg = String(err?.message || "");
   const code = err?.code || "";
+
+  // Body-parser size cap: keep its 413 status (Day 2.4 sets the limits).
+  // The generic 500 fallthrough below would otherwise mask the real cause.
+  if (err.type === "entity.too.large" || err.statusCode === 413) {
+    return res.status(413).json({
+      success: false,
+      error: "request entity too large",
+      limit: err.limit,
+    });
+  }
+
   const dbDown = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ENETUNREACH/i.test(msg)
     || /relation .* does not exist/i.test(msg)
     || code === "ECONNREFUSED" || code === "57P03";
