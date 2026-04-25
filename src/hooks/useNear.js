@@ -1,8 +1,10 @@
 "use client";
 import { useWallet, getReadAccount } from "@/lib/contexts";
+import { STAKING_CONTRACT, IRONCLAW_TOKEN, AUTH_RECIPIENT } from "@/lib/nearConfig";
 
-export const IRONCLAW_TOKEN    = "claw.ironshield.near";
-export const STAKING_CONTRACT  = "ironshield.near";
+// Re-export so legacy imports `import { STAKING_CONTRACT } from "@/hooks/useNear"`
+// keep working without a sweep across every consumer.
+export { STAKING_CONTRACT, IRONCLAW_TOKEN };
 
 export default function useNear() {
   const { connected, address, selector } = useWallet();
@@ -62,7 +64,7 @@ export default function useNear() {
   // signature without going through apiFetch (e.g., signing a Telegram
   // link challenge). apiFetch.js carries its own implementation against
   // a module-level wallet ref for non-hook contexts.
-  const signRequest = async ({ message, nonce, recipient = "ironshield.near" }) => {
+  const signRequest = async ({ message, nonce, recipient = AUTH_RECIPIENT }) => {
     if (!selector) throw new Error("not-connected");
     const wallet = await selector.wallet();
     if (!wallet?.signMessage) throw new Error("wallet-type-unsupported");

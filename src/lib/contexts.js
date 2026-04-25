@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSettings } from "@/lib/stores/settingsStore";
 import { apiFetch, setWalletState as setApiFetchWalletState } from "@/lib/apiFetch";
+import { NETWORK_ID, NODE_URL, STAKING_CONTRACT } from "@/lib/nearConfig";
 
 // Cache a single near-api-js Near instance across the whole app. We build it
 // lazily and reuse it for both viewMethod reads (anonymous account) and per-
@@ -11,8 +12,8 @@ async function getNearInstance() {
   if (_nearInstance) return _nearInstance;
   const { connect, keyStores } = await import("near-api-js");
   _nearInstance = await connect({
-    networkId: "mainnet",
-    nodeUrl:   "https://rpc.fastnear.com",
+    networkId: NETWORK_ID,
+    nodeUrl:   NODE_URL,
     keyStore:  new keyStores.InMemoryKeyStore(),
   });
   return _nearInstance;
@@ -223,7 +224,7 @@ export function WalletProvider({ children }) {
         ]);
 
         const _selector = await setupWalletSelector({
-          network: "mainnet",
+          network: NETWORK_ID,
           modules: [
             setupMeteorWallet(),
             setupHereWallet(),
@@ -232,7 +233,7 @@ export function WalletProvider({ children }) {
           ],
         });
 
-        const _modal = _setupModal(_selector, { contractId: "ironshield.near" });
+        const _modal = _setupModal(_selector, { contractId: STAKING_CONTRACT });
 
         const state = _selector.store.getState();
         if (state.accounts.length > 0) {
@@ -673,7 +674,7 @@ function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
 // Single source of truth for get_proposals. AgentPage, EarnPage,
 // and GovernancePage all read from this shared cache instead of
 // each calling the RPC independently on every mount.
-const PROPOSALS_CONTRACT_ID = "ironshield.near";
+const PROPOSALS_CONTRACT_ID = STAKING_CONTRACT;
 const PROPOSALS_TTL_MS      = 30_000; // re-fetch after 30s of staleness
 
 export const ProposalsCtx = createContext({
