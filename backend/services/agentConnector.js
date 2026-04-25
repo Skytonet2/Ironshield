@@ -551,3 +551,15 @@ ${payload.content || ""}`,
   maxTokens: 900,
   expectJson: true,
 });
+
+// Test seam: returns the actual system prompt that would hit NEAR AI for a
+// given task, without making the network call. Used by Day 4.3's
+// governance-loop evidence script (scripts/day4-evidence.js) to assert that
+// a governance-passed PromptUpdate proposal flows through to the AI prompt.
+// Read-only — no security implication exposing this.
+exports._systemPromptForTesting = ({ kind }) => {
+  switch (kind) {
+    case "research": return researchSystemPrompt();
+    default: throw new Error(`unknown kind: ${kind}`);
+  }
+};
