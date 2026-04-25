@@ -43,10 +43,26 @@ const migrate = async () => {
   try {
     await pool.query(schema);
     console.log("[DB] Schema migration complete");
+    await seedAdminAllowlist();
   } catch (err) {
     console.error("[DB] Migration error:", err.message);
     throw err;
   }
+};
+
+// First-boot admin seed: if admin_wallets is empty and ADMIN_WALLET_SEED is
+// set, insert that wallet so a fresh deploy isn't locked out of AdminPanel.
+// After that, manage the table directly via SQL — no admin-management UI.
+const seedAdminAllowlist = async () => {
+  const seed = (process.env.ADMIN_WALLET_SEED || "").trim().toLowerCase();
+  if (!seed) return;
+  const { rows } = await pool.query("SELECT 1 FROM admin_wallets LIMIT 1");
+  if (rows.length) return;
+  await pool.query(
+    "INSERT INTO admin_wallets (wallet, role) VALUES ($1, 'admin') ON CONFLICT DO NOTHING",
+    [seed]
+  );
+  console.log(`[DB] Seeded admin_wallets with ${seed}`);
 };
 
 // Graceful shutdown

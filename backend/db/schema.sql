@@ -910,3 +910,15 @@ CREATE TABLE IF NOT EXISTS auth_nonces (
 );
 CREATE INDEX IF NOT EXISTS auth_nonces_active_idx
   ON auth_nonces (issued_at) WHERE used_at IS NULL;
+
+-- ── Admin wallet allowlist (replaces NEXT_PUBLIC_ADMIN_PW) ────────────
+-- One row per wallet that may access AdminPanel + admin-only mutations.
+-- Seeded from $ADMIN_WALLET_SEED on first boot if the table is empty,
+-- so a fresh deploy isn't locked out. After that, manage rows directly
+-- via SQL — no admin-management UI in v1 by design.
+CREATE TABLE IF NOT EXISTS admin_wallets (
+  wallet               TEXT        PRIMARY KEY,
+  role                 TEXT        NOT NULL DEFAULT 'admin',
+  daily_ai_budget_usd  NUMERIC,
+  added_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

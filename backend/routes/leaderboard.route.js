@@ -3,6 +3,7 @@ const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
 const requireWallet = require("../middleware/requireWallet");
+const requireAdmin  = require("../middleware/requireAdmin");
 
 // GET /api/leaderboard — top users
 router.get("/", async (req, res) => {
@@ -46,8 +47,8 @@ router.get("/:wallet", async (req, res) => {
   }
 });
 
-// POST /api/leaderboard/score — admin: add/set points (admin allowlist gate added in Day 2.2)
-router.post("/score", requireWallet, async (req, res) => {
+// POST /api/leaderboard/score — admin: add/set points (admin allowlist enforced)
+router.post("/score", requireWallet, requireAdmin, async (req, res) => {
   const { near_wallet, points, action = "add" } = req.body;
   if (!near_wallet || points == null) return res.status(400).json({ success: false, error: "near_wallet and points required" });
 

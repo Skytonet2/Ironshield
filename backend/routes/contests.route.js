@@ -3,6 +3,7 @@ const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
 const requireWallet = require("../middleware/requireWallet");
+const requireAdmin  = require("../middleware/requireAdmin");
 
 // GET /api/contests — list all contests
 router.get("/", async (req, res) => {
@@ -41,8 +42,8 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// POST /api/contests — create contest (admin only — wallet allowlist gate added in Day 2.2)
-router.post("/", requireWallet, async (req, res) => {
+// POST /api/contests — create contest (admin allowlist enforced)
+router.post("/", requireWallet, requireAdmin, async (req, res) => {
   const { title, description, reward, difficulty, end_date } = req.body;
   const created_by = req.wallet;
   if (!title) return res.status(400).json({ success: false, error: "title required" });
@@ -59,8 +60,8 @@ router.post("/", requireWallet, async (req, res) => {
   }
 });
 
-// PUT /api/contests/:id — update contest (admin only — wallet allowlist gate added in Day 2.2)
-router.put("/:id", requireWallet, async (req, res) => {
+// PUT /api/contests/:id — update contest (admin allowlist enforced)
+router.put("/:id", requireWallet, requireAdmin, async (req, res) => {
   const { title, description, reward, difficulty, status, end_date } = req.body;
   try {
     const { rows: [contest] } = await db.query(
@@ -82,8 +83,8 @@ router.put("/:id", requireWallet, async (req, res) => {
   }
 });
 
-// DELETE /api/contests/:id — delete contest (admin only — wallet allowlist gate added in Day 2.2)
-router.delete("/:id", requireWallet, async (req, res) => {
+// DELETE /api/contests/:id — delete contest (admin allowlist enforced)
+router.delete("/:id", requireWallet, requireAdmin, async (req, res) => {
   try {
     await db.query("DELETE FROM contests WHERE id = $1", [req.params.id]);
     res.json({ success: true });
@@ -121,8 +122,8 @@ router.post("/:id/submit", requireWallet, async (req, res) => {
   }
 });
 
-// POST /api/contests/:id/review — approve/reject submission (admin only — wallet allowlist gate added in Day 2.2)
-router.post("/:id/review", requireWallet, async (req, res) => {
+// POST /api/contests/:id/review — approve/reject submission (admin allowlist enforced)
+router.post("/:id/review", requireWallet, requireAdmin, async (req, res) => {
   const { submission_id, status, points } = req.body;
   const reviewed_by = req.wallet;
   if (!submission_id || !status) return res.status(400).json({ success: false, error: "submission_id and status required" });

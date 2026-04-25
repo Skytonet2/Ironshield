@@ -3,19 +3,19 @@ import { useState, useEffect, useCallback } from "react";
 import { Settings, X, Plus, Edit3, Trash2, Save, CheckCircle, Shield, Award, UserPlus, Loader, ToggleLeft, ToggleRight, UserMinus } from "lucide-react";
 import { Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
+import { apiFetch } from "@/lib/apiFetch";
 import { memoryStore } from "@/lib/store";
 import useGovernance from "@/hooks/useGovernance";
 
-// Admin wallet: only this address can access the panel
-const ADMIN_WALLET = "ironshield.near";
-
 export default function AdminPanel({ onClose }) {
   const t = useTheme();
-  const { connected, address } = useWallet();
+  const { connected, address, showModal } = useWallet();
 
-  const [authed, setAuthed]     = useState(false);
-  const [pw, setPw]             = useState("");
-  const [pwErr, setPwErr]       = useState(false);
+  // Auth state has three values: null = checking, true = admin,
+  // false = denied/disconnected. Backend allowlist is the source of truth;
+  // there is no client-side override.
+  const [authed, setAuthed]     = useState(null);
+  const [authError, setAuthError] = useState(null);
   const [adminTab, setAdminTab] = useState("contests");
 
   const [contests, setContests] = useState([...memoryStore.contests]);
@@ -60,9 +60,44 @@ export default function AdminPanel({ onClose }) {
   }, [gov]);
 
   useEffect(() => {
-    if (authed && adminTab === "governance") refreshGov();
+    if (authed === true && adminTab === "governance") refreshGov();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, adminTab]);
+
+  // Resolve admin status against the backend allowlist on mount + when
+  // the connected wallet changes. Server is the source of truth — no
+  // client-side bypass possible. Connection-less or non-admin wallets
+  // both render the "Not authorized" view; the panel only shows when
+  // authed === true.
+  useEffect(() => {
+    let cancelled = false;
+    if (!connected || !address) {
+      setAuthed(false);
+      setAuthError(null);
+      return;
+    }
+    setAuthed(null);
+    setAuthError(null);
+    (async () => {
+      try {
+        const r = await apiFetch("/api/admin/check", { method: "POST" });
+        if (cancelled) return;
+        if (r.ok) {
+          setAuthed(true);
+        } else if (r.status === 401 || r.status === 403) {
+          setAuthed(false);
+        } else {
+          setAuthed(false);
+          setAuthError(`Server error (HTTP ${r.status})`);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setAuthed(false);
+        setAuthError(err?.message || "Auth check failed");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [connected, address]);
 
   const govOk  = (m) => { setGovMsg(m); setTimeout(() => setGovMsg(""), 3500); };
   const govBad = (m) => { setGovErr(m); setTimeout(() => setGovErr(""), 4500); };
@@ -135,17 +170,6 @@ export default function AdminPanel({ onClose }) {
   useEffect(() => { memoryStore.contests = contests; }, [contests]);
   useEffect(() => { memoryStore.scores   = scores;   }, [scores]);
 
-  const tryLogin = () => {
-    // Allow wallet-based auth (preferred) or fallback password
-    if (address === ADMIN_WALLET || pw === process.env.NEXT_PUBLIC_ADMIN_PW || pw === "ironshield_admin") {
-      setAuthed(true);
-      setPwErr(false);
-    } else {
-      setPwErr(true);
-      setTimeout(() => setPwErr(false), 2000);
-    }
-  };
-
   const addContest = () => {
     if (!newContest.title || !newContest.reward) return;
     const entry = { ...newContest, id: Date.now() };
@@ -180,32 +204,34 @@ export default function AdminPanel({ onClose }) {
 
   const deleteScore = (idx) => setScores(prev => prev.filter((_, i) => i !== idx));
 
-  // ── Login screen ────────────────────────────────────────────────
-  if (!authed) return (
+  // ── Auth gate ──────────────────────────────────────────────────
+  // Three states: checking (null), authorized (true), denied (false).
+  // No client-side bypass — the backend allowlist is authoritative.
+  if (authed !== true) return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, backdropFilter: "blur(8px)" }}>
       <div style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20, padding: 40, width: 380, textAlign: "center" }}>
         <Settings size={32} color={t.accent} style={{ marginBottom: 16 }} />
         <div style={{ fontSize: 20, fontWeight: 700, color: t.white, marginBottom: 6 }}>Admin Access</div>
-        {connected && address === ADMIN_WALLET ? (
+        {authed === null ? (
           <>
-            <div style={{ fontSize: 13, color: t.green, marginBottom: 20 }}>Wallet recognized as admin</div>
-            <Btn primary onClick={() => setAuthed(true)} style={{ width: "100%", justifyContent: "center" }}>Enter Admin Panel</Btn>
+            <Loader size={18} color={t.textMuted} style={{ animation: "spin 1s linear infinite", marginBottom: 14 }} />
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>Verifying wallet…</div>
+            <Btn onClick={onClose} style={{ width: "100%", justifyContent: "center" }}>Cancel</Btn>
+          </>
+        ) : !connected ? (
+          <>
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 20 }}>Connect a wallet on the admin allowlist to continue.</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+              <Btn primary onClick={showModal} style={{ flex: 1, justifyContent: "center" }}>Connect</Btn>
+            </div>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 24 }}>Enter admin password to continue</div>
-            <input
-              type="password" value={pw}
-              onChange={e => setPw(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && tryLogin()}
-              placeholder="Password"
-              style={{ width: "100%", background: t.bgSurface, border: `1px solid ${pwErr ? t.red : t.border}`, borderRadius: 10, padding: "12px 16px", color: t.white, fontSize: 14, outline: "none", marginBottom: 12, textAlign: "center" }}
-            />
-            {pwErr && <div style={{ color: t.red, fontSize: 12, marginBottom: 10 }}>Incorrect password</div>}
-            <div style={{ display: "flex", gap: 10 }}>
-              <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
-              <Btn primary onClick={tryLogin} style={{ flex: 1, justifyContent: "center" }}>Enter</Btn>
-            </div>
+            <div style={{ fontSize: 13, color: t.red, marginBottom: 6 }}>Not authorized</div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 18, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>{address}</div>
+            {authError && <div style={{ fontSize: 11, color: t.textDim, marginBottom: 14 }}>{authError}</div>}
+            <Btn onClick={onClose} style={{ width: "100%", justifyContent: "center" }}>Close</Btn>
           </>
         )}
       </div>
