@@ -45,6 +45,13 @@ let manualDisconnect = false;
 // Last connect args, replayed on every reconnect.
 let lastConfig = { wallet: null, ticketProvider: null, trackers: null };
 
+// Wallet the *current* socket is server-confirmed authed for. Set on
+// `{type:"authed", ok:true}`, cleared on close. Used to suppress
+// redundant ticket fetches — every ticket fetch is a signed REST call,
+// which surfaces a wallet popup on most NEAR wallets, so a stale
+// "already authed for this wallet" must never re-sign.
+let authedWallet = null;
+
 const listeners = new Map();   // type -> Set<fn>
 
 function setStatus(status) {
@@ -86,9 +93,16 @@ export function connect({ wallet = null, ticketProvider = null, trackers = null 
   }
 
   if (ws && (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING)) {
-    // Already open — if a wallet was just supplied, mint+send a fresh
-    // auth so the server binds this socket to the wallet.
-    if (ws.readyState === ws.OPEN && lastConfig.wallet && lastConfig.ticketProvider) {
+    // Already open. Re-auth ONLY if the wallet just changed — the
+    // server-side binding is durable for the lifetime of the socket,
+    // so re-minting on every connect() call (e.g. AppShell remounting
+    // on route nav) would surface a wallet popup per click.
+    if (
+      ws.readyState === ws.OPEN &&
+      lastConfig.wallet &&
+      lastConfig.ticketProvider &&
+      authedWallet !== lastConfig.wallet
+    ) {
       void sendAuth();
     }
     return;
@@ -126,15 +140,21 @@ export function connect({ wallet = null, ticketProvider = null, trackers = null 
       dispatch(msg.event);
       return;
     }
-    if (msg.type === "authed" && msg.ok && lastConfig.trackers) {
-      // Defer the subscribe until after auth resolves so the server
-      // already knows which wallet's private events the socket is
-      // permitted to receive when it starts filtering subscriptions.
-      ws.send(JSON.stringify({ type: "subscribe", trackers: lastConfig.trackers }));
+    if (msg.type === "authed" && msg.ok) {
+      authedWallet = msg.wallet || lastConfig.wallet || null;
+      if (lastConfig.trackers) {
+        // Defer the subscribe until after auth resolves so the server
+        // already knows which wallet's private events the socket is
+        // permitted to receive when it starts filtering subscriptions.
+        ws.send(JSON.stringify({ type: "subscribe", trackers: lastConfig.trackers }));
+      }
+    } else if (msg.type === "authed" && !msg.ok) {
+      authedWallet = null;
     }
   });
 
   const onClose = () => {
+    authedWallet = null;
     setStatus("disconnected");
     if (!manualDisconnect) scheduleReconnect();
   };
@@ -163,6 +183,7 @@ export function disconnect() {
     try { ws.close(); } catch {}
     ws = null;
   }
+  authedWallet = null;
   lastConfig = { wallet: null, ticketProvider: null, trackers: null };
   setStatus("disconnected");
 }
