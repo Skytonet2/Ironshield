@@ -4,7 +4,7 @@
 
 Token holders vote on the deployed agent's system prompt and mission. When a proposal passes, the vote rewrites that agent's runtime config — the next AI call uses the new prompt. End-to-end on-chain governance of agent behavior, not metadata.
 
-Today the loop runs on Vanguard NFT pre-token governance (proven end-to-end on mainnet). $IRONCLAW launches at TGE and broadens participation.
+The governance loop is proven end-to-end on mainnet via the contract's pre-token primitive. A Phase 1 Council of named contributors takes over governance before $IRONCLAW launches; $IRONCLAW broadens participation post-TGE.
 
 > Anyone can run IronClaw locally. To run it autonomously — making decisions, holding funds, acting for others — IronShield is the governance pattern that makes the chain of authority cryptographically verifiable.
 
