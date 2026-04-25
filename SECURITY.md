@@ -1,21 +1,38 @@
 # Security Policy
 
-## Supported Versions
+## Reporting a vulnerability
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+If you discover a security vulnerability in IronShield, please **do not file a public GitHub issue**. Instead, email:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+**olarewajuoluwaseyifavour@gmail.com**
 
-## Reporting a Vulnerability
+Include:
+- A description of the vulnerability and its potential impact
+- Steps to reproduce (PoC code or transaction hashes welcome)
+- The affected component (smart contract, backend, frontend, agent runtime, Telegram bot)
+- Your suggested remediation if you have one
 
-Use this section to tell people how to report a vulnerability.
+## Scope
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+In scope:
+- Smart contracts deployed to `ironshield.near` and sub-accounts
+- Backend services (Express API, governance listener, Telegram bot)
+- Frontend (Next.js app at https://ironshield.pages.dev)
+- Agent runtime integration (NEAR AI connector)
+
+Out of scope:
+- IronClaw runtime itself — report to https://github.com/nearai/ironclaw
+- NEAR Protocol core — report to NEAR Foundation
+- Issues already documented in our public sprint plan
+
+## Response timeline
+
+- **48 hours** — initial acknowledgement
+- **7 days** — triage complete, severity assessed, fix ETA shared
+- **90 days** — public disclosure window (negotiable for critical findings affecting funds)
+
+## Recognition
+
+We do not currently run a bug bounty. Researchers who responsibly disclose valid findings will be credited in release notes (with their permission) and prioritized for inclusion in the future bounty program once $IRONCLAW launches.
+
+Thank you for helping keep IronShield safe.
