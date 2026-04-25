@@ -10,6 +10,7 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Mic, MicOff, Hand, ShieldAlert, Radio, Send, Sparkles, X,
   Crown, UserPlus, UserMinus, ChevronUp, ChevronDown, Loader2, DoorOpen, Pin, Lock, Coins, Users,
+  Phone, MessageCircle, ShieldCheck, Award, TrendingUp, CheckCircle2,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import LiveStage from "@/components/LiveStage";
@@ -310,39 +311,55 @@ function RoomViewInner() {
 
       {/* Top bar */}
       <div className="ix-room-topbar" style={{
-        padding: "12px 18px", borderBottom: `1px solid ${t.border}`, background: t.bgCard,
+        padding: "14px 22px", borderBottom: `1px solid ${t.border}`,
+        background: `linear-gradient(180deg, ${t.bgCard}, rgba(8,11,18,0.95))`,
         position: "sticky", top: 0, zIndex: 10,
-        display: "flex", alignItems: "center", gap: 12,
+        display: "flex", alignItems: "center", gap: 14,
       }}>
-        <a href="/rooms/" style={{ color: t.text, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
-          <ArrowLeft size={18} /> <span style={{ fontSize: 14 }}>Rooms</span>
+        <a href="/rooms/" style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          color: t.text, textDecoration: "none",
+          padding: "6px 8px", borderRadius: 8, fontWeight: 700, fontSize: 14,
+        }}>
+          <ArrowLeft size={16} /> Rooms
         </a>
         <span style={{
-          display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 800,
-          color: "#ef4444", padding: "2px 6px", borderRadius: 6,
-          background: "#ef444418", border: "1px solid #ef444444",
+          display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800,
+          color: "#fca5a5", padding: "4px 10px", borderRadius: 999,
+          background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.36)",
+          letterSpacing: 0.6,
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#ef4444",
-            boxShadow: "0 0 6px #ef4444", animation: "ixPulse 1.2s ease-in-out infinite" }} /> LIVE
+          <span style={{
+            width: 7, height: 7, borderRadius: "50%", background: "#ef4444",
+            boxShadow: "0 0 8px #ef4444", animation: "ixPulse 1.2s ease-in-out infinite",
+          }} /> LIVE
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="ix-room-title" style={{ color: t.white, fontSize: 14, fontWeight: 700,
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {room.title}
+          <div className="ix-room-title" style={{
+            color: t.white, fontSize: 15, fontWeight: 800, lineHeight: 1.2,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {room.host?.username || room.host?.displayName || room.title}
           </div>
-          <div className="ix-room-subtitle" style={{ color: t.textMuted, fontSize: 11 }}>
-            {room.topic || "—"} · ends in {timeLeft(room.endsAt)}
+          <div className="ix-room-subtitle" style={{ color: t.textMuted, fontSize: 11.5, marginTop: 2 }}>
+            {room.topic ? `#${room.topic}` : "—"} · ends in {timeLeft(room.endsAt)}
           </div>
         </div>
         <span className="ix-room-bot-chip" title={`Bot threat ${room.counts.botThreat}/100`} style={{
-          display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700,
-          color: botColor(room.counts.botThreat),
+          display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800,
+          color: "#fbbf24",
+          padding: "6px 12px", borderRadius: 999,
+          background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.36)",
         }}>
           <ShieldAlert size={13} /> {room.counts.botThreat}
         </span>
-        <span className="ix-room-stake-chip" style={{ display: "inline-flex", alignItems: "center", gap: 4,
-          color: t.amber, fontSize: 11, fontWeight: 700 }}>
-          <Coins size={11} /> ${Math.round(room.stake.amountUsd)}
+        <span className="ix-room-stake-chip" style={{
+          display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800,
+          color: "#fbbf24",
+          padding: "6px 12px", borderRadius: 999,
+          background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.36)",
+        }}>
+          <Coins size={13} /> ${Math.round(room.stake.amountUsd)}
         </span>
         {!connected ? (
           <button onClick={openWallet} style={btnPrimary(t)}>Connect</button>
@@ -350,16 +367,16 @@ function RoomViewInner() {
           <button onClick={() => join("listener")} style={btnPrimary(t)}>Join</button>
         ) : (
           <>
-            <button onClick={inviteToCall} disabled={inviting} style={btnGhost(t)}>
+            <button onClick={inviteToCall} disabled={inviting} style={btnPill(t)}>
               {inviting ? <Loader2 size={14} className="ix-spin" /> : <UserPlus size={14} />} Invite
             </button>
-            <button onClick={leave} style={btnGhost(t)}>
+            <button onClick={leave} style={btnPill(t)}>
               <DoorOpen size={14} /> Leave
             </button>
           </>
         )}
         {isHost && (
-          <button onClick={closeRoom} disabled={closing} style={btnDanger(t)}>
+          <button onClick={closeRoom} disabled={closing} style={btnEndRoom(t)}>
             {closing ? <Loader2 size={14} className="ix-spin" /> : <X size={14} />} End room
           </button>
         )}
@@ -387,26 +404,57 @@ function RoomViewInner() {
           {/* Chat */}
           <section style={{
             background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
-            padding: 14, display: "flex", flexDirection: "column", minHeight: 360,
+            padding: 18, display: "flex", flexDirection: "column", minHeight: 360,
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <Sparkles size={14} color={t.amber} />
-              <span style={{ color: t.white, fontWeight: 700, fontSize: 13 }}>Chat</span>
-              <span style={{ color: t.textDim, fontSize: 11 }}>· alpha calls earn revenue-share points</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <span style={{
+                width: 26, height: 26, borderRadius: 8,
+                background: "rgba(168,85,247,0.16)", color: "#c4b8ff",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <MessageCircle size={14} />
+              </span>
+              <span style={{ color: t.white, fontWeight: 800, fontSize: 14, letterSpacing: 0.4, textTransform: "uppercase" }}>Chat</span>
+              <span style={{ color: t.textDim, fontSize: 11.5, marginLeft: 4 }}>Alpha calls earn revenue-share points</span>
             </div>
-            <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column",
-              gap: 8, paddingRight: 4, maxHeight: 460 }}>
+            <div style={{
+              flex: 1, overflow: "auto", display: "flex", flexDirection: "column",
+              gap: 8, paddingRight: 4, maxHeight: 460,
+              position: "relative",
+            }}>
+              {msgs.length === 0 && (
+                <div style={{
+                  position: "absolute", inset: 0,
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                  gap: 14, padding: 24,
+                }}>
+                  {/* Decorative starfield speckle behind the bubble */}
+                  <div aria-hidden style={{
+                    position: "absolute", inset: 0, opacity: 0.5, pointerEvents: "none",
+                    backgroundImage: "radial-gradient(circle at 22% 30%, rgba(168,85,247,0.30) 1.2px, transparent 1.5px), radial-gradient(circle at 70% 60%, rgba(96,165,250,0.30) 1.2px, transparent 1.5px), radial-gradient(circle at 80% 22%, rgba(168,85,247,0.20) 1.2px, transparent 1.5px), radial-gradient(circle at 36% 80%, rgba(168,85,247,0.20) 1.2px, transparent 1.5px)",
+                  }} />
+                  <span style={{
+                    width: 64, height: 64, borderRadius: "50%",
+                    background: "rgba(168,85,247,0.10)",
+                    border: "1px solid rgba(168,85,247,0.30)",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    color: "#c4b8ff",
+                    boxShadow: "0 0 30px rgba(168,85,247,0.18)",
+                  }}>
+                    <MessageCircle size={26} />
+                  </span>
+                  <div style={{ textAlign: "center", position: "relative", zIndex: 1 }}>
+                    <div style={{ color: t.text, fontSize: 14, fontWeight: 700, marginBottom: 4 }}>No messages yet.</div>
+                    <div style={{ color: t.textMuted, fontSize: 12.5 }}>Be the first to drop alpha.</div>
+                  </div>
+                </div>
+              )}
               {msgs.map(m => (
                 <ChatMessage key={m.id} t={t} m={m} onVote={voteAlpha} />
               ))}
-              {msgs.length === 0 && (
-                <div style={{ padding: 24, textAlign: "center", color: t.textMuted, fontSize: 12 }}>
-                  No messages yet. Be the first to drop alpha.
-                </div>
-              )}
               <div ref={chatEnd} />
             </div>
-            <div className="ix-chat-input-row" style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div className="ix-chat-input-row" style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <input
                 value={draftMsg}
                 onChange={e => setDraftMsg(e.target.value)}
@@ -414,18 +462,37 @@ function RoomViewInner() {
                 disabled={!joined || sending}
                 placeholder={joined ? "Say something… or call alpha 🪙" : "Join the room to chat"}
                 maxLength={500}
-                style={{ flex: 1, padding: "10px 12px", borderRadius: 10,
+                style={{
+                  flex: 1, padding: "12px 14px", borderRadius: 999,
                   background: t.bgSurface, border: `1px solid ${t.border}`,
-                  color: t.text, fontSize: 13, outline: "none" }}
+                  color: t.text, fontSize: 13, outline: "none",
+                }}
               />
               <button onClick={() => send(true)} disabled={!joined || sending || !draftMsg.trim()}
                 title="Mark as alpha call"
-                style={{ ...btnGhost(t), color: t.amber, borderColor: `${t.amber}66` }}>
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "10px 16px", borderRadius: 999,
+                  background: "transparent", color: "#fbbf24",
+                  border: "1.5px solid rgba(245,158,11,0.55)",
+                  cursor: !joined || sending || !draftMsg.trim() ? "not-allowed" : "pointer",
+                  fontSize: 13, fontWeight: 800,
+                  opacity: !joined || sending || !draftMsg.trim() ? 0.5 : 1,
+                }}>
                 <Sparkles size={14} /> Alpha
               </button>
               <button onClick={() => send(false)} disabled={!joined || sending || !draftMsg.trim()}
-                style={btnPrimary(t)}>
-                {sending ? <Loader2 size={14} className="ix-spin" /> : <Send size={14} />}
+                style={{
+                  width: 44, height: 44, borderRadius: "50%",
+                  background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
+                  color: "#1a0f00", border: "none",
+                  cursor: !joined || sending || !draftMsg.trim() ? "not-allowed" : "pointer",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                  opacity: !joined || sending || !draftMsg.trim() ? 0.5 : 1,
+                  boxShadow: "0 8px 22px rgba(245,158,11,0.36)",
+                }}>
+                {sending ? <Loader2 size={16} className="ix-spin" /> : <Send size={16} />}
               </button>
             </div>
           </section>
@@ -433,13 +500,22 @@ function RoomViewInner() {
 
         {/* Participants sidebar */}
         <aside className="ix-room-aside" style={{
-          background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
-          padding: 14, height: "fit-content", position: "sticky", top: 80,
+          display: "flex", flexDirection: "column", gap: 14,
+          minWidth: 0, position: "sticky", top: 80, alignSelf: "flex-start",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-            <Users size={14} color={t.amber} />
-            <span style={{ color: t.white, fontWeight: 700, fontSize: 13 }}>Participants</span>
-            <span style={{ color: t.textDim, fontSize: 11 }}>· {parts.length}</span>
+        <div style={{
+          background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <span style={{
+              width: 26, height: 26, borderRadius: 8,
+              background: "rgba(245,158,11,0.14)", color: "#fbbf24",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Users size={14} />
+            </span>
+            <span style={{ color: t.white, fontWeight: 800, fontSize: 14, letterSpacing: 0.4, textTransform: "uppercase" }}>Participants</span>
+            <span style={{ color: t.textDim, fontSize: 12.5, marginLeft: 2 }}>· {parts.length}</span>
           </div>
 
           {isHost && handsUp.length > 0 && (
@@ -502,11 +578,30 @@ function RoomViewInner() {
                 ) : null} />
             ))}
             {listeners.length === 0 && (
-              <div style={{ padding: 8, color: t.textDim, fontSize: 11, textAlign: "center" }}>
-                No listeners yet.
+              <div style={{
+                padding: "20px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+                color: t.textMuted, fontSize: 12, textAlign: "center",
+              }}>
+                <span style={{
+                  width: 44, height: 44, borderRadius: "50%",
+                  background: "rgba(168,85,247,0.10)",
+                  border: `1px solid rgba(168,85,247,0.30)`,
+                  color: "#c4b8ff",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <Users size={18} />
+                </span>
+                <div>
+                  <div style={{ color: t.text, fontSize: 13, fontWeight: 700, marginBottom: 2 }}>No listeners yet.</div>
+                  <div style={{ color: t.textMuted, fontSize: 11.5 }}>Be the first to drop alpha.</div>
+                </div>
               </div>
             )}
           </Section>
+        </div>
+
+        {/* Share Alpha rail panel — community/incentives messaging */}
+        <ShareAlphaPanel t={t} />
         </aside>
       </div>
 
@@ -675,43 +770,185 @@ function Section({ t, title, count, children }) {
 }
 
 function ClosedSummaryModal({ t, summary, room, onClose }) {
+  const refunded = !!summary.refundTx;
+  const stakeAmt = room?.stake?.amountHuman ?? room?.stake?.amount ?? "";
+  const stakeUsd = room?.stake?.amountUsd ?? 0;
+
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(6px)",
-      display: "grid", placeItems: "center", zIndex: 100, padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 420, background: t.bgCard, borderRadius: 16,
-        border: `1px solid ${t.border}`, padding: 20, textAlign: "center" }}>
-        <Radio size={32} color={t.amber} style={{ marginBottom: 8 }} />
-        <h2 style={{ color: t.white, margin: "0 0 4px", fontSize: 20 }}>Room ended</h2>
-        <p style={{ color: t.textMuted, fontSize: 13, margin: "0 0 16px" }}>
-          Thanks for hosting <strong>{room.title}</strong>.
-        </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
-          <SummaryStat t={t} label="Participants" value={summary.totalParticipants} />
-          <SummaryStat t={t} label="Speakers" value={summary.totalSpeakers} />
-          <SummaryStat t={t} label="Alpha calls" value={summary.alphaCalls} />
+    <div style={{
+      position: "fixed", inset: 0,
+      background: "radial-gradient(circle at center, rgba(0,0,0,0.88), rgba(0,0,0,0.94))",
+      backdropFilter: "blur(8px)",
+      display: "grid", placeItems: "center", zIndex: 100, padding: 16,
+    }}>
+      <div style={{
+        position: "relative", overflow: "hidden",
+        width: "100%", maxWidth: 480,
+        background: `linear-gradient(180deg, rgba(168,85,247,0.08), ${t.bgCard} 60%)`,
+        borderRadius: 22,
+        border: "1px solid rgba(168,85,247,0.32)",
+        padding: "32px 28px 26px",
+        textAlign: "center",
+        boxShadow: "0 0 0 1px rgba(168,85,247,0.18) inset, 0 30px 80px rgba(0,0,0,0.55)",
+      }}>
+        {/* Confetti specks */}
+        <Confetti />
+
+        {/* Close X */}
+        <button onClick={onClose} aria-label="Close" style={{
+          position: "absolute", top: 14, right: 14,
+          width: 32, height: 32, borderRadius: 10,
+          background: t.bgSurface, border: `1px solid ${t.border}`,
+          color: t.textMuted, cursor: "pointer", zIndex: 2,
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <X size={15} />
+        </button>
+
+        {/* Hero icon */}
+        <div style={{ position: "relative", zIndex: 1, marginBottom: 18 }}>
+          <span style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 72, height: 72, borderRadius: "50%",
+            background: "rgba(245,158,11,0.14)",
+            border: "1px solid rgba(245,158,11,0.45)",
+            color: "#fbbf24",
+            boxShadow: "0 0 0 6px rgba(245,158,11,0.06), 0 0 40px rgba(245,158,11,0.35)",
+          }}>
+            <Radio size={32} strokeWidth={2.4} />
+          </span>
         </div>
-        {summary.refundTx ? (
-          <div style={{ padding: "10px 12px", borderRadius: 10, background: "#22c55e18",
-            border: "1px solid #22c55e44", color: "#86efac", fontSize: 12, marginBottom: 12 }}>
-            ✅ Stake refunded ({summary.refundTx.slice(0, 14)}…)
+
+        <h2 style={{ color: t.white, margin: "0 0 6px", fontSize: 28, fontWeight: 800, letterSpacing: -0.4, position: "relative", zIndex: 1 }}>
+          Room ended
+        </h2>
+        <p style={{ color: t.textMuted, fontSize: 14, margin: "0 0 22px", position: "relative", zIndex: 1 }}>
+          Thanks for hosting{" "}
+          <strong style={{ color: "#fbbf24", fontWeight: 800 }}>
+            {room.host?.username || room.host?.displayName || (room.host?.wallet ? `${room.host.wallet.slice(0,8)}…` : "this room")}
+          </strong>.
+        </p>
+
+        {/* Stat tiles */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10,
+          position: "relative", zIndex: 1, marginBottom: 18,
+        }}>
+          <SummaryStat t={t} label="Participants" value={summary.totalParticipants} Icon={Users} />
+          <SummaryStat t={t} label="Speakers"     value={summary.totalSpeakers}     Icon={Mic} />
+          <SummaryStat t={t} label="Alpha calls"  value={summary.alphaCalls}        Icon={Phone} />
+        </div>
+
+        {/* Stake refund / withheld panel */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "14px 16px", borderRadius: 14,
+          background: refunded ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+          border: `1px solid ${refunded ? "rgba(16,185,129,0.40)" : "rgba(239,68,68,0.40)"}`,
+          marginBottom: 18, position: "relative", zIndex: 1,
+        }}>
+          <span style={{
+            width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+            background: refunded ? "rgba(16,185,129,0.20)" : "rgba(239,68,68,0.20)",
+            color: refunded ? "#34d399" : "#fca5a5",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {refunded ? <CheckCircle2 size={18} /> : <ShieldAlert size={18} />}
+          </span>
+          <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+            <div style={{ color: t.white, fontSize: 14, fontWeight: 800 }}>
+              {refunded ? "Stake refunded" : "Stake withheld"}
+            </div>
+            <div style={{
+              fontSize: 11, color: t.textMuted, marginTop: 2,
+              fontFamily: "var(--font-jetbrains-mono), monospace",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {refunded ? `${summary.refundTx.slice(0, 14)}…` : "Room flagged for violations"}
+            </div>
           </div>
-        ) : (
-          <div style={{ padding: "10px 12px", borderRadius: 10, background: "#ef444418",
-            border: "1px solid #ef444444", color: "#fca5a5", fontSize: 12, marginBottom: 12 }}>
-            ⚠ Stake withheld (room flagged for violations).
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: refunded ? "#34d399" : "#fca5a5",
+                           fontFamily: "var(--font-jetbrains-mono), monospace" }}>
+              {stakeAmt || "—"}
+            </div>
+            <div style={{ fontSize: 11, color: t.textMuted }}>${Number(stakeUsd || 0).toFixed(2)}</div>
           </div>
-        )}
-        <button onClick={onClose} style={{ ...btnPrimary(t), width: "100%" }}>Back to rooms</button>
+          <span style={{
+            width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+            background: "linear-gradient(135deg, #a855f7, #60a5fa)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontWeight: 800, fontSize: 14,
+          }}>N</span>
+        </div>
+
+        {/* Back to rooms */}
+        <button onClick={onClose} style={{
+          width: "100%", padding: "14px 18px", borderRadius: 14,
+          background: "linear-gradient(135deg, #fbbf24, #f59e0b)",
+          color: "#1a0f00", border: "none",
+          fontSize: 15, fontWeight: 800,
+          cursor: "pointer", letterSpacing: 0.2,
+          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 10,
+          boxShadow: "0 14px 36px rgba(245,158,11,0.45)",
+          position: "relative", zIndex: 1,
+        }}>
+          <ArrowLeft size={16} /> Back to rooms
+        </button>
       </div>
     </div>
   );
 }
 
-function SummaryStat({ t, label, value }) {
+function Confetti() {
+  // 14 colored specks scattered around the modal — purely decorative.
+  const pieces = [
+    { l: "8%",  t: "12%", r: 12, c: "#a855f7" },
+    { l: "18%", t: "32%", r: -8, c: "#fbbf24" },
+    { l: "12%", t: "60%", r: 4,  c: "#ec4899" },
+    { l: "22%", t: "78%", r: 0,  c: "#a855f7" },
+    { l: "32%", t: "10%", r: 18, c: "#fbbf24" },
+    { l: "44%", t: "82%", r: -4, c: "#60a5fa" },
+    { l: "58%", t: "8%",  r: -10,c: "#ec4899" },
+    { l: "62%", t: "30%", r: 8,  c: "#fbbf24" },
+    { l: "70%", t: "55%", r: 14, c: "#a855f7" },
+    { l: "82%", t: "78%", r: -6, c: "#f59e0b" },
+    { l: "88%", t: "20%", r: 0,  c: "#a855f7" },
+    { l: "92%", t: "48%", r: 22, c: "#fbbf24" },
+    { l: "76%", t: "12%", r: -16,c: "#60a5fa" },
+    { l: "5%",  t: "82%", r: 30, c: "#ec4899" },
+  ];
   return (
-    <div style={{ padding: 10, background: t.bgSurface, borderRadius: 10, border: `1px solid ${t.border}` }}>
-      <div style={{ color: t.white, fontSize: 18, fontWeight: 800 }}>{value}</div>
-      <div style={{ color: t.textMuted, fontSize: 10 }}>{label}</div>
+    <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
+      {pieces.map((p, i) => (
+        <span key={i} style={{
+          position: "absolute", left: p.l, top: p.t,
+          width: 7, height: 11, background: p.c,
+          borderRadius: 2, transform: `rotate(${p.r}deg)`,
+          opacity: 0.85,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+function SummaryStat({ t, label, value, Icon }) {
+  return (
+    <div style={{
+      padding: "16px 12px", borderRadius: 14,
+      background: t.bgSurface, border: `1px solid ${t.border}`,
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+    }}>
+      <span style={{
+        width: 36, height: 36, borderRadius: "50%",
+        background: "rgba(168,85,247,0.16)", color: "#c4b8ff",
+        border: "1px solid rgba(168,85,247,0.36)",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {Icon ? <Icon size={16} /> : null}
+      </span>
+      <div style={{ color: t.white, fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{value}</div>
+      <div style={{ color: t.textMuted, fontSize: 11.5 }}>{label}</div>
     </div>
   );
 }
@@ -735,6 +972,83 @@ function btnDanger(t) {
     padding: "6px 10px", background: "#ef444418", color: "#fca5a5",
     border: "1px solid #ef444466", borderRadius: 999, cursor: "pointer",
     fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4,
+  };
+}
+function ShareAlphaPanel({ t }) {
+  return (
+    <div style={{
+      position: "relative", overflow: "hidden",
+      background: `linear-gradient(180deg, rgba(168,85,247,0.10), ${t.bgCard})`,
+      border: "1px solid rgba(168,85,247,0.32)",
+      borderRadius: 14, padding: "20px 16px",
+      textAlign: "center",
+    }}>
+      <div aria-hidden style={{
+        position: "absolute", inset: 0, opacity: 0.6, pointerEvents: "none",
+        backgroundImage: "radial-gradient(circle at 22% 30%, rgba(168,85,247,0.20) 1.2px, transparent 1.6px), radial-gradient(circle at 70% 70%, rgba(96,165,250,0.20) 1.2px, transparent 1.6px), radial-gradient(circle at 80% 22%, rgba(168,85,247,0.18) 1.2px, transparent 1.6px)",
+      }} />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <span style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 56, height: 56, borderRadius: 14, marginBottom: 10,
+          background: "linear-gradient(135deg, rgba(168,85,247,0.30), rgba(168,85,247,0.10))",
+          border: "1px solid rgba(168,85,247,0.45)",
+          color: "#c4b8ff",
+          boxShadow: "0 0 30px rgba(168,85,247,0.30)",
+        }}>
+          <Sparkles size={26} strokeWidth={2.4} />
+        </span>
+        <div style={{ color: t.white, fontSize: 17, fontWeight: 800, margin: "4px 0 6px" }}>
+          Share Alpha. Earn Together.
+        </div>
+        <div style={{ color: t.textMuted, fontSize: 12, lineHeight: 1.5, marginBottom: 14 }}>
+          Alpha calls can earn <span style={{ color: "#c4b8ff", fontWeight: 700 }}>revenue-share</span><br />
+          points for all active speakers.
+        </div>
+        <SAItem t={t} Icon={ShieldCheck} title="Speak to earn"   body="Get rewarded for sharing valuable alpha." />
+        <SAItem t={t} Icon={UserPlus}    title="Invite & grow"   body="More speakers, more rewards for everyone." />
+        <SAItem t={t} Icon={ShieldCheck} title="Built on NEAR"   body="Secure, decentralized and community owned." />
+      </div>
+    </div>
+  );
+}
+
+function SAItem({ t, Icon, title, body }) {
+  return (
+    <div style={{
+      display: "flex", gap: 10, alignItems: "flex-start",
+      padding: "8px 10px", borderRadius: 10,
+      background: "rgba(255,255,255,0.02)",
+      border: `1px solid rgba(168,85,247,0.18)`,
+      marginBottom: 8, textAlign: "left",
+    }}>
+      <span style={{
+        width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+        background: "rgba(168,85,247,0.16)", color: "#c4b8ff",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <Icon size={14} />
+      </span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ color: t.white, fontSize: 12.5, fontWeight: 700 }}>{title}</div>
+        <div style={{ color: t.textMuted, fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{body}</div>
+      </div>
+    </div>
+  );
+}
+
+function btnPill(t) {
+  return {
+    padding: "8px 14px", background: t.bgSurface, color: t.white,
+    border: `1px solid ${t.border}`, borderRadius: 999, cursor: "pointer",
+    fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6,
+  };
+}
+function btnEndRoom(t) {
+  return {
+    padding: "8px 14px", background: "transparent", color: "#fca5a5",
+    border: "1px solid rgba(239,68,68,0.5)", borderRadius: 999, cursor: "pointer",
+    fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6,
   };
 }
 function btnTiny(t) {

@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Mic, MicOff, Radio, Lock, Users, ShieldAlert, Plus, ArrowLeft, X,
-  Loader2, Coins, Clock,
+  Loader2, Coins, Clock, Mail, ShieldCheck, Rocket, AudioLines,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import {
@@ -333,94 +333,199 @@ function OpenRoomModal({ t, wallet, selector, openWallet, onClose, onCreated }) 
     }
   };
 
+  const accessIcon = { open: Users, token_gated: Lock, invite_only: Mail };
+
   return (
     <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", backdropFilter: "blur(4px)",
+      position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(8px)",
       display: "grid", placeItems: "center", zIndex: 100, padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        width: "100%", maxWidth: 520, background: t.bgCard, borderRadius: 16,
-        border: `1px solid ${t.border}`, padding: 20,
+        width: "100%", maxWidth: 560, maxHeight: "90vh", overflowY: "auto",
+        background: `linear-gradient(180deg, ${t.bgCard}, rgba(8,11,18,0.98))`,
+        borderRadius: 18,
+        border: `1px solid rgba(168,85,247,0.32)`,
+        padding: 24,
+        boxShadow: "0 0 0 1px rgba(168,85,247,0.18) inset, 0 30px 80px rgba(0,0,0,0.55)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-          <Radio size={18} color={t.amber} />
-          <h2 style={{ color: t.white, fontSize: 18, margin: 0, fontWeight: 800 }}>Open a Live Room</h2>
-          <div style={{ flex: 1 }} />
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: t.textMuted, cursor: "pointer" }}>
-            <X size={18} />
+        {/* Header — circular accent icon + title + close */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+          <span style={{
+            width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+            background: "rgba(168,85,247,0.16)",
+            border: "1px solid rgba(168,85,247,0.36)",
+            color: "#c4b8ff",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 0 24px rgba(168,85,247,0.25)",
+          }}>
+            <Radio size={22} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ color: t.white, fontSize: 20, margin: 0, fontWeight: 800, letterSpacing: -0.3 }}>
+              Open a Live Room
+            </h2>
+            <div style={{ color: t.textMuted, fontSize: 13, marginTop: 3 }}>
+              Start a real-time voice conversation with the community.
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{
+            width: 32, height: 32, borderRadius: 10,
+            background: t.bgSurface, border: `1px solid ${t.border}`,
+            color: t.textMuted, cursor: "pointer",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+          }}>
+            <X size={16} />
           </button>
         </div>
 
-        <Field t={t} label="Title">
-          <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120}
+        <Field t={t} label="Title" count={title.length} max={80}>
+          <input value={title} onChange={e => setTitle(e.target.value.slice(0, 80))}
             placeholder="What's the alpha?"
             style={inputStyle(t)} />
         </Field>
 
-        <Field t={t} label="Topic / tag (optional)">
-          <input value={topic} onChange={e => setTopic(e.target.value)} maxLength={60}
+        <Field t={t} label="Topic / tag (optional)" count={topic.length} max={60}>
+          <input value={topic} onChange={e => setTopic(e.target.value.slice(0, 60))}
             placeholder="e.g. NEAR DeFi, memecoins, RWAs"
             style={inputStyle(t)} />
         </Field>
 
         <Field t={t} label="Access">
-          <div style={{ display: "grid", gap: 6 }}>
-            {ACCESS_OPTIONS.map(o => (
-              <label key={o.value} style={{
-                display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 12px",
-                borderRadius: 10, cursor: "pointer",
-                background: accessType === o.value ? `${t.accent}14` : t.bgSurface,
-                border: `1px solid ${accessType === o.value ? t.accent : t.border}`,
-              }}>
-                <input type="radio" name="access" value={o.value}
-                  checked={accessType === o.value}
-                  onChange={() => setAccessType(o.value)}
-                  style={{ marginTop: 3 }} />
-                <div>
-                  <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>{o.label}</div>
-                  <div style={{ color: t.textMuted, fontSize: 11 }}>{o.hint}</div>
-                </div>
-              </label>
-            ))}
+          <div style={{ display: "grid", gap: 8 }}>
+            {ACCESS_OPTIONS.map(o => {
+              const active = accessType === o.value;
+              const Icon = accessIcon[o.value] || Users;
+              return (
+                <label key={o.value} style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+                  borderRadius: 12, cursor: "pointer",
+                  background: active ? "rgba(168,85,247,0.10)" : t.bgSurface,
+                  border: `1.5px solid ${active ? "rgba(168,85,247,0.55)" : t.border}`,
+                  boxShadow: active ? "0 0 0 1px rgba(168,85,247,0.18) inset" : "none",
+                  transition: "border-color 120ms ease, background 120ms ease",
+                }}>
+                  <span style={{
+                    width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+                    border: `2px solid ${active ? "#a855f7" : t.border}`,
+                    background: active ? "transparent" : t.bg,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {active && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#a855f7" }} />}
+                  </span>
+                  <input type="radio" name="access" value={o.value}
+                    checked={active} onChange={() => setAccessType(o.value)}
+                    style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: t.white, fontSize: 14, fontWeight: 700 }}>{o.label}</div>
+                    <div style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>{o.hint}</div>
+                  </div>
+                  <span style={{
+                    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                    background: active ? "rgba(168,85,247,0.16)" : t.bg,
+                    color: active ? "#c4b8ff" : t.textMuted,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <Icon size={16} />
+                  </span>
+                </label>
+              );
+            })}
           </div>
         </Field>
 
         <Field t={t} label={`Stake (${IRONCLAW_SYMBOL}) — min ${formatIronclawCompact(minHuman)} ≈ $${MIN_STAKE_USD}`}>
-          <div style={{ position: "relative" }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "4px 6px 4px 14px", borderRadius: 12,
+            background: t.bgSurface,
+            border: `1px solid ${stakeAmount && !enoughStake ? "#ef4444" : t.border}`,
+          }}>
             <input value={stakeAmount} onChange={e => setStakeAmount(e.target.value.replace(/[^\d.]/g, ""))}
               placeholder={String(minHuman)}
-              style={{ ...inputStyle(t), borderColor: stakeAmount && !enoughStake ? "#ef4444" : t.border }} />
-            <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-              color: t.textDim, fontSize: 11 }}>
+              style={{
+                flex: 1, padding: "10px 0",
+                background: "transparent", border: "none", color: t.white,
+                fontSize: 14, outline: "none",
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+              }} />
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 10px", borderRadius: 8,
+              background: t.bg, border: `1px solid ${t.border}`,
+              fontSize: 12, fontWeight: 800, color: "#c4b8ff",
+            }}>
+              <span style={{
+                width: 18, height: 18, borderRadius: "50%",
+                background: "linear-gradient(135deg, #a855f7, #60a5fa)",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontSize: 10, fontWeight: 800,
+              }}>$</span>
+              {IRONCLAW_SYMBOL}
+            </span>
+            <span style={{ color: t.textDim, fontSize: 12, fontWeight: 600, paddingRight: 10 }}>
               ≈ ${stakeUsd.toFixed(2)}
             </span>
           </div>
         </Field>
 
         <Field t={t} label="Duration">
-          <div style={{ display: "flex", gap: 6 }}>
-            {[30, 60, 90, 120].map(m => (
-              <button key={m} onClick={() => setDurationMins(m)} style={{
-                flex: 1, padding: "8px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
-                cursor: "pointer", border: `1px solid ${durationMins === m ? t.accent : t.border}`,
-                background: durationMins === m ? `${t.accent}22` : t.bgSurface,
-                color: durationMins === m ? t.accent : t.text,
-              }}>{m}m</button>
-            ))}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+            {[30, 60, 90, 120].map(m => {
+              const active = durationMins === m;
+              return (
+                <button key={m} onClick={() => setDurationMins(m)} style={{
+                  padding: "10px 10px", borderRadius: 10,
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  border: `1.5px solid ${active ? "rgba(168,85,247,0.55)" : t.border}`,
+                  background: active ? "rgba(168,85,247,0.12)" : t.bgSurface,
+                  color: active ? "#fff" : t.textMuted,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  transition: "all 120ms ease",
+                }}>
+                  <Clock size={12} /> {m}m
+                </button>
+              );
+            })}
           </div>
         </Field>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 14,
-          color: t.text, fontSize: 13, cursor: "pointer" }}>
-          <input type="checkbox" checked={voiceEnabled} onChange={e => setVoiceEnabled(e.target.checked)} />
-          Enable voice (LiveKit). Disable for text-only rooms.
+        <label style={{
+          display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+          borderRadius: 10, marginBottom: 8,
+          background: t.bgSurface, border: `1px solid ${t.border}`,
+          color: t.text, fontSize: 13, cursor: "pointer",
+        }}>
+          <input type="checkbox" checked={voiceEnabled} onChange={e => setVoiceEnabled(e.target.checked)}
+            style={{ accentColor: "#a855f7", width: 16, height: 16 }} />
+          <span style={{ flex: 1 }}>Enable voice (LiveKit). Disable for text-only rooms.</span>
+          <AudioLines size={16} color={voiceEnabled ? "#a855f7" : t.textDim} />
         </label>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 14,
-          color: t.text, fontSize: 13, cursor: "pointer" }}>
-          <input type="checkbox" checked={recordingEnabled} onChange={e => setRecordingEnabled(e.target.checked)} />
-          Record this space and publish a replay summary post to my profile when room closes.
+        <label style={{
+          display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+          borderRadius: 10, marginBottom: 14,
+          background: t.bgSurface, border: `1px solid ${t.border}`,
+          color: t.text, fontSize: 13, cursor: "pointer",
+        }}>
+          <input type="checkbox" checked={recordingEnabled} onChange={e => setRecordingEnabled(e.target.checked)}
+            style={{ accentColor: "#a855f7", width: 16, height: 16 }} />
+          <span style={{ flex: 1 }}>Record this room and publish a replay summary post to my profile when room closes.</span>
+          <Radio size={16} color={recordingEnabled ? "#a855f7" : t.textDim} />
         </label>
+
+        {/* Trust footer — three pillars */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10,
+          padding: "12px 14px", borderRadius: 12,
+          background: "rgba(168,85,247,0.06)",
+          border: "1px solid rgba(168,85,247,0.20)",
+          marginBottom: 14,
+        }}>
+          <TrustCell Icon={ShieldCheck}  title="Secure & On-chain" body="All rooms are secured through smart contracts." t={t} />
+          <TrustCell Icon={Users}        title="Community First"   body="High signal conversations. Zero spam."  t={t} />
+          <TrustCell Icon={Radio}        title="Built on NEAR"     body="Fast, secure and non-custodial."         t={t} />
+        </div>
 
         {err && (
           <div style={{ padding: "10px 12px", borderRadius: 10, background: "#ef444418",
@@ -430,23 +535,54 @@ function OpenRoomModal({ t, wallet, selector, openWallet, onClose, onCreated }) 
         )}
 
         <button onClick={submit} disabled={submitting} style={{
-          width: "100%", padding: "12px 16px", borderRadius: 10, fontSize: 14, fontWeight: 800,
-          background: t.amber, color: "#000", border: "none",
+          width: "100%", padding: "14px 18px", borderRadius: 12, fontSize: 15, fontWeight: 800,
+          background: submitting ? t.bgSurface : "linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f59e0b 100%)",
+          color: "#fff", border: "none", letterSpacing: 0.2,
           cursor: submitting ? "default" : "pointer", opacity: submitting ? .7 : 1,
-          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 10,
+          boxShadow: submitting ? "none" : "0 14px 36px rgba(168,85,247,0.36)",
         }}>
-          {submitting ? <><Loader2 size={14} className="ix-spin" /> Opening room…</> : <>Stake & open room</>}
+          {submitting
+            ? <><Loader2 size={16} className="ix-spin" /> Opening room…</>
+            : <>Stake &amp; open room <Rocket size={16} /></>}
         </button>
+
+        <div style={{ textAlign: "center", marginTop: 12, fontSize: 11.5, color: t.textDim }}>
+          By continuing, you agree to the IronShield <a href="/docs" style={{ color: "#a855f7" }}>Terms of Service</a>.
+        </div>
       </div>
     </div>
   );
 }
 
-function Field({ t, label, children }) {
+function TrustCell({ Icon, title, body, t }) {
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ color: t.textMuted, fontSize: 11, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: .4 }}>
-        {label}
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <Icon size={13} color="#c4b8ff" />
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: t.white }}>{title}</span>
+      </div>
+      <div style={{ fontSize: 10.5, color: t.textMuted, lineHeight: 1.4 }}>{body}</div>
+    </div>
+  );
+}
+
+function Field({ t, label, count, max, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "baseline",
+        marginBottom: 8,
+      }}>
+        <span style={{ color: t.textDim, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: .8 }}>
+          {label}
+        </span>
+        {typeof count === "number" && typeof max === "number" && (
+          <span style={{
+            fontSize: 11, color: t.textDim,
+            fontFamily: "var(--font-jetbrains-mono), monospace",
+          }}>{count}/{max}</span>
+        )}
       </div>
       {children}
     </div>
