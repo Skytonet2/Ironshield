@@ -1,22 +1,26 @@
 "use client";
 // AgentCreatorWizard — /agents/create
 //
-// Four-step launchpad flow:
-//   1. Identity        (handle, bio, avatar URL, personality label)
-//   2. Channels        (pass-through guidance — link to framework docs)
-//   3. Framework pick  (OpenClaw / IronClaw / Self-hosted) + credentials
-//   4. Review + Launch (calls /api/agents/connect once the user confirms)
+// Single-page launchpad. Three sections render stacked, the right rail
+// shows a live preview, and one Launch CTA sits at the bottom.
+// Sections, in order:
+//   1. Agent details     (name, handle, bio, personality, avatar)
+//   2. Choose framework  (OpenClaw / IronClaw / Self-hosted) + creds
+//   3. Connect channels  (optional pass-through to framework docs)
 //
-// IronShield doesn't host runtimes. Step 3's credentials hand off to
-// the chosen framework's adapter (validate first, persist on success).
-// On-chain `register_sub_agent` is invoked at launch time so the agent
-// gets a NEAR-native identity (handle.<owner>.near) before the
-// connection record is persisted.
+// Why single-page (not multi-step): IronShield is a launchpad sitting
+// above the frameworks — the actual decision space is small (paste
+// some creds, pick presets) and the user benefits from seeing the
+// whole shape at once. Test-connection + handle validation stay
+// inline so users can't launch with bad credentials.
+//
+// Framework comes before channels because channels link to
+// framework-specific docs.
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import {
-  Plus, ArrowRight, ArrowLeft, Check, Loader2, ExternalLink,
+  Plus, Loader2, ExternalLink,
   Wallet, Bot, Shield, Send, Globe, MessageSquare,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
@@ -61,27 +65,9 @@ const FRAMEWORK_DEFS = {
   },
 };
 
-/* ─────────────── Stepper ─────────────── */
+/* ─────────────── Section 1: identity ─────────────── */
 
-function Stepper({ t, step, total }) {
-  return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
-      {Array.from({ length: total }, (_, i) => i + 1).map(n => (
-        <div key={n} style={{
-          flex: 1, height: 6, borderRadius: 999,
-          background: n <= step
-            ? `linear-gradient(90deg, #a855f7, ${t.accent})`
-            : t.bgSurface,
-          transition: "background 200ms ease",
-        }} />
-      ))}
-    </div>
-  );
-}
-
-/* ─────────────── Step 1: identity ─────────────── */
-
-function Step1Identity({ t, state, set, isHandleAvail }) {
+function SectionIdentity({ t, state, set, isHandleAvail }) {
   return (
     <Section t={t} step={1} title="Agent details" hint="Pick a NEAR-native identity for your agent.">
       <Grid>
@@ -127,9 +113,9 @@ function Step1Identity({ t, state, set, isHandleAvail }) {
   );
 }
 
-/* ─────────────── Step 2: channels (pass-through) ─────────────── */
+/* ─────────────── Section 3: channels (pass-through) ─────────────── */
 
-function Step2Channels({ t, framework }) {
+function SectionChannels({ t, framework }) {
   const docs = framework === "ironclaw" ? "https://docs.near.ai/agents/quickstart"
             : framework === "openclaw"   ? "https://openclaw.ai/docs/channels"
             : "https://hermes-agent.nousresearch.com/";
@@ -140,14 +126,14 @@ function Step2Channels({ t, framework }) {
     { icon: Bot,           name: "Custom webhook",   doc: "webhook",   hint: "POST endpoint you control" },
   ];
   return (
-    <Section t={t} step={2} title="Connect channels (optional)"
+    <Section t={t} step={3} title="Connect channels (optional)"
              hint="Channels are wired inside your chosen framework, not on IronShield. Pick where your agent should reach users — we'll deep-link you to the setup guide.">
       <div style={{
         padding: "10px 14px", marginBottom: 14, borderRadius: 10,
         background: `${t.accent}10`, border: `1px solid ${t.border}`,
         fontSize: 12.5, color: t.textMuted,
       }}>
-        <strong style={{ color: t.white }}>Heads up —</strong> IronShield doesn't run Telegram bots or Discord apps for you. Your framework does. Skip this step if you'll wire channels later.
+        <strong style={{ color: t.white }}>Heads up —</strong> IronShield doesn't run Telegram bots or Discord apps for you. Your framework does. Skip this section if you'll wire channels later.
       </div>
       <div style={{
         display: "grid", gap: 10,
@@ -169,9 +155,9 @@ function Step2Channels({ t, framework }) {
   );
 }
 
-/* ─────────────── Step 3: framework + credentials ─────────────── */
+/* ─────────────── Section 2: framework + credentials ─────────────── */
 
-function Step3Framework({ t, state, set, validateFn }) {
+function SectionFramework({ t, state, set, validateFn }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const def = FRAMEWORK_DEFS[state.framework];
@@ -195,7 +181,7 @@ function Step3Framework({ t, state, set, validateFn }) {
   };
 
   return (
-    <Section t={t} step={3} title="Choose framework"
+    <Section t={t} step={2} title="Choose framework"
              hint="Where does your agent actually run? IronShield manages identity + skills; the framework runs the LLM.">
       <div style={{
         display: "grid", gap: 10, marginBottom: 18,
@@ -265,40 +251,6 @@ function Step3Framework({ t, state, set, validateFn }) {
   );
 }
 
-/* ─────────────── Step 4: review + launch ─────────────── */
-
-function Step4Review({ t, state }) {
-  const def = FRAMEWORK_DEFS[state.framework];
-  return (
-    <Section t={t} step={4} title="Review + launch"
-             hint="We'll register the agent on-chain and persist the framework connection in one approval.">
-      <div style={{
-        display: "grid", gap: 0,
-        gridTemplateColumns: "max-content 1fr",
-        padding: 14, background: t.bgSurface,
-        border: `1px solid ${t.border}`, borderRadius: 12,
-        rowGap: 6, columnGap: 16, fontSize: 13,
-      }}>
-        <Row label="Name"        value={state.name || "—"} t={t} />
-        <Row label="Handle"      value={state.handle ? `@${state.handle}` : "—"} t={t} />
-        <Row label="Personality" value={state.personality} t={t} />
-        <Row label="Framework"   value={def?.title || "—"} t={t} />
-        <Row label="External ID" value={state.cred.external_id || "—"} t={t} />
-        <Row label="Endpoint"    value={state.cred.endpoint || "default"} t={t} />
-      </div>
-    </Section>
-  );
-}
-
-function Row({ label, value, t }) {
-  return (
-    <>
-      <span style={{ color: t.textMuted, fontSize: 12 }}>{label}</span>
-      <span style={{ color: t.white, fontFamily: "var(--font-jetbrains-mono), monospace", fontSize: 12.5 }}>{value}</span>
-    </>
-  );
-}
-
 /* ─────────────── Right rail: live preview ─────────────── */
 
 function PreviewRail({ t, state }) {
@@ -362,7 +314,7 @@ function SummaryRow({ t, k, v }) {
 /* ─────────────── Helpers ─────────────── */
 
 const Section = ({ t, step, title, hint, children }) => (
-  <section style={{
+  <section className="ix-wizard-section" style={{
     background: t.bgCard, border: `1px solid ${t.border}`,
     borderRadius: 14, padding: 22, marginBottom: 14,
   }}>
@@ -388,7 +340,8 @@ const Grid = ({ children }) => (
 );
 
 const Field = ({ t, label, hint, span = 1, children }) => (
-  <div style={{ gridColumn: span === 2 ? "span 2" : undefined, minWidth: 0 }}>
+  <div className="ix-wizard-field"
+       style={{ gridColumn: span === 2 ? "span 2" : undefined, minWidth: 0 }}>
     <div style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 600, marginBottom: 6 }}>{label}</div>
     {children}
     {hint && <div style={{ fontSize: 11, color: t.textDim, marginTop: 4 }}>{hint}</div>}
@@ -450,8 +403,6 @@ const secondaryBtn = (t, busy) => ({
 
 /* ─────────────── Page ─────────────── */
 
-const TOTAL_STEPS = 4;
-
 export default function AgentCreatorWizard() {
   const t = useTheme();
   const { connected, address, showModal } = useWallet?.() || {};
@@ -462,7 +413,6 @@ export default function AgentCreatorWizard() {
   // button label between "first agent" and "additional agent".
   const hasPrimary = Boolean(agent.profile);
 
-  const [step, setStep] = useState(1);
   const [state, setState] = useState({
     name: "", handle: "", bio: "", avatarUrl: defaultAvatar(), personality: "Helpful",
     framework: "openclaw",
@@ -476,15 +426,16 @@ export default function AgentCreatorWizard() {
   const handleValid = useMemo(() =>
     /^[a-z0-9_-]{3,32}$/.test(state.handle), [state.handle]);
 
-  const stepValid = useMemo(() => {
-    if (step === 1) return state.name.length >= 1 && handleValid;
-    if (step === 3) {
-      const def = FRAMEWORK_DEFS[state.framework];
-      const required = def.fields.filter(f => f.required).map(f => f.key);
-      return required.every(k => state.cred[k] && state.cred[k].length > 0);
-    }
-    return true;
-  }, [step, state, handleValid]);
+  // Single-page form: gate Launch on every required field across all
+  // sections. Identity needs name + valid handle, framework section
+  // needs every required cred for the chosen framework. Channels are
+  // pass-through and don't gate launch.
+  const canLaunch = useMemo(() => {
+    if (state.name.length < 1 || !handleValid) return false;
+    const def = FRAMEWORK_DEFS[state.framework];
+    const required = def.fields.filter(f => f.required).map(f => f.key);
+    return required.every(k => state.cred[k] && state.cred[k].length > 0);
+  }, [state, handleValid]);
 
   const launch = async () => {
     setLaunching(true);
@@ -589,25 +540,39 @@ export default function AgentCreatorWizard() {
 
   return (
     <>
-      <header style={{ marginBottom: 22 }}>
-        <h1 style={{
-          fontSize: "clamp(24px, 2.4vw, 32px)", margin: 0,
-          fontWeight: 800, color: t.white, letterSpacing: -0.4,
-        }}>
-          {hasPrimary ? "Add another agent" : "Launch your first agent"}
-          <span style={{
-            fontSize: 11, padding: "3px 8px", verticalAlign: "middle",
-            background: `${t.accent}22`, color: t.accent,
-            borderRadius: 999, marginLeft: 8, fontWeight: 700,
-            letterSpacing: 1.2,
-          }}>BETA</span>
-        </h1>
-        <p style={{ fontSize: 13, color: t.textMuted, marginTop: 6 }}>
-          Bring your agent or build one — IronShield wraps it with NEAR identity, skills, and a control plane.
-        </p>
-      </header>
+      <header style={{
+        display: "flex", alignItems: "flex-end", justifyContent: "space-between",
+        gap: 16, marginBottom: 22, flexWrap: "wrap",
+      }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{
+            fontSize: "clamp(24px, 2.4vw, 32px)", margin: 0,
+            fontWeight: 800, color: t.white, letterSpacing: -0.4,
+          }}>
+            {hasPrimary ? "Add another agent" : "Launch your first agent"}
+            <span style={{
+              fontSize: 11, padding: "3px 8px", verticalAlign: "middle",
+              background: `${t.accent}22`, color: t.accent,
+              borderRadius: 999, marginLeft: 8, fontWeight: 700,
+              letterSpacing: 1.2,
+            }}>BETA</span>
+          </h1>
+          <p style={{ fontSize: 13, color: t.textMuted, marginTop: 6, maxWidth: 640 }}>
+            Bring your agent or build one — IronShield wraps it with NEAR-native identity, a skills marketplace, and a cross-framework control plane. We don't run the runtime; your framework does.
+          </p>
+        </div>
 
-      <Stepper t={t} step={step} total={TOTAL_STEPS} />
+        {/* Top-right Launch CTA — duplicated from the bottom button so
+            users with completed forms don't have to scroll to launch.
+            On phones it goes full-width below the title. */}
+        <button type="button" onClick={launch} disabled={!canLaunch || launching}
+                className="ix-wizard-header-cta"
+                style={{ ...primaryBtn(t, !canLaunch || launching), justifyContent: "center" }}>
+          {launching
+            ? <><Loader2 size={13} style={{ animation: "ma-spin 0.9s linear infinite" }} /> Launching…</>
+            : <><Plus size={13} /> Launch agent</>}
+        </button>
+      </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 320px", gap: 18 }} className="ix-wizard-shell">
         <div>
@@ -619,32 +584,31 @@ export default function AgentCreatorWizard() {
             }}>{error}</div>
           )}
 
-          {step === 1 && <Step1Identity t={t} state={state} set={set} isHandleAvail={handleValid} />}
-          {step === 2 && <Step2Channels t={t} framework={state.framework} />}
-          {step === 3 && <Step3Framework t={t} state={state} set={set} validateFn={conn.validate} />}
-          {step === 4 && <Step4Review t={t} state={state} />}
+          <SectionIdentity  t={t} state={state} set={set} isHandleAvail={handleValid} />
+          <SectionFramework t={t} state={state} set={set} validateFn={conn.validate} />
+          <SectionChannels  t={t} framework={state.framework} />
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-            <button type="button" onClick={() => setStep(s => Math.max(1, s - 1))}
-                    disabled={step === 1 || launching}
-                    style={secondaryBtn(t, step === 1 || launching)}>
-              <ArrowLeft size={13} /> Back
+          {/* Bottom Launch row — primary CTA + a small explainer that
+              clarifies what actually happens on click. Helps remove
+              the "what am I about to approve in my wallet?" anxiety. */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 16, marginTop: 6, padding: "16px 18px",
+            background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14,
+            flexWrap: "wrap",
+          }}>
+            <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.55, minWidth: 0, flex: "1 1 280px" }}>
+              <strong style={{ color: t.white, display: "block", marginBottom: 2 }}>
+                Ready to launch?
+              </strong>
+              We'll register your agent on-chain and persist the framework connection in one wallet approval. Auth tokens stay encrypted in our backend — never on-chain.
+            </div>
+            <button type="button" onClick={launch} disabled={!canLaunch || launching}
+                    style={primaryBtn(t, !canLaunch || launching)}>
+              {launching
+                ? <><Loader2 size={13} style={{ animation: "ma-spin 0.9s linear infinite" }} /> Launching…</>
+                : <><Plus size={13} /> Launch agent</>}
             </button>
-
-            {step < TOTAL_STEPS ? (
-              <button type="button" onClick={() => setStep(s => s + 1)}
-                      disabled={!stepValid || launching}
-                      style={primaryBtn(t, !stepValid || launching)}>
-                Next <ArrowRight size={13} />
-              </button>
-            ) : (
-              <button type="button" onClick={launch} disabled={launching}
-                      style={primaryBtn(t, launching)}>
-                {launching
-                  ? <><Loader2 size={13} style={{ animation: "ma-spin 0.9s linear infinite" }} /> Launching…</>
-                  : <><Plus size={13} /> Launch agent</>}
-              </button>
-            )}
           </div>
         </div>
 
@@ -660,7 +624,21 @@ export default function AgentCreatorWizard() {
           .ix-wizard-rail  { display: none; }
         }
         @media (max-width: 720px) {
-          .ix-wizard-grid { grid-template-columns: 1fr !important; }
+          /* One column for the form grid. Also force any field that
+             requested span:2 back down to a single column — otherwise
+             the inline gridColumn:"span 2" creates an implicit second
+             track and items overlap. */
+          .ix-wizard-grid  { grid-template-columns: 1fr !important; }
+          .ix-wizard-field { grid-column: auto !important; }
+
+          /* Section card padding tightens on phones — 22px on a 343px-
+             wide viewport eats half the screen. */
+          .ix-wizard-section { padding: 16px !important; }
+
+          /* Header CTA stacks below the title on phones. The title +
+             subtitle form one block; the launch button gets full width
+             below so it's tappable. */
+          .ix-wizard-header-cta { width: 100%; }
         }
       `}</style>
     </>

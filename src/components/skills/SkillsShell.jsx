@@ -28,14 +28,19 @@ import { useEffect, useState } from "react";
 import {
   Zap, Search, Bell, ChevronDown, Menu, X as XIcon,
   Compass, LayoutGrid, Trophy, Sparkles, Crown, TrendingUp,
+  Bot, Users, Wrench, ArrowLeft,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 
+// Top tabs lead with My Agents because IronShield is a launchpad +
+// command center for agents — the marketplace is the value-add, not
+// the primary surface. Order matters: leftmost tab = product's
+// primary action.
 const TOP_TABS = [
-  { key: "marketplace",    label: "Marketplace",    href: "/skills"        },
-  { key: "my-skills",      label: "My Skills",      href: "/skills/mine"   },
+  { key: "my-agents",      label: "My Agents",      href: "/agents/me"        },
+  { key: "marketplace",    label: "Marketplace",    href: "/skills"           },
   { key: "analytics",      label: "Analytics",      href: "/skills/analytics" },
-  { key: "documentation",  label: "Documentation",  href: "/docs/skills"   },
+  { key: "documentation",  label: "Docs",           href: "/docs/skills"      },
 ];
 
 const SIDEBAR_PRIMARY = [
@@ -45,6 +50,17 @@ const SIDEBAR_PRIMARY = [
   { key: "new",          label: "New & Noteworthy", Icon: Sparkles,   href: "/skills/new"        },
   { key: "top-paid",     label: "Top Paid",         Icon: Crown,      href: "/skills/paid"       },
   { key: "trending",     label: "Trending",         Icon: TrendingUp, href: "/skills/trending"   },
+];
+
+// CREATE block — the launchpad surfaces. IronShield's primary product is
+// the agent flow (launch + manage); the skills marketplace is the
+// value-add. Putting these here makes /agents/create discoverable from
+// anywhere in the shell instead of buried as a route only the wizard CTA
+// could reach.
+const SIDEBAR_CREATE = [
+  { key: "create-agent", label: "Create Agent", Icon: Bot,    href: "/agents/create", badge: "New" },
+  { key: "my-agents",    label: "My Agents",    Icon: Users,  href: "/agents/me"                    },
+  { key: "my-skills",    label: "My Skills",    Icon: Wrench, href: "/skills/mine"                  },
 ];
 
 const SIDEBAR_CATEGORIES = [
@@ -69,10 +85,19 @@ function TopNav({ t, onToggleDrawer, onOpenConnect }) {
 
   const isActive = (href) => {
     if (href === "/skills") {
-      // Marketplace tab is active on /skills exactly and all other
-      // /skills/* routes not covered by a more specific top tab.
+      // Marketplace tab is active on /skills exactly and any /skills/*
+      // route not claimed by a more specific top tab. The "more specific"
+      // tabs are anything else under /skills (today: /skills/analytics).
+      const moreSpecific = TOP_TABS
+        .filter(x => x.href !== "/skills" && x.href.startsWith("/skills/"));
       return pathname === "/skills" || pathname === "/skills/"
-        || (pathname.startsWith("/skills/") && !TOP_TABS.slice(1).some(x => pathname.startsWith(x.href)));
+        || (pathname.startsWith("/skills/") && !moreSpecific.some(x => pathname.startsWith(x.href)));
+    }
+    if (href === "/agents/me") {
+      // My Agents covers the whole /agents/* surface inside this shell:
+      // /agents/me, /agents/create, /agents/configure, /agents/view.
+      // (/agents itself is the public directory and uses AppShell, not this shell.)
+      return pathname.startsWith("/agents/");
     }
     return pathname === href || pathname.startsWith(href + "/");
   };
@@ -101,7 +126,10 @@ function TopNav({ t, onToggleDrawer, onOpenConnect }) {
         <Menu size={20} />
       </button>
 
-      <Link href="/skills" aria-label="IronShield Skills" style={{
+      {/* Wordmark — links to /agents/me (the launchpad/command-center
+          home), not /skills. The shell is no longer skills-only; it's
+          the agent-platform shell, with the marketplace as one section. */}
+      <Link href="/agents/me" aria-label="IronShield" style={{
         display: "inline-flex", alignItems: "center", gap: 10,
         textDecoration: "none", color: t.white,
       }}>
@@ -114,11 +142,7 @@ function TopNav({ t, onToggleDrawer, onOpenConnect }) {
           <Zap size={16} color="#fff" strokeWidth={2.6} />
         </span>
         <span style={{ fontWeight: 800, letterSpacing: -0.3, fontSize: 16, whiteSpace: "nowrap" }}>
-          IronShield <span style={{
-            background: "linear-gradient(90deg, #60a5fa, #a855f7)",
-            WebkitBackgroundClip: "text", backgroundClip: "text",
-            WebkitTextFillColor: "transparent", color: "transparent",
-          }}>Skills</span>
+          IronShield
         </span>
       </Link>
 
@@ -230,7 +254,7 @@ function TopNav({ t, onToggleDrawer, onOpenConnect }) {
    ────────────────────────────────────────────────────────────── */
 
 function SidebarItem({ item, active, t }) {
-  const { Icon, label, href } = item;
+  const { Icon, label, href, badge } = item;
   return (
     <Link href={href} style={{
       position: "relative",
@@ -249,7 +273,14 @@ function SidebarItem({ item, active, t }) {
         }} />
       )}
       <Icon size={15} style={{ flexShrink: 0 }} />
-      {label}
+      <span style={{ flex: 1, minWidth: 0 }}>{label}</span>
+      {badge && (
+        <span style={{
+          fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
+          background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+          color: "#fff", letterSpacing: 0.4,
+        }}>{badge}</span>
+      )}
     </Link>
   );
 }
@@ -287,11 +318,94 @@ function LeftSidebar({ t, onClose }) {
         </button>
       )}
 
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {SIDEBAR_PRIMARY.map(item => (
-          <SidebarItem key={item.key} item={item} active={isActive(item.href)} t={t} />
-        ))}
-      </nav>
+      {/* Back-out — the SkillsShell is a self-contained section of the
+          larger app. Without an explicit exit, users land in here from
+          a sidebar link in AppShell and have no way home. This pins
+          a subtle "Back to IronShield" row to the top of the sidebar. */}
+      <Link href="/feed" style={{
+        display: "inline-flex", alignItems: "center", gap: 8,
+        padding: "8px 14px", borderRadius: 10,
+        fontSize: 12, fontWeight: 600, color: t.textDim,
+        textDecoration: "none",
+        border: `1px dashed ${t.border}`,
+        background: "transparent",
+      }}>
+        <ArrowLeft size={13} />
+        Back to IronShield
+      </Link>
+
+      {/* Mobile-only section nav — the top tabs (My Agents / Marketplace /
+          Analytics / Docs) are hidden in the topbar on phones to make
+          room for the hamburger + profile chip. Re-surface them inside
+          the drawer so Analytics and Docs are still reachable. Hidden
+          on desktop via .sk-drawer-only. */}
+      <div className="sk-drawer-only">
+        <div style={{
+          padding: "0 14px 8px",
+          fontSize: 10, fontWeight: 700, letterSpacing: 1.2,
+          textTransform: "uppercase", color: t.textDim,
+        }}>
+          Sections
+        </div>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {TOP_TABS.map(tab => {
+            const active = pathname === tab.href || pathname === tab.href + "/"
+              || (tab.href !== "/skills" && pathname.startsWith(tab.href + "/"));
+            return (
+              <Link key={tab.key} href={tab.href} style={{
+                position: "relative",
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 14px", borderRadius: 10,
+                fontSize: 13, fontWeight: active ? 700 : 500,
+                color: active ? t.white : t.textMuted,
+                background: active ? `linear-gradient(90deg, ${t.accent}20, transparent)` : "transparent",
+                textDecoration: "none",
+              }}>
+                {active && (
+                  <span style={{
+                    position: "absolute", left: 0, top: 6, bottom: 6, width: 3,
+                    background: `linear-gradient(180deg, #a855f7, ${t.accent})`,
+                    borderRadius: 2, boxShadow: `0 0 10px #a855f7`,
+                  }} />
+                )}
+                {tab.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* CREATE first — launching an agent is the primary action of the
+          shell. Marketplace browsing comes underneath. */}
+      <div>
+        <div style={{
+          padding: "0 14px 8px",
+          fontSize: 10, fontWeight: 700, letterSpacing: 1.2,
+          textTransform: "uppercase", color: t.textDim,
+        }}>
+          Launchpad
+        </div>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {SIDEBAR_CREATE.map(item => (
+            <SidebarItem key={item.key} item={item} active={isActive(item.href)} t={t} />
+          ))}
+        </nav>
+      </div>
+
+      <div>
+        <div style={{
+          padding: "0 14px 8px",
+          fontSize: 10, fontWeight: 700, letterSpacing: 1.2,
+          textTransform: "uppercase", color: t.textDim,
+        }}>
+          Marketplace
+        </div>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {SIDEBAR_PRIMARY.map(item => (
+            <SidebarItem key={item.key} item={item} active={isActive(item.href)} t={t} />
+          ))}
+        </nav>
+      </div>
 
       <div>
         <div style={{
@@ -339,10 +453,10 @@ function EarnCta({ t }) {
       textAlign: "center",
     }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: t.white, marginBottom: 4 }}>
-        Earn with your skills
+        Earn with your agents
       </div>
       <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-        Create once, earn forever.
+        Publish agents and skills to earn from every install.
       </div>
       <div aria-hidden style={{
         width: 84, height: 84, margin: "0 auto 12px",
@@ -351,9 +465,9 @@ function EarnCta({ t }) {
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 38,
       }}>
-        💰
+        🤖
       </div>
-      <Link href="/skills/create" style={{
+      <Link href="/agents/create" style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
         width: "100%", padding: "9px 14px",
         background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
@@ -362,7 +476,7 @@ function EarnCta({ t }) {
         textDecoration: "none",
         boxShadow: `0 8px 22px rgba(168,85,247,0.35)`,
       }}>
-        Create a skill
+        Create your first agent
       </Link>
     </div>
   );
@@ -441,10 +555,19 @@ export default function SkillsShell({ children }) {
       <style jsx global>{`
         /* Desktop default already rendered above; these are overrides. */
 
-        /* Tablet: tighten sidebar + main padding */
+        /* The Sections block lives inside the sidebar but only makes
+           sense as a re-surface of the (mobile-hidden) top tabs. Hide
+           on desktop. */
+        .sk-drawer-only { display: none; }
+
+        /* Tablet: tighten sidebar + main padding. Also hide the search
+           bar — at this width the topbar (logo + tabs + search + notif
+           + profile) overflows past the viewport, and search is the
+           least load-bearing of the lot. */
         @media (max-width: 1100px) {
-          .sk-main { padding: 24px 22px 80px !important; }
+          .sk-main    { padding: 24px 22px 80px !important; }
           .sk-sidebar { width: 220px !important; }
+          .sk-search  { display: none !important; }
         }
 
         /* Mobile: hide sidebar inline, show hamburger, compress nav */
@@ -455,8 +578,9 @@ export default function SkillsShell({ children }) {
           .sk-toptabs { display: none !important; }
           .sk-search { display: none !important; }
           .sk-notif { display: none !important; }
-          .sk-main { padding: 20px 16px 100px !important; }
+          .sk-main { padding: 20px 14px 100px !important; }
           .sk-profile > span:nth-of-type(2) { display: none !important; }
+          .sk-drawer-only { display: block; }
         }
 
         /* Very narrow: keep profile chip minimal */
