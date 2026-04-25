@@ -488,6 +488,43 @@ export default function useAgent() {
     return { subAccountId, publicKey, result };
   }, [address, selector, getSubAccountId, subAccountExists, fetchProfile]);
 
+  // ── Phase 8: external-framework connections ─────────────────────────────
+  // Auth tokens never go on-chain — those stay in the backend connection
+  // store. This map only holds the public binding so the framework an
+  // agent runs on is auditable. The wizard's launch flow calls both the
+  // on-chain set_agent_connection AND the backend's /api/agents/connect
+  // (which carries the auth blob, encrypted at rest).
+
+  const setAgentConnection = useCallback(async ({
+    agent_account, framework, external_id = "", endpoint = "", meta = null,
+  }) => {
+    return callMethod(STAKING_CONTRACT, "set_agent_connection", {
+      agent_account, framework,
+      external_id,
+      endpoint,
+      meta,
+    }, "0");
+  }, [callMethod]);
+
+  const removeAgentConnection = useCallback(async ({ agent_account, framework }) => {
+    return callMethod(STAKING_CONTRACT, "remove_agent_connection", {
+      agent_account, framework,
+    }, "0");
+  }, [callMethod]);
+
+  const getAgentConnections = useCallback(async (agent_account) => {
+    if (!agent_account) return [];
+    const rows = await viewMethod(STAKING_CONTRACT, "get_agent_connections", { agent_account });
+    return Array.isArray(rows) ? rows : [];
+  }, [viewMethod]);
+
+  const listAgentConnectionsForOwner = useCallback(async (owner = address) => {
+    if (!owner) return [];
+    const rows = await viewMethod(STAKING_CONTRACT, "list_agent_connections_for_owner", { owner });
+    // Each entry is [agent_account, AgentConnection].
+    return Array.isArray(rows) ? rows.map(([acct, conn]) => ({ agent_account: acct, ...conn })) : [];
+  }, [viewMethod, address]);
+
   // ── Phase 7 Sub-PR C: multi-agent per wallet ─────────────────────────────
   // Secondary agents live on separate NEAR sub-accounts named agent<N>.<owner>
   // with N = 2, 3, ... Each one carries its own handle + bio + points ledger
@@ -758,6 +795,8 @@ export default function useAgent() {
     setAgentPermissions, setAgentDailyLimit, getAgentPermissions,
     // Phase 7 Sub-PR C: multi-agent per wallet
     listSubAgents, getSubAgent, createSubAgent, updateSubAgentBio, removeSubAgent,
+    // Phase 8: external-framework connections
+    setAgentConnection, removeAgentConnection, getAgentConnections, listAgentConnectionsForOwner,
     // leaderboard
     leaderboard,
     leaderboardLoading,

@@ -508,19 +508,38 @@ export default function AgentCreatorWizard() {
       }
       if (!agent_account) throw new Error("Couldn't allocate an agent identity");
 
-      // 2. backend: persist framework connection.
+      // 2. backend: persist framework connection (carries auth, encrypted).
+      const meta = {
+        display_name: state.name,
+        avatar_url:   state.avatarUrl || null,
+        personality:  state.personality,
+      };
       await conn.connect({
         agent_account,
         framework:   state.framework,
         external_id: state.cred.external_id || null,
         endpoint:    state.cred.endpoint    || null,
         auth:        state.cred.auth        || null,
-        meta: {
-          display_name: state.name,
-          avatar_url:   state.avatarUrl || null,
-          personality:  state.personality,
-        },
+        meta,
       });
+
+      // 3. on-chain: register the *public* binding so the framework
+      //    attached to this agent is auditable without trusting our
+      //    backend. Auth never goes here — only framework + endpoint
+      //    + display metadata. Best-effort: a chain-write failure
+      //    doesn't roll back the backend connection (the user can
+      //    retry from the dashboard).
+      try {
+        await agent.setAgentConnection?.({
+          agent_account,
+          framework:   state.framework,
+          external_id: state.cred.external_id || "",
+          endpoint:    state.cred.endpoint    || "",
+          meta:        JSON.stringify(meta).slice(0, 1000),
+        });
+      } catch (chainErr) {
+        console.warn("On-chain set_agent_connection failed (backend already persisted):", chainErr?.message || chainErr);
+      }
 
       // 3. route to the dashboard.
       if (typeof window !== "undefined") {
