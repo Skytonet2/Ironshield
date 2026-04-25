@@ -48,7 +48,7 @@ Live on NEAR mainnet at [`ironshield.near`](https://nearblocks.io/address/ironsh
 | Stream | Mechanism |
 |---|---|
 | Skill marketplace | 15% of every install fee → treasury, 85% → creator. On-chain enforced. |
-| Token-volume fees | 20% of NEAR token-volume fees route to treasury |
+| NewsCoin trading fees | 80% of fees from all buys/sells on the NewsCoin terminal → treasury |
 | Pay-per-report | $IRONCLAW spent on full scam / contract audits |
 | IronShield Pro | Stake-lock $IRONCLAW for Pro perks (higher AI budget, badge, themes) |
 | Treasury use | Funds IronClaw inference + $IRONCLAW buybacks |
