@@ -1,10 +1,12 @@
 # IronShield
 
-**NEAR-native governance protocol that controls IronClaw, the AI agent runtime.**
+**NEAR-native governance protocol designed for autonomous IronClaw deployments.**
 
-$IRONCLAW token holders vote on the agent's system prompt and mission. When a proposal passes, the vote rewrites IronClaw's runtime config — the next AI call uses the new prompt. End-to-end on-chain governance of agent behavior, not metadata.
+Token holders vote on the deployed agent's system prompt and mission. When a proposal passes, the vote rewrites that agent's runtime config — the next AI call uses the new prompt. End-to-end on-chain governance of agent behavior, not metadata.
 
-> Anyone can run IronClaw locally. To run it autonomously — making decisions, holding funds, acting for others — you deploy through IronShield, where the community sets the rules.
+Today the loop runs on Vanguard NFT pre-token governance (proven end-to-end on mainnet). $IRONCLAW launches at TGE and broadens participation.
+
+> Anyone can run IronClaw locally. To run it autonomously — making decisions, holding funds, acting for others — IronShield is the governance pattern that makes the chain of authority cryptographically verifiable.
 
 Live on NEAR mainnet at [`ironshield.near`](https://nearblocks.io/address/ironshield.near) — Phase 8.
 
