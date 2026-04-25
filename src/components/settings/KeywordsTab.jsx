@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, X, Eye, EyeOff } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import { tabCard, tabTitle, btn, input } from "./_shared";
 
 function loadLocal() {
@@ -33,9 +34,9 @@ export default function KeywordsTab() {
     setKws(next);
     saveLocal(next);
     if (address) {
-      fetch(`${API}/api/feed/keywords`, {
+      apiFetch(`/api/feed/keywords`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "x-wallet": address },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next),
       }).catch(() => {});
     }

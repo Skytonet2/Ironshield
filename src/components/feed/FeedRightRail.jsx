@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   Shield, CheckCircle2, Users, Coins, Flame, ArrowUpRight, ArrowDownRight,
   TrendingUp, Sparkles, Activity,
@@ -352,9 +353,9 @@ function FollowRow({ user, t, viewerAddress }) {
     const next = !following;
     setFollowing(next);
     try {
-      await fetch(`${BACKEND_BASE}/api/social/follow`, {
+      await apiFetch(`/api/social/follow`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": viewerAddress },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: handle, on: next }),
       });
     } catch { setFollowing(!next); }

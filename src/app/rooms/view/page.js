@@ -16,6 +16,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import LiveStage from "@/components/LiveStage";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 function shortWallet(w = "") { return w?.length > 18 ? `${w.slice(0, 8)}…${w.slice(-6)}` : (w || ""); }
 function timeLeft(endsAt) {
@@ -135,9 +136,9 @@ function RoomViewInner() {
   const join = async (role = "listener") => {
     if (!wallet) { openWallet(); return; }
     try {
-      const r = await fetch(`${API}/api/rooms/${roomId}/join`, {
+      const r = await apiFetch(`/api/rooms/${roomId}/join`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role }),
       });
       const j = await r.json();
@@ -156,9 +157,9 @@ function RoomViewInner() {
     const isOpen = room?.accessType === "open";
     if (isOpen) {
       try {
-        const r = await fetch(`${API}/api/rooms/${roomId}/join`, {
+        const r = await apiFetch(`/api/rooms/${roomId}/join`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-wallet": wallet },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ role: "speaker" }),
         });
         const j = await r.json();
@@ -175,8 +176,8 @@ function RoomViewInner() {
   const leave = async () => {
     if (!wallet) return;
     try {
-      await fetch(`${API}/api/rooms/${roomId}/leave`, {
-        method: "POST", headers: { "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/leave`, {
+        method: "POST",
       });
     } catch {}
     if (typeof window !== "undefined") window.location.href = "/rooms/";
@@ -187,8 +188,8 @@ function RoomViewInner() {
     const next = !handRaised;
     setHandRaised(next);
     try {
-      await fetch(`${API}/api/rooms/${roomId}/raise`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/raise`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raised: next }),
       });
     } catch {}
@@ -198,8 +199,8 @@ function RoomViewInner() {
     if (!wallet || !joined || !draftMsg.trim() || sending) return;
     setSending(true);
     try {
-      const r = await fetch(`${API}/api/rooms/${roomId}/messages`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      const r = await apiFetch(`/api/rooms/${roomId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: draftMsg.trim(), isAlphaCall }),
       });
       if (!r.ok) {
@@ -215,8 +216,8 @@ function RoomViewInner() {
   const voteAlpha = async (msgId, dir) => {
     if (!wallet) { openWallet(); return; }
     try {
-      await fetch(`${API}/api/rooms/${roomId}/messages/${msgId}/vote`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/messages/${msgId}/vote`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dir }),
       });
       // Optimistic bump
@@ -229,8 +230,8 @@ function RoomViewInner() {
   const promote = async (userId, role) => {
     if (!wallet || !isHost) return;
     try {
-      await fetch(`${API}/api/rooms/${roomId}/promote`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/promote`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, role }),
       });
       loadRoom();
@@ -241,8 +242,8 @@ function RoomViewInner() {
     if (!wallet || !isHost) return;
     if (!confirm("Remove this participant?")) return;
     try {
-      await fetch(`${API}/api/rooms/${roomId}/kick`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/kick`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
       loadRoom();
@@ -254,8 +255,8 @@ function RoomViewInner() {
     if (!confirm("End the room? Stake refunds if no rules were broken.")) return;
     setClosing(true);
     try {
-      const r = await fetch(`${API}/api/rooms/${roomId}/close`, {
-        method: "POST", headers: { "x-wallet": wallet },
+      const r = await apiFetch(`/api/rooms/${roomId}/close`, {
+        method: "POST",
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "close failed");

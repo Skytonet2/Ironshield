@@ -16,6 +16,7 @@ import FeedRightRail from "@/components/feed/FeedRightRail";
 import ReferrerFollowPrompt from "@/components/feed/ReferrerFollowPrompt";
 import { m, feedContainerVariants, feedCardVariants } from "@/lib/motion";
 import { TipModal } from "@/components/TipModal";
+import { apiFetch } from "@/lib/apiFetch";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -191,9 +192,9 @@ export default function FeedPage() {
       (p?.author?.username || "").toLowerCase() !== username.toLowerCase()
     ));
     try {
-      await fetch(`${BACKEND_BASE}/api/feed/mute`, {
+      await apiFetch(`/api/feed/mute`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetUsername: username }),
       });
       refreshMuted();
@@ -207,9 +208,8 @@ export default function FeedPage() {
     const prev = posts;
     setPosts((ps) => ps.filter((p) => p.id !== post.id));
     try {
-      const r = await fetch(`${BACKEND_BASE}/api/posts/${post.id}`, {
+      const r = await apiFetch(`/api/posts/${post.id}`, {
         method: "DELETE",
-        headers: { "x-wallet": wallet },
       });
       if (!r.ok) throw new Error(`delete failed (${r.status})`);
     } catch (e) {
@@ -233,9 +233,9 @@ export default function FeedPage() {
       likes: Math.max(0, (post.likes || 0) + (next ? 1 : -1)),
     });
     try {
-      await fetch(`${BACKEND_BASE}/api/social/like`, {
+      await apiFetch(`/api/social/like`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId: post.id, on: next }),
       });
     } catch {
@@ -251,9 +251,9 @@ export default function FeedPage() {
       reposts: Math.max(0, (post.reposts || 0) + (next ? 1 : -1)),
     });
     try {
-      await fetch(`${BACKEND_BASE}/api/social/repost`, {
+      await apiFetch(`/api/social/repost`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId: post.id, on: next }),
       });
     } catch {
@@ -270,9 +270,9 @@ export default function FeedPage() {
     const content = String(text || "").trim().slice(0, 500);
     if (!content) return;
     try {
-      await fetch(`${BACKEND_BASE}/api/social/comment`, {
+      await apiFetch(`/api/social/comment`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId: post.id, content }),
       });
       patchPost(post.id, { comments: (post.comments || 0) + 1 });

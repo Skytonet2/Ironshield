@@ -17,6 +17,7 @@ import {
 } from "@/lib/ironclaw";
 import AppShell from "@/components/shell/AppShell";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 const MIN_STAKE_USD = 50;
 
 const ACCESS_OPTIONS = [
@@ -300,9 +301,9 @@ function OpenRoomModal({ t, wallet, selector, openWallet, onClose, onCreated }) 
         durationMins: Number(durationMins),
         accessType,
       });
-      const r = await fetch(`${API}/api/rooms`, {
+      const r = await apiFetch(`/api/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: title.trim(),
           topic: topic.trim(),

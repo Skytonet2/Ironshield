@@ -21,6 +21,7 @@ import { useWallet as useWalletStore } from "@/lib/stores/walletStore";
 import { useSettings } from "@/lib/stores/settingsStore";
 import useNear from "@/hooks/useNear";
 import useViewerProfile from "@/lib/hooks/useViewerProfile";
+import { apiFetch } from "@/lib/apiFetch";
 
 // Heuristic: does this address look like a NEAR account? Accepts `x.near`,
 // `x.tg`, `x.testnet` etc., plus 64-hex implicit accounts. Ethereum addrs
@@ -117,9 +118,9 @@ export default function ComposeBar({ onPosted }) {
     if (!p) return;
     setAiBusy(true);
     try {
-      const r = await fetch(`${API}/api/ai/compose`, {
+      const r = await apiFetch(`/api/ai/compose`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": address || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: p, maxChars: MAX }),
       });
       if (r.ok) {
@@ -164,9 +165,8 @@ export default function ComposeBar({ onPosted }) {
         fd.append("file", file);
         let up;
         try {
-          up = await fetch(`${API}/api/media/upload`, {
+          up = await apiFetch(`/api/media/upload`, {
             method: "POST",
-            headers: address ? { "x-wallet": address } : {},
             body: fd,
           });
         } catch (netErr) {
@@ -259,9 +259,9 @@ export default function ComposeBar({ onPosted }) {
           throw new Error(`On-chain publish failed: ${e.message || "user cancelled"}`);
         }
       }
-      const res = await fetch(`${API}/api/posts`, {
+      const res = await apiFetch(`/api/posts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": address },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content,
           mediaUrls,

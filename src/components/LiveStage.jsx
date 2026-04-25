@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Mic, MicOff, Crown, ShieldAlert, Hand, Loader2 } from "lucide-react";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 // Lazy-loaded so static export doesn't pull livekit-client into every bundle.
 // Wrapped in try/catch so deploys without livekit-client installed still build —
@@ -58,9 +59,9 @@ export default function LiveStage({
     if (!joined || !wallet || !voiceEnabled) return;
     (async () => {
       try {
-        const r = await fetch(`${API}/api/livekit/token`, {
+        const r = await apiFetch(`/api/livekit/token`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-wallet": wallet },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roomId }),
         });
         const j = await r.json();

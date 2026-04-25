@@ -12,18 +12,24 @@ import NewsCoinTerminal from "@/components/NewsCoinTerminal";
 import { lifecycleFor } from "@/lib/newscoinLifecycle";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 const FACTORY = "newscoin-factory.ironshield.near";
 const ORANGE = "#f97316";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function api(path, { method = "GET", body, wallet } = {}) {
+  // GETs still send the legacy x-wallet header for personalization;
+  // mutating calls go through apiFetch which signs them with NEP-413.
+  const isGet = (method || "GET").toUpperCase() === "GET";
   const headers = { "content-type": "application/json" };
-  if (wallet) headers["x-wallet"] = wallet;
-  return fetch(`${API}${path}`, {
+  if (isGet && wallet) headers["x-wallet"] = wallet;
+  const opts = {
     method, headers,
     body: body ? JSON.stringify(body) : undefined,
-  }).then(async r => {
+  };
+  const p = isGet ? fetch(`${API}${path}`, opts) : apiFetch(path, opts);
+  return p.then(async r => {
     const text = await r.text();
     // If the backend returns HTML (e.g. SPA fallback because NEXT_PUBLIC_BACKEND_URL
     // isn't configured in prod), don't crash the UI with "Unexpected token '<'".

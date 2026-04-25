@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { X as XIcon, UserPlus, Sparkles } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 const STORAGE_KEY  = "ironshield:ref-prompt";
 const DISMISS_KEY  = "ironshield:ref-prompt-dismissed";
@@ -39,9 +40,9 @@ export default function ReferrerFollowPrompt() {
     if (!address || !referrer?.wallet) return;
     setBusy(true);
     try {
-      await fetch(`${API}/api/social/follow`, {
+      await apiFetch(`/api/social/follow`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": address },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetWallet: referrer.wallet }),
       });
     } catch {}

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   Award, Rocket, Activity, Crosshair, Users, Store, Trophy, Flame,
   Medal, ChevronDown, Info, Copy as CopyIcon, Check, Pencil, Share2,
@@ -645,9 +646,9 @@ function ReferralsTab({ t, address, stats, onCode }) {
     setSaving(true);
     setErr(null);
     try {
-      const r = await fetch(`${API}/api/rewards/ref-code`, {
+      const r = await apiFetch(`/api/rewards/ref-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": address || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: v }),
       });
       const j = await r.json().catch(() => ({}));

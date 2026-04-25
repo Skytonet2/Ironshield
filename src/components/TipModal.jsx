@@ -18,6 +18,7 @@ import { useTheme } from "@/lib/contexts";
 import { fetchWalletTokens, callTipPost, formatTokenAmount, NATIVE_NEAR } from "@/lib/tokens";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 const PRESETS = [5, 25, 100];
 
@@ -93,9 +94,9 @@ export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped
       setTxHash(hash);
       setStep("processing");
 
-      const r = await fetch(`${API}/api/tips`, {
+      const r = await apiFetch(`/api/tips`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-wallet": wallet },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           postId: post.id,
           tokenContract: selected.contractId,

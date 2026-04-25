@@ -9,6 +9,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Upload, Loader2, Check } from "lucide-react";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { PRESETS, parseAvatar } from "./avatarPresets";
 import AgentAvatar from "./AgentAvatar";
@@ -72,9 +73,9 @@ export default function AvatarPicker({ value, onChange }) {
         onChange(dataUrl);
         return;
       }
-      const r = await fetch(`${API}/api/agents/avatar`, {
+      const r = await apiFetch(`/api/agents/avatar`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": address },
+        headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ data_url: dataUrl }),
       });
       const j = await r.json().catch(() => ({}));

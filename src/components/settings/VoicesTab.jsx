@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import { tabCard, tabTitle, row, rowSub, toggle } from "./_shared";
 
 // Category metadata — keys must match backend/data/voicesPreset.js.
@@ -78,9 +79,9 @@ export default function VoicesTab() {
       const next = { ...prev, categories: { ...prev.categories, [key]: value } };
       savePrefs(next);
       if (address) {
-        fetch(`${API}/api/feed/voices-prefs`, {
+        apiFetch(`/api/feed/voices-prefs`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", "x-wallet": address },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(next),
         }).catch(() => {});
       }

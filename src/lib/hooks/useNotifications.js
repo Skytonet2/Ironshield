@@ -7,6 +7,7 @@
 // when no one's subscribed to save bandwidth.
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/apiFetch";
 
 const POLL_MS = 30_000;
 
@@ -81,9 +82,8 @@ export function useNotifications(wallet) {
     markAllRead: async () => {
       if (!state.wallet) return;
       try {
-        await fetch(`${BACKEND_BASE}/api/notifications/read-all`, {
+        await apiFetch(`/api/notifications/read-all`, {
           method: "POST",
-          headers: { "x-wallet": state.wallet },
         });
         state = {
           ...state,

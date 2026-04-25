@@ -26,6 +26,7 @@ import { TipModal } from "@/components/TipModal";
 import Avatar from "@/components/feed/Avatar";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   Loader2, ArrowLeft, MessageCircle, Send as SendIcon,
   CornerDownRight,
@@ -130,9 +131,9 @@ export default function PostPage() {
     if (!text) return;
     setPosting(true);
     try {
-      const r = await fetch(`${API}/api/social/comment`, {
+      const r = await apiFetch(`/api/social/comment`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": address },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postId: Number(postId),
           content: text,
@@ -192,9 +193,9 @@ export default function PostPage() {
               onLike={async () => {
                 if (!address) return;
                 try {
-                  const r = await fetch(`${API}/api/social/like`, {
+                  const r = await apiFetch(`/api/social/like`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json", "x-wallet": address },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ postId: Number(postId) }),
                   });
                   const j = await r.json();
@@ -204,9 +205,9 @@ export default function PostPage() {
               onRepost={async () => {
                 if (!address) return;
                 try {
-                  const r = await fetch(`${API}/api/social/repost`, {
+                  const r = await apiFetch(`/api/social/repost`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json", "x-wallet": address },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ postId: Number(postId) }),
                   });
                   const j = await r.json();

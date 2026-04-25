@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSettings } from "@/lib/stores/settingsStore";
-import { setWalletState as setApiFetchWalletState } from "@/lib/apiFetch";
+import { apiFetch, setWalletState as setApiFetchWalletState } from "@/lib/apiFetch";
 
 // Cache a single near-api-js Near instance across the whole app. We build it
 // lazily and reuse it for both viewMethod reads (anonymous account) and per-
@@ -173,16 +173,11 @@ export function WalletProvider({ children }) {
     let ref;
     try { ref = localStorage.getItem("ironshield:ref-pending"); } catch {}
     if (!ref) return;
-    const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL
-      ? process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/+$/, "")
-      : (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-        ? "http://localhost:3001"
-        : "https://ironclaw-backend.onrender.com";
     (async () => {
       try {
-        const r = await fetch(`${apiBase}/api/rewards/claim-referrer`, {
+        const r = await apiFetch(`/api/rewards/claim-referrer`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-wallet": address },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code: ref }),
         });
         const j = await r.json().catch(() => ({}));
