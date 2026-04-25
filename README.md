@@ -73,4 +73,4 @@ Live on NEAR mainnet at [`ironshield.near`](https://nearblocks.io/address/ironsh
 
 ## Contact
 
-[ your email / X handle / TG handle here ]
+[ Email:olarewajuoluwaseyifavour@gmial.com / X: https://x.com/SKYTONET_ / TG: https://t.me/skytonet_21 ]
