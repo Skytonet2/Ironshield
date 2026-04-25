@@ -18,11 +18,15 @@ router.post("/", requireWallet, rateLimit("ai"), async (req, res) => {
     // Step 1: Fetch REAL data from APIs
     const realData = await tokenLookup.lookup(query);
 
-    // Step 2: Send real data to AI for analysis
-    const data = await agent.research({ query, queryType, chain, realData });
+    // Step 2: Send real data to AI for analysis. wallet flows in so the
+    // Day 5.3 budget gate can pre-check + post-record this caller's spend.
+    const data = await agent.research({ query, queryType, chain, realData, wallet: req.wallet });
     cache.set(cacheKey, data, 900);
     res.json({ success: true, cached: false, data });
   } catch (err) {
+    if (err.code === "ai-budget-exceeded") {
+      return res.status(402).json({ success: false, error: err.code, used: err.used, cap: err.cap });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });

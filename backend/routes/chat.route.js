@@ -77,9 +77,12 @@ router.post("/", requireWallet, rateLimit("ai"), async (req, res) => {
 
     const enrichedMessage = `${message}${realDataContext}${socialContext}`;
 
-    const response = await agent.chat({ message: enrichedMessage, userId });
+    const response = await agent.chat({ message: enrichedMessage, wallet: req.wallet });
     res.json({ success: true, data: { reply: response } });
   } catch (err) {
+    if (err.code === "ai-budget-exceeded") {
+      return res.status(402).json({ success: false, error: err.code, used: err.used, cap: err.cap });
+    }
     console.error("[Chat] Error:", err.message);
     res.json({ success: false, error: err.message });
   }

@@ -37,7 +37,14 @@ router.post("/compose", requireWallet, rateLimit("ai"), async (req, res, next) =
       });
     }
 
-    const result = await agent.composePost({ prompt, maxChars });
+    let result;
+    try { result = await agent.composePost({ prompt, maxChars, wallet: req.wallet }); }
+    catch (err) {
+      if (err.code === "ai-budget-exceeded") {
+        return res.status(402).json({ error: err.code, used: err.used, cap: err.cap });
+      }
+      throw err;
+    }
     if (!result?.text) {
       return res.status(502).json({ error: "ai_empty_reply" });
     }

@@ -18,10 +18,13 @@ router.post("/", requireWallet, rateLimit("ai"), async (req, res) => {
   if (cached) return res.json({ success: true, cached: true, data: cached });
 
   try {
-    const data = await agent.summarize({ identifier, range, transcript, messageCount });
+    const data = await agent.summarize({ identifier, range, transcript, messageCount, wallet: req.wallet });
     cache.set(cacheKey, data, 1800);
     res.json({ success: true, cached: false, data });
   } catch (err) {
+    if (err.code === "ai-budget-exceeded") {
+      return res.status(402).json({ success: false, error: err.code, used: err.used, cap: err.cap });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });
