@@ -94,24 +94,19 @@ async function webhookOut(rule) {
 async function callSkill(rule) {
   const { owner, agent_account, action } = rule;
   const key = action.skill_key || action.registry_key;
-  if (!key) {
-    return {
-      skill_id: action.skill_id || null,
-      note: "Author-supplied skills aren't runnable yet. Pick a built-in skill (action.skill_key) or wait for the sandboxed runner.",
-    };
-  }
-  const mod = skillRegistry.get(key);
-  if (!mod) throw new Error(`Unknown built-in skill: ${key}`);
+  // Built-in path stays the explicit shortcut for rules wired by the
+  // automation modal. HTTP skills come in via action.category instead
+  // (the dashboard fills it from the on-chain SkillMetadata when the
+  // user picks an http: skill).
+  const category = action.category;
 
-  // Closure over the user's framework adapter — same path the sandbox
-  // uses, so the skill's LLM hops obey whatever framework + auth the
-  // user picked at agent launch.
+  // Build the agent closure regardless of skill type — both built-in
+  // and HTTP runners need the user's framework adapter wired in.
   const list = await store.listForOwner(owner);
   const conn = list.find(c => c.agent_account === agent_account && c.status !== "disconnected");
   if (!conn) throw new Error("No active framework connection on this agent");
   const adapter = adapters.get(conn.framework);
   const auth    = await store.getDecryptedAuth({ owner, agent_account, framework: conn.framework });
-
   const agentFn = ({ message, systemPrompt, meta } = {}) =>
     adapter.sendMessage({
       external_id: conn.external_id,
@@ -122,14 +117,28 @@ async function callSkill(rule) {
       meta,
     });
 
-  return skillRegistry.run({
-    id:  key,
-    ctx: {
-      owner, agent_account,
-      params: action.params || {},
-      agent:  agentFn,
-    },
-  });
+  const ctx = {
+    owner, agent_account,
+    params: action.params || {},
+    agent:  agentFn,
+  };
+
+  if (key) {
+    const mod = skillRegistry.get(key);
+    if (!mod) throw new Error(`Unknown built-in skill: ${key}`);
+    return skillRegistry.run({ id: key, ctx });
+  }
+
+  if (category) {
+    // Lets HTTP skills (and any future runtime kind) flow through
+    // the same dispatch we'd use from /api/skills/run.
+    return skillRegistry.runByCategory({ category, ctx });
+  }
+
+  return {
+    skill_id: action.skill_id || null,
+    note: "Skill action needs a `skill_key` (built-in) or `category` (e.g. \"http:<url>\"). Pick a runnable skill from the marketplace.",
+  };
 }
 
 module.exports = { run, dispatch };

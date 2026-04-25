@@ -261,7 +261,7 @@ function FeaturedCard({ skill, metadata, t, onInstall, installing }) {
       display: "flex", flexDirection: "column", gap: 10,
       minWidth: 0,
     }}>
-      <Link href={`/skills/${skill.id}`} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
+      <Link href={`/skills/view?id=${skill.id}`} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
         <div style={{
           position: "relative",
           height: 80, borderRadius: 10,
@@ -440,7 +440,7 @@ function TopTable({ t, rows, onInstall, installingId }) {
               }}
             >
               <div style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{i + 1}</div>
-              <Link href={`/skills/${skill.id}`} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, textDecoration: "none", color: "inherit" }}>
+              <Link href={`/skills/view?id=${skill.id}`} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, textDecoration: "none", color: "inherit" }}>
                 <span aria-hidden style={{
                   width: 32, height: 32, flexShrink: 0, borderRadius: 8,
                   background: `linear-gradient(135deg, ${accent}33, ${accent}14)`,
@@ -568,7 +568,7 @@ function NewestSkills({ t, rows }) {
           return (
             <Link
               key={skill.id}
-              href={`/skills/${skill.id}`}
+              href={`/skills/view?id=${skill.id}`}
               style={{
                 display: "flex", alignItems: "flex-start", gap: 10,
                 textDecoration: "none", color: "inherit",
