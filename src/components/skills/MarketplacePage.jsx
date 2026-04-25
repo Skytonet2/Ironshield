@@ -24,7 +24,7 @@ import {
   Search, Filter, Zap, Star, CheckCircle2, DollarSign,
   Flame, ArrowRight, Sparkles, ChevronRight, Tag, Package, Plus,
 } from "lucide-react";
-import { useTheme } from "@/lib/contexts";
+import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 
 const YOCTO_PER_NEAR = 1_000_000_000_000_000_000_000_000n;
@@ -608,6 +608,7 @@ function NewestSkills({ t, rows }) {
 export default function MarketplacePage() {
   const t = useTheme();
   const agent = useAgent();
+  const { connected, address, showModal } = useWallet?.() || {};
 
   // Pin hook callbacks — useAgent returns new identities each render,
   // which would retrigger this fetch forever if listed in effect deps.
@@ -654,12 +655,24 @@ export default function MarketplacePage() {
   // Install handler — called from the featured grid + top table. Sends
   // the skill's `price_yocto` as attached deposit; contract validates +
   // splits 99/1 + refunds overpay. Free skills sign a 0-deposit tx.
+  //
+  // The contract's install_skill panics if the caller has no
+  // registered AgentProfile, so we pre-flight here: no wallet →
+  // open the connect modal; no profile → route to the wizard.
+  // That's a real check (chain view), not a UI cosmetic.
   const handleInstall = async (skill) => {
+    if (!connected) { showModal?.(); return; }
     setInstallingId(skill.id);
     try {
+      const profile = await agentRef.current.fetchProfile?.();
+      if (!profile) {
+        if (typeof window !== "undefined") {
+          window.alert("Register an agent before installing skills. Taking you to the launchpad.");
+          window.location.href = "/agents/create";
+        }
+        return;
+      }
       await agentRef.current.installSkill(skill.id, skill.price_yocto || "0");
-      // Optimistically bump install_count so the row refreshes before
-      // the next fetch cycle.
       setSkills(list => list.map(row =>
         row.skill.id === skill.id
           ? { ...row, skill: { ...row.skill, install_count: Number(row.skill.install_count || 0) + 1 } }

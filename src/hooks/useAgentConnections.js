@@ -11,11 +11,9 @@ import { API_BASE as API } from "@/lib/apiBase";
 import { useWallet } from "@/lib/contexts";
 import useNear, { STAKING_CONTRACT } from "@/hooks/useNear";
 
-const FRAMEWORK_FALLBACK = [
-  { key: "openclaw",    display: "OpenClaw",    docs_url: "https://openclaw.ai/docs" },
-  { key: "ironclaw",    display: "IronClaw",    docs_url: "https://docs.near.ai/agents/quickstart" },
-  { key: "self_hosted", display: "Self-hosted", docs_url: "https://hermes-agent.nousresearch.com/" },
-];
+// Frameworks are loaded from the backend's /api/agents/frameworks
+// route — no hardcoded fallback. Wizard renders an empty state if
+// the backend is unreachable, which is the honest signal.
 
 export default function useAgentConnections({ agentAccount } = {}) {
   const { address } = useWallet();
@@ -26,7 +24,7 @@ export default function useAgentConnections({ agentAccount } = {}) {
   const { viewMethod } = useNear();
   const viewMethodRef = useRef(viewMethod);
   viewMethodRef.current = viewMethod;
-  const [frameworks, setFrameworks] = useState(FRAMEWORK_FALLBACK);
+  const [frameworks, setFrameworks] = useState([]);
   const [connections, setConnections] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
