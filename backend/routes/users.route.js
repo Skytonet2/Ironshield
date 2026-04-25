@@ -3,10 +3,6 @@
 //   GET /api/users/:key/posts    — authored, non-reposted posts
 //   GET /api/users/:key/reposts  — posts the user has reposted
 //   GET /api/users/:key/likes    — posts the user has liked
-//                                   (owner-only: backend checks that the
-//                                   x-wallet header matches the queried key
-//                                   so one user's likes aren't exposed to
-//                                   everyone)
 //
 // `:key` is a wallet address OR a username — same convention as
 // /api/profile/:key. Missing users return an empty list rather than 404
@@ -15,7 +11,6 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, hydratePosts } = require("../services/feedHelpers");
-const requireWallet = require("../middleware/requireWallet");
 
 async function resolveUser(key) {
   const k = String(key || "").toLowerCase().trim();
@@ -95,16 +90,11 @@ router.get("/:key/reposts", async (req, res, next) => {
   }
 });
 
-// GET /api/users/:key/likes — owner-only
-router.get("/:key/likes", requireWallet, async (req, res, next) => {
+// GET /api/users/:key/likes — posts this user has liked
+router.get("/:key/likes", async (req, res, next) => {
   try {
     const target = await resolveUser(req.params.key);
     if (!target) return res.json({ posts: [] });
-    const viewer = await getOrCreateUser(req.wallet);
-    // Privacy: only the user themselves can see their full like list.
-    // Others get an empty array (rather than 403) so the tab doesn't
-    // render an error state when you click it on someone else's profile.
-    if (!viewer || viewer.id !== target.id) return res.json({ posts: [] });
     const limit = parseLimit(req.query.limit);
     const r = await db.query(
       `SELECT fp.*
@@ -115,7 +105,9 @@ router.get("/:key/likes", requireWallet, async (req, res, next) => {
         LIMIT $2`,
       [target.id, limit]
     );
-    res.json({ posts: await hydratePosts(r.rows, viewer.id) });
+    const viewerWallet = req.header("x-wallet");
+    const viewer = viewerWallet ? await getOrCreateUser(viewerWallet) : null;
+    res.json({ posts: await hydratePosts(r.rows, viewer?.id) });
   } catch (e) { next(e); }
 });
 
