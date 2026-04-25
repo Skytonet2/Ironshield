@@ -23,6 +23,7 @@
 // Response shape: { url, type, bytes, host? }
 const express = require("express");
 const router = express.Router();
+const requireWallet = require("../middleware/requireWallet");
 
 const Busboy = (() => { try { return require("busboy"); } catch { return null; } })();
 
@@ -149,7 +150,7 @@ async function tryHost_catbox(fileBuf, filename, mimeType) {
   return text;
 }
 
-router.post("/upload", (req, res) => {
+router.post("/upload", requireWallet, (req, res) => {
   if (!Busboy) {
     return res.status(503).json({ error: "busboy module missing — run `npm i busboy`" });
   }

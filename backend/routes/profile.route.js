@@ -3,7 +3,8 @@ const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 
 // GET /api/profile/:walletOrUsername
 router.get("/:key", async (req, res, next) => {

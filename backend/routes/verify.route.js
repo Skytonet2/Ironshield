@@ -4,10 +4,12 @@ const router  = express.Router();
 const agent   = require("../services/agentConnector");
 const cache   = require("../services/cacheService");
 const limiter = require("../services/rateLimiter");
+const requireWallet = require("../middleware/requireWallet");
 
-router.post("/", async (req, res) => {
-  const { claim, context, relatedContract, userId } = req.body;
-  if (!claim || !userId) return res.status(400).json({ success: false, error: "claim and userId required" });
+router.post("/", requireWallet, async (req, res) => {
+  const { claim, context, relatedContract } = req.body;
+  const userId = req.wallet;
+  if (!claim) return res.status(400).json({ success: false, error: "claim required" });
 
   const limit = limiter.check(userId, "verify");
   if (!limit.allowed) return res.status(429).json({ success: false, error: `Rate limit hit. Retry in ${limit.retryAfter}s` });

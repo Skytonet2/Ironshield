@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, hydratePosts } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 const { rankForYou, rankFollowing } = require("../services/feedRanker");
 const {
   VOICES_PRESET_HANDLES, categoryOf,
@@ -67,11 +68,9 @@ router.get("/following", async (req, res, next) => {
 });
 
 // POST /api/feed/engagement  body: { postId, dwellMs }
-router.post("/engagement", async (req, res, next) => {
+router.post("/engagement", requireWallet, async (req, res, next) => {
   try {
-    const wallet = req.header("x-wallet");
-    if (!wallet) return res.status(401).json({ error: "wallet required" });
-    const viewer = await getOrCreateUser(wallet);
+    const viewer = await getOrCreateUser(req.wallet);
     const { postId, dwellMs } = req.body || {};
     if (!postId || !dwellMs) return res.status(400).json({ error: "postId and dwellMs required" });
     await db.query(
@@ -297,11 +296,9 @@ router.get("/ironclaw-alerts", async (req, res, next) => {
 // POST /api/feed/mute       body: { targetUsername }
 // DELETE /api/feed/mute     body: { targetUsername }
 // GET /api/feed/muted
-router.post("/mute", async (req, res, next) => {
+router.post("/mute", requireWallet, async (req, res, next) => {
   try {
-    const wallet = req.header("x-wallet");
-    if (!wallet) return res.status(401).json({ error: "wallet required" });
-    const viewer = await getOrCreateUser(wallet);
+    const viewer = await getOrCreateUser(req.wallet);
     const target = (req.body?.targetUsername || "").trim().toLowerCase();
     if (!target) return res.status(400).json({ error: "targetUsername required" });
     const u = await db.query(
@@ -317,11 +314,9 @@ router.post("/mute", async (req, res, next) => {
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
-router.delete("/mute", async (req, res, next) => {
+router.delete("/mute", requireWallet, async (req, res, next) => {
   try {
-    const wallet = req.header("x-wallet");
-    if (!wallet) return res.status(401).json({ error: "wallet required" });
-    const viewer = await getOrCreateUser(wallet);
+    const viewer = await getOrCreateUser(req.wallet);
     const target = (req.body?.targetUsername || req.query.targetUsername || "").trim().toLowerCase();
     if (!target) return res.status(400).json({ error: "targetUsername required" });
     await db.query(
@@ -364,6 +359,9 @@ router.get("/muted", async (req, res, next) => {
 // Author own-views are short-circuited client-side. We also guard
 // here with a NOT = author_id check so a rogue client can't pad
 // their own post.
+// public: anonymous viewers are intentionally counted (no dedupe). Wallet
+// is read from a soft x-wallet hint when present so dedup-by-user works
+// for signed-in users; absence is OK and just skips per-user dedupe.
 router.post("/impression", async (req, res, next) => {
   try {
     const wallet = req.header("x-wallet") || (req.body && req.body.viewerWallet) || null;
@@ -418,6 +416,9 @@ router.post("/impression", async (req, res, next) => {
 // happen on an external platform (Pump.fun, meme.cooking, etc.)
 // where we don't control the resulting CA. Ironshield-Pad launches
 // come back and update this row via a separate PATCH.
+// public: anonymous launch-intent funnel entry — wallet column is nullable
+// in the table so unauthed visitors can express interest. user_id resolves
+// from x-wallet only when present.
 router.post("/coin-it", async (req, res, next) => {
   try {
     const wallet = req.header("x-wallet");

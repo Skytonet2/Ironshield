@@ -17,6 +17,7 @@
 
 const express = require("express");
 const router = express.Router();
+const requireWallet = require("../middleware/requireWallet");
 
 const BASE = "https://1click.chaindefuser.com/v0";
 const FEE_BPS = 20; // 0.20% — keep in sync with src/lib/trading/fees.js
@@ -55,7 +56,7 @@ router.get("/tokens", async (req, res) => {
 // }
 // We fill in the tedious NEAR Intents required fields (swapType,
 // deposit/refund type, deadline) and stamp appFees with our 0.2%.
-router.post("/quote", async (req, res) => {
+router.post("/quote", requireWallet, async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.originAsset || !b.destinationAsset || !b.amount || !b.recipient) {
@@ -111,7 +112,7 @@ router.post("/quote", async (req, res) => {
 // tokens to. Thin wrapper over /quote so callers can make intent
 // explicit ("I am about to execute") and we can in the future log
 // commit attempts without cluttering the dry-quote path.
-router.post("/submit", async (req, res) => {
+router.post("/submit", requireWallet, async (req, res) => {
   // Delegate to the /quote handler with dry forced off. Express doesn't
   // expose a public forward primitive, so inline the path — it's short.
   try {

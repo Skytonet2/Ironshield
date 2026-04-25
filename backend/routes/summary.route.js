@@ -4,10 +4,11 @@ const router  = express.Router();
 const agent   = require("../services/agentConnector");
 const cache   = require("../services/cacheService");
 const limiter = require("../services/rateLimiter");
+const requireWallet = require("../middleware/requireWallet");
 
-router.post("/", async (req, res) => {
-  const { identifier, range, userId, transcript, messageCount, requestedVia } = req.body;
-  if (!userId) return res.status(400).json({ success: false, error: "userId required" });
+router.post("/", requireWallet, async (req, res) => {
+  const { identifier, range, transcript, messageCount, requestedVia } = req.body;
+  const userId = req.wallet;
 
   if (!transcript || !transcript.trim()) {
     return res.status(400).json({ success: false, error: "No message transcript provided" });

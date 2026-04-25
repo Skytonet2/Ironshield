@@ -3,7 +3,8 @@ const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet, postHash } = require("../services/feedHelpers");
+const { getOrCreateUser, postHash } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 
 const MIN_STAKE_USD = 50; // spec: min 50 $IRONCLAW ≈ $50-equiv for MVP
 const ALLOWED_ACCESS = ["open", "token_gated", "invite_only"];

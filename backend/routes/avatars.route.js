@@ -14,15 +14,10 @@
 const router = require("express").Router();
 const crypto = require("crypto");
 const db     = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
 
 const MAX_BYTES   = 512 * 1024;   // 512KB cap on the post-resize blob
 const ALLOWED_CT  = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-function requireWallet(req, res) {
-  const wallet = (req.get("x-wallet") || "").trim();
-  if (!wallet) { res.status(401).json({ error: "x-wallet header required" }); return null; }
-  return wallet;
-}
 
 function parseDataUrl(dataUrl) {
   if (typeof dataUrl !== "string") throw new Error("data_url must be a string");
@@ -46,8 +41,8 @@ function publicUrl(req, id) {
 /** POST /api/agents/avatar
  *  Body: { data_url, agent_account? }
  *  Returns: { id, url, size_bytes, content_type } */
-router.post("/", async (req, res) => {
-  const wallet = requireWallet(req, res); if (!wallet) return;
+router.post("/", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const { data_url, agent_account } = req.body || {};
   let parsed;
   try { parsed = parseDataUrl(data_url); }

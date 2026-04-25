@@ -2,7 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 
 // POST /api/ads/create  body: { postId, paymentTxHash }
 router.post("/create", requireWallet, async (req, res, next) => {
@@ -30,7 +31,8 @@ router.get("/active", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/ads/impression  body: { campaignId }
+// public: anonymous click-through counter — increments a single column,
+// no per-user state. Day 5 may add IP-based rate limiting if abuse appears.
 router.post("/impression", async (req, res, next) => {
   try {
     const { campaignId } = req.body || {};

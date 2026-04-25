@@ -5,10 +5,12 @@ const agent       = require("../services/agentConnector");
 const cache       = require("../services/cacheService");
 const limiter     = require("../services/rateLimiter");
 const tokenLookup = require("../services/tokenLookup");
+const requireWallet = require("../middleware/requireWallet");
 
-router.post("/", async (req, res) => {
-  const { query, queryType, userId, chain = "auto" } = req.body;
-  if (!query || !userId) return res.status(400).json({ success: false, error: "query and userId required" });
+router.post("/", requireWallet, async (req, res) => {
+  const { query, queryType, chain = "auto" } = req.body;
+  const userId = req.wallet;
+  if (!query) return res.status(400).json({ success: false, error: "query required" });
 
   const limit = limiter.check(userId, "research");
   if (!limit.allowed) return res.status(429).json({ success: false, error: `Rate limit hit. Retry in ${limit.retryAfter}s` });

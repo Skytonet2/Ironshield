@@ -29,6 +29,7 @@ function newCode() {
 }
 
 // ─── link-code: called from website to start the link flow ──────────
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/link-code", async (req, res) => {
   const { wallet } = req.body || {};
   const code = newCode();
@@ -80,6 +81,7 @@ router.get("/status", async (req, res) => {
 // If `code` is provided and matches a row with a wallet, we link the
 // wallet directly. Otherwise the bot passes the wallet the user sent
 // later.
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/claim", async (req, res) => {
   const { code, tgId, tgChatId, tgUsername, wallet } = req.body || {};
   if (!tgId || !tgChatId) return res.status(400).json({ error: "tgId + tgChatId required" });
@@ -209,6 +211,7 @@ function takePending(tgId, token) {
 //   { kind:"reply",    reply }                       pure chat
 //   { kind:"action",   action, params, confirm, pendingToken }
 //                                                  action proposal
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/agent", async (req, res) => {
   try {
     const { tgId, message } = req.body || {};
@@ -257,6 +260,7 @@ router.post("/agent", async (req, res) => {
 // Looks up the pending action, executes it against the existing
 // action endpoints, returns the execution result as-is. The action
 // is consumed on match (single-fire).
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/agent/confirm", async (req, res) => {
   try {
     const { tgId, pendingToken } = req.body || {};
@@ -381,6 +385,7 @@ async function requireActivation(tgId, res) {
 //   body: { confirm?: boolean }  confirm=true executes; default is
 //   a dry-preview returning { preparedNear, usd } so the bot can show
 //   the user the exact NEAR amount to approve.
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/custodial/:tgId/activate", async (req, res) => {
   try {
     const tgId = req.params.tgId;
@@ -449,6 +454,7 @@ router.post("/custodial/:tgId/activate", async (req, res) => {
 // GAS_RESERVE_YOCTO so drains don't brick the account below storage.
 // Used by both /send and /withdraw — the bot decides which semantic
 // to apply client-side (explicit amount vs "drain everything").
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/custodial/:tgId/transfer", async (req, res) => {
   try {
     const tgId = req.params.tgId;
@@ -522,6 +528,7 @@ router.post("/custodial/:tgId/transfer", async (req, res) => {
 // 0.2% platform fee is stamped via 1click's appFees field so it
 // lands atomically inside the solver's settlement. No separate
 // ft_transfer.
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/custodial/:tgId/swap", async (req, res) => {
   try {
     const tgId = req.params.tgId;
@@ -669,6 +676,7 @@ router.get("/settings/:tgId", async (req, res) => {
   });
 });
 
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/settings", async (req, res) => {
   const { tgId, settings, activeWallet, wallets } = req.body || {};
   if (!tgId) return res.status(400).json({ error: "tgId required" });
@@ -697,6 +705,7 @@ router.post("/settings", async (req, res) => {
   }
 });
 
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/add-wallet", async (req, res) => {
   const { tgId, wallet } = req.body || {};
   if (!tgId || !wallet) return res.status(400).json({ error: "tgId + wallet required" });
@@ -724,6 +733,7 @@ router.post("/add-wallet", async (req, res) => {
   }
 });
 
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/remove-wallet", async (req, res) => {
   const { tgId, wallet } = req.body || {};
   const w = String(wallet || "").toLowerCase();
@@ -742,6 +752,7 @@ router.post("/remove-wallet", async (req, res) => {
 });
 
 // ─── Reply relay: bot posts the user's TG reply into feed_dm_messages ──
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/reply", async (req, res) => {
   const { tgMsgId, text } = req.body || {};
   if (!tgMsgId || !text) return res.status(400).json({ error: "tgMsgId + text required" });
@@ -775,6 +786,7 @@ router.get("/watchlist/:tgId", async (req, res) => {
   res.json({ items: r.rows });
 });
 
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/watchlist/add", async (req, res) => {
   const { tgId, kind, value } = req.body || {};
   if (!tgId || !kind || !value) return res.status(400).json({ error: "tgId+kind+value required" });
@@ -787,6 +799,7 @@ router.post("/watchlist/add", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/watchlist/remove", async (req, res) => {
   const { tgId, kind, value } = req.body || {};
   try {
@@ -807,6 +820,7 @@ router.get("/price-alerts/:tgId", async (req, res) => {
   res.json({ alerts: r.rows });
 });
 
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/price-alerts/add", async (req, res) => {
   const { tgId, token, op, value, basePrice } = req.body || {};
   if (!tgId || !token || !op || value == null) return res.status(400).json({ error: "tgId+token+op+value required" });
@@ -820,6 +834,7 @@ router.post("/price-alerts/add", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
 router.post("/price-alerts/remove", async (req, res) => {
   const { id } = req.body || {};
   try {

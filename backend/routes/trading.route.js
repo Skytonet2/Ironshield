@@ -8,6 +8,7 @@ const express = require("express");
 const router = express.Router();
 const ohlcvService = require("../services/ohlcvService");
 const db = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
 
 // GET /api/trading/ohlcv?chain=near&pool=X&timeframe=1h&limit=300
 // Returns: { source: 'newscoin' | 'ref', candles: [{time, open, high, low, close, volume}] }
@@ -81,10 +82,13 @@ router.get("/positions", async (req, res) => {
  * client calls this fire-and-forget so a DB hiccup never blocks a
  * confirmed on-chain swap.
  */
-router.post("/positions", async (req, res) => {
+router.post("/positions", requireWallet, async (req, res) => {
   const b = req.body || {};
-  if (!b.chain || !b.wallet || !b.token_address || !b.amount_base) {
-    return res.status(400).json({ error: "chain, wallet, token_address, amount_base required" });
+  // Override any client-supplied wallet field with the verified signer.
+  // Day 1.4 mandate: never trust a client-asserted wallet identifier.
+  b.wallet = req.wallet;
+  if (!b.chain || !b.token_address || !b.amount_base) {
+    return res.status(400).json({ error: "chain, token_address, amount_base required" });
   }
   try {
     const r = await db.query(
@@ -115,10 +119,11 @@ router.post("/positions", async (req, res) => {
  * (Jupiter's platformFeeBps path). A null fee_tx_hash means the fee
  * transfer is still in flight — the later reconciler picks it up.
  */
-router.post("/fees", async (req, res) => {
+router.post("/fees", requireWallet, async (req, res) => {
   const b = req.body || {};
-  if (!b.chain || !b.wallet || !b.platform_wallet || !b.amount_in_base) {
-    return res.status(400).json({ error: "chain, wallet, platform_wallet, amount_in_base required" });
+  b.wallet = req.wallet;
+  if (!b.chain || !b.platform_wallet || !b.amount_in_base) {
+    return res.status(400).json({ error: "chain, platform_wallet, amount_in_base required" });
   }
   try {
     const r = await db.query(

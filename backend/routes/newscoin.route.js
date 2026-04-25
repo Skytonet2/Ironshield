@@ -48,6 +48,7 @@ const router = express.Router();
 const fetch = require("node-fetch");
 const db = require("../db/client");
 const { providers } = require("near-api-js");
+const requireWallet = require("../middleware/requireWallet");
 
 const RPC_URL = process.env.NEAR_RPC_URL || "https://rpc.fastnear.com";
 const provider = new providers.JsonRpcProvider({ url: RPC_URL });
@@ -482,7 +483,7 @@ function ironClawScore(headline) {
   return Math.max(0.5, Math.min(9.9, Number(raw.toFixed(1))));
 }
 
-router.post("/suggest", async (req, res, next) => {
+router.post("/suggest", requireWallet, async (req, res, next) => {
   try {
     const { headline } = req.body || {};
     if (!headline) return res.status(400).json({ error: "headline required" });
@@ -559,13 +560,11 @@ router.post("/suggest", async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/newscoin/:coinId/verify-trade
 // ---------------------------------------------------------------------------
-router.post("/:coinId/verify-trade", async (req, res, next) => {
+router.post("/:coinId/verify-trade", requireWallet, async (req, res, next) => {
   try {
     if (!ensureDb(res)) return;
 
-    const wallet = req.header("x-wallet");
-    if (!wallet) return res.status(401).json({ error: "wallet required" });
-
+    const wallet = req.wallet;
     const { txHash, type } = req.body || {};
     if (!txHash) return res.status(400).json({ error: "txHash required" });
     if (!["buy", "sell"].includes(type))
