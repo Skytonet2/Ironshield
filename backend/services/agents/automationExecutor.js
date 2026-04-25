@@ -9,6 +9,7 @@ const fetch = require("node-fetch");
 const adapters = require("./index");
 const store    = require("./connectionStore");
 const automationStore = require("./automationStore");
+const skillRegistry = require("../skills");
 
 async function run({ automation, source = "manual" }) {
   const startedAt = Date.now();
@@ -91,15 +92,44 @@ async function webhookOut(rule) {
 }
 
 async function callSkill(rule) {
-  // Phase-7 skills run hybrid (our backend orchestrates). The actual
-  // skill registry of "what code does each skill_id execute" hasn't
-  // shipped yet — for now this returns a sentinel result the dashboard
-  // can render as "skill scheduled but not yet implemented" rather
-  // than crashing the worker.
-  return {
-    skill_id: rule.action.skill_id || null,
-    note: "Skill execution registry will land with the next IronShield release. The rule fired but no skill code is bound yet.",
-  };
+  const { owner, agent_account, action } = rule;
+  const key = action.skill_key || action.registry_key;
+  if (!key) {
+    return {
+      skill_id: action.skill_id || null,
+      note: "Author-supplied skills aren't runnable yet. Pick a built-in skill (action.skill_key) or wait for the sandboxed runner.",
+    };
+  }
+  const mod = skillRegistry.get(key);
+  if (!mod) throw new Error(`Unknown built-in skill: ${key}`);
+
+  // Closure over the user's framework adapter — same path the sandbox
+  // uses, so the skill's LLM hops obey whatever framework + auth the
+  // user picked at agent launch.
+  const list = await store.listForOwner(owner);
+  const conn = list.find(c => c.agent_account === agent_account && c.status !== "disconnected");
+  if (!conn) throw new Error("No active framework connection on this agent");
+  const adapter = adapters.get(conn.framework);
+  const auth    = await store.getDecryptedAuth({ owner, agent_account, framework: conn.framework });
+
+  const agentFn = ({ message, systemPrompt, meta } = {}) =>
+    adapter.sendMessage({
+      external_id: conn.external_id,
+      endpoint:    conn.endpoint,
+      auth,
+      message,
+      systemPrompt,
+      meta,
+    });
+
+  return skillRegistry.run({
+    id:  key,
+    ctx: {
+      owner, agent_account,
+      params: action.params || {},
+      agent:  agentFn,
+    },
+  });
 }
 
 module.exports = { run, dispatch };

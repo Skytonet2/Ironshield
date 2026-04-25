@@ -15,9 +15,10 @@
 
 import { useCallback, useMemo, useState } from "react";
 import {
-  Zap, Play, Plus, Loader2, X, Clock, Webhook, Bot, Trash2, Power,
+  Zap, Play, Plus, Loader2, X, Clock, Webhook, Bot, Trash2, Power, Package,
 } from "lucide-react";
 import useAutomations from "@/hooks/useAutomations";
+import useSkillRegistry from "@/hooks/useSkillRegistry";
 
 const PRESETS = [
   {
@@ -58,6 +59,7 @@ function TriggerLabel({ trigger }) {
 function ActionLabel({ action }) {
   if (action?.type === "ask_agent")   return <><Bot size={11} /> ask agent</>;
   if (action?.type === "webhook_out") return <><Webhook size={11} /> webhook out</>;
+  if (action?.type === "call_skill")  return <><Package size={11} /> {action.skill_key || "skill"}</>;
   return <>—</>;
 }
 
@@ -65,6 +67,7 @@ function ActionLabel({ action }) {
 
 function CreateRuleModal({ t, agentAccount, onClose, onCreated }) {
   const { create } = useAutomations({ agentAccount });
+  const { skills: registry } = useSkillRegistry();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [triggerType, setTriggerType] = useState("schedule");
@@ -72,6 +75,8 @@ function CreateRuleModal({ t, agentAccount, onClose, onCreated }) {
   const [actionType, setActionType] = useState("ask_agent");
   const [prompt, setPrompt] = useState("");
   const [url, setUrl]     = useState("");
+  const [skillKey, setSkillKey] = useState("");
+  const [skillParams, setSkillParams] = useState({});
   const [busy, setBusy]   = useState(false);
   const [err, setErr]     = useState(null);
 
@@ -83,14 +88,46 @@ function CreateRuleModal({ t, agentAccount, onClose, onCreated }) {
     if (p.action.prompt) setPrompt(p.action.prompt);
   };
 
+  const selectedSkill = registry.find(s => s.id === skillKey) || null;
+
+  // Reset skill params when the chosen skill changes — populate defaults.
+  const onSkillKeyChange = (key) => {
+    setSkillKey(key);
+    const def = registry.find(s => s.id === key);
+    if (!def) { setSkillParams({}); return; }
+    const next = {};
+    for (const p of (def.params || [])) {
+      if (p.default !== undefined) next[p.key] = Array.isArray(p.default) ? p.default.join(", ") : String(p.default);
+    }
+    setSkillParams(next);
+  };
+
+  const buildSkillParams = () => {
+    const out = {};
+    for (const p of (selectedSkill?.params || [])) {
+      const raw = skillParams[p.key];
+      if (raw === undefined || raw === "") continue;
+      if (p.type === "string-list") {
+        out[p.key] = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+      } else if (p.type === "number") {
+        const n = Number(raw); if (Number.isFinite(n)) out[p.key] = n;
+      } else {
+        out[p.key] = raw;
+      }
+    }
+    return out;
+  };
+
   const submit = async (e) => {
     e?.preventDefault();
     setErr(null); setBusy(true);
     try {
       const trigger = triggerType === "schedule" ? { type: "schedule", cron } : { type: "webhook" };
-      const action = actionType === "ask_agent"
-        ? { type: "ask_agent", prompt }
-        : { type: "webhook_out", url };
+      const action =
+        actionType === "ask_agent"   ? { type: "ask_agent",   prompt } :
+        actionType === "webhook_out" ? { type: "webhook_out", url }    :
+        actionType === "call_skill"  ? { type: "call_skill",  skill_key: skillKey, params: buildSkillParams() } :
+        { type: actionType };
       const row = await create({ name, description, trigger, action, enabled: true });
       onCreated?.(row);
       onClose();
@@ -160,6 +197,7 @@ function CreateRuleModal({ t, agentAccount, onClose, onCreated }) {
           <Field t={t} label="Action">
             <select value={actionType} onChange={e => setActionType(e.target.value)} style={input(t)}>
               <option value="ask_agent">Ask my agent</option>
+              <option value="call_skill">Run a built-in skill</option>
               <option value="webhook_out">POST to a URL</option>
             </select>
           </Field>
@@ -186,6 +224,49 @@ function CreateRuleModal({ t, agentAccount, onClose, onCreated }) {
                    placeholder="https://hooks.zapier.com/…" required
                    style={input(t)} />
           </Field>
+        )}
+
+        {actionType === "call_skill" && (
+          <>
+            <Field t={t} label="Built-in skill"
+                   hint="Runs in our orchestrator and calls your connected agent for any LLM step.">
+              <select value={skillKey} onChange={e => onSkillKeyChange(e.target.value)}
+                      required style={input(t)}>
+                <option value="">— pick a skill —</option>
+                {registry.map(s => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+              {selectedSkill && (
+                <div style={{ fontSize: 11.5, color: t.textDim, marginTop: 4, lineHeight: 1.5 }}>
+                  {selectedSkill.summary}
+                </div>
+              )}
+            </Field>
+
+            {selectedSkill?.params?.length > 0 && (
+              <div style={{
+                marginTop: 6, padding: 12,
+                background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: 10,
+              }}>
+                <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>
+                  Skill parameters
+                </div>
+                {selectedSkill.params.map(p => (
+                  <Field key={p.key} t={t}
+                         label={p.key}
+                         hint={p.hint || (p.type === "string-list" ? "Comma-separated values" : p.type)}>
+                    <input
+                      value={skillParams[p.key] ?? ""}
+                      onChange={e => setSkillParams(s => ({ ...s, [p.key]: e.target.value }))}
+                      placeholder={Array.isArray(p.default) ? p.default.join(", ") : (p.default ?? "")}
+                      style={input(t)}
+                    />
+                  </Field>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {err && (

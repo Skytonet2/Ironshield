@@ -24,6 +24,7 @@ app.use("/api/portfolio", require("./routes/portfolio.route"));
 app.use("/api/security",  require("./routes/security.route"));
 app.use("/api/chat",      require("./routes/chat.route"));
 app.use("/api/agents",    require("./routes/agents.route"));
+app.use("/api/skills",    require("./routes/skills.route"));
 app.use("/api/trending",  require("./routes/trending.route"));
 app.use("/api/alpha",    require("./routes/alpha.route"));
 
