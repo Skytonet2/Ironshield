@@ -40,7 +40,13 @@ router.get("/registry", (_req, res) => {
  */
 router.post("/run", async (req, res) => {
   const wallet = requireWallet(req, res); if (!wallet) return;
-  const { agent_account, skill_key, category, params } = req.body || {};
+  // `verified` is set by callers that have already verified the on-
+  // chain SkillMetadata.verified flag (e.g. automationExecutor when
+  // it loads the rule's skill_id). Manual /run calls from the UI
+  // currently leave it false, so HTTP skills only execute through
+  // automation rules tied to verified listings — that's the intended
+  // safety boundary.
+  const { agent_account, skill_key, category, params, verified } = req.body || {};
   if (!agent_account || (!skill_key && !category)) {
     return res.status(400).json({ error: "agent_account and (skill_key OR category) required" });
   }
@@ -88,7 +94,7 @@ router.post("/run", async (req, res) => {
     };
     const result = skill_key
       ? await skills.run({ id: skill_key, ctx })
-      : await skills.runByCategory({ category, ctx });
+      : await skills.runByCategory({ category, ctx, verified: Boolean(verified) });
     res.json({ ok: true, skill_key: skill_key || null, category: category || null, result });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

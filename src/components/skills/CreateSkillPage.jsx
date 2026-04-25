@@ -252,6 +252,53 @@ function Field({ t, label, value, onChange, maxLength, placeholder, multiline, h
 // Phase 7: category + tags fields moved back in once SkillMetadata
 // landed on-chain. Both stay author-editable after publish via
 // update_skill_metadata (exposed by the hook but UI-ed in a later slice).
+/** SkillKindField — picks how the skill is wired at run time.
+ *    "metadata" → marketplace listing only (current default)
+ *    "http"     → author-hosted endpoint, runnable via call_skill */
+function SkillKindField({ t, kind, onChange }) {
+  const options = [
+    {
+      key: "metadata",
+      label: "Listing",
+      hint: "Discoverable in the marketplace. No execution.",
+    },
+    {
+      key: "http",
+      label: "Author-hosted",
+      hint: "You host the code. We POST to your /run endpoint when it fires.",
+    },
+  ];
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>
+        Skill kind
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+        {options.map(o => {
+          const active = kind === o.key;
+          return (
+            <button key={o.key} type="button" onClick={() => onChange(o.key)}
+                    style={{
+                      textAlign: "left", padding: "12px 14px",
+                      background: active ? `${t.accent}14` : t.bgSurface,
+                      border: active ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
+                      borderRadius: 12, cursor: "pointer", color: "inherit",
+                      transition: "border-color 120ms ease, background 120ms ease",
+                    }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.white, marginBottom: 4 }}>
+                {o.label}
+              </div>
+              <div style={{ fontSize: 11.5, color: t.textMuted, lineHeight: 1.5 }}>
+                {o.hint}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CategoryField({ t, value, onChange }) {
   const current = CATEGORIES.find(c => c.key === value) || CATEGORIES[0];
   return (
@@ -800,6 +847,14 @@ export default function CreateSkillPage() {
     longDesc:  "",
     price:     "0",
     category:  "defi",
+    // Phase 8 / hybrid skill model: skills can be metadata-only
+    // (browse-only listing), or runnable. Runnable splits into:
+    //   "builtin"     — orchestrator-side code we maintain (admins only)
+    //   "http"        — author-hosted endpoint, anyone can publish
+    // The kind selector below picks which path; "metadata" keeps the
+    // legacy CategoryField in play for category labelling.
+    kind:        "metadata", // "metadata" | "http"
+    httpUrl:     "",
     tags:      [],
     imageUrl:  "",
   });
@@ -816,6 +871,10 @@ export default function CreateSkillPage() {
   const detailsValid = useMemo(() => {
     const nameOk = state.name.trim().length > 0 && state.name.length <= NAME_MAX;
     const shortOk = state.shortDesc.trim().length > 0 && state.shortDesc.length <= SHORT_MAX;
+    if (state.kind === "http") {
+      try { new URL(state.httpUrl); } catch { return false; }
+      if (!/^https?:\/\//i.test(state.httpUrl)) return false;
+    }
     return nameOk && shortOk;
   }, [state]);
 
@@ -840,12 +899,29 @@ export default function CreateSkillPage() {
       // Concatenate short + long within the 240-char contract cap.
       const combined = [state.shortDesc.trim(), state.longDesc.trim()]
         .filter(Boolean).join("\n\n").slice(0, LONG_MAX);
-      const categoryLabel = (CATEGORIES.find(c => c.key === state.category) || {}).label || state.category;
+      // Build the on-chain category. HTTP skills get a "http:<url>"
+      // prefix so the orchestrator can dispatch to the author's
+      // endpoint at run time. Metadata-only listings keep their
+      // human-readable category label (clamped to CATEGORY_MAX).
+      let category;
+      if (state.kind === "http") {
+        const url = state.httpUrl.trim();
+        category = `http:${url}`;
+        // Contract caps category at 32 chars currently — the URL
+        // wouldn't fit. We bump the user up against that here so
+        // they get a clear error before the on-chain call rejects.
+        if (category.length > 240) {
+          throw new Error("Endpoint URL too long for on-chain category");
+        }
+      } else {
+        const label = (CATEGORIES.find(c => c.key === state.category) || {}).label || state.category;
+        category = label.slice(0, CATEGORY_MAX);
+      }
       await createSkill({
         name:        state.name.trim().slice(0, NAME_MAX),
         description: combined,
         priceYocto:  yoctoPrice,
-        category:    categoryLabel.slice(0, CATEGORY_MAX),
+        category,
         tags:        state.tags.slice(0, MAX_TAGS),
         imageUrl:    state.imageUrl.trim().slice(0, IMAGE_URL_MAX),
       });
@@ -885,9 +961,23 @@ export default function CreateSkillPage() {
                   multiline
                   hint={`Short + detailed are merged and capped at ${LONG_MAX} chars on-chain.`} />
 
-                <CategoryField t={t}
-                  value={state.category}
-                  onChange={(v) => patch({ category: v })} />
+                <SkillKindField t={t}
+                  kind={state.kind}
+                  onChange={(k) => patch({ kind: k })} />
+
+                {state.kind === "http" && (
+                  <Field t={t} label="Author endpoint URL"
+                    value={state.httpUrl} onChange={(v) => patch({ httpUrl: v })}
+                    placeholder="https://my-skill.example.com"
+                    error={state.httpUrl && !/^https?:\/\/.+/i.test(state.httpUrl) ? "Must be http(s)://" : null}
+                    hint="When the skill fires, our orchestrator POSTs to <url>/run with the user's params + a signed callback token. See /docs/skills for the full protocol." />
+                )}
+
+                {state.kind === "metadata" && (
+                  <CategoryField t={t}
+                    value={state.category}
+                    onChange={(v) => patch({ category: v })} />
+                )}
 
                 <TagsField t={t}
                   tags={state.tags}

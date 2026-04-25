@@ -897,3 +897,25 @@ CREATE TABLE IF NOT EXISTS agent_avatars (
   UNIQUE (owner, sha256)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_avatars_owner ON agent_avatars(owner);
+
+-- ── Channel registry (Telegram / Discord / custom HTTP) ─────────────
+-- Captures bot tokens / webhook URLs / chat ids that an agent owner
+-- wants relayed to. The active-relay loop (per-agent Telegram poller,
+-- Discord gateway connection) is NOT in this PR — we just store the
+-- credentials, encrypted at rest, so the user can register them
+-- ahead of the relay-runtime work. Each row's `config_encrypted`
+-- holds a JSON blob (bot_token, chat_id, webhook_url, etc.) so the
+-- column shape stays stable as we add channel kinds.
+CREATE TABLE IF NOT EXISTS agent_channels (
+  id                SERIAL PRIMARY KEY,
+  owner             TEXT NOT NULL,
+  agent_account     TEXT NOT NULL,
+  channel           TEXT NOT NULL,                 -- 'telegram' | 'discord' | 'http'
+  label             TEXT,                          -- user-supplied display name
+  config_encrypted  TEXT NOT NULL,                 -- AES-256-GCM JSON blob
+  status            TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'active' | 'disabled'
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_channels_owner   ON agent_channels(owner);
+CREATE INDEX IF NOT EXISTS idx_agent_channels_account ON agent_channels(agent_account);

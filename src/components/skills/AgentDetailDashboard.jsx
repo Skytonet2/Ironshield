@@ -26,6 +26,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import useAgentConnections from "@/hooks/useAgentConnections";
 import AutomationRulesPanel from "@/components/skills/AutomationRulesPanel";
+import AgentChannelsPanel from "@/components/skills/AgentChannelsPanel";
 import AgentAvatar from "@/components/agents/AgentAvatar";
 
 /** Pull the avatar reference out of a connection row's `meta` blob.
@@ -630,6 +631,10 @@ export default function AgentDetailDashboard({ account: accountProp }) {
         <ActivityBlock t={t} activity={stats?.activity_log || []} />
 
         <PerformanceBlock t={t} stats={stats} />
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <AgentChannelsPanel t={t} agentAccount={account} />
       </div>
 
       <style jsx global>{`

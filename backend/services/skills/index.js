@@ -77,12 +77,28 @@ async function run({ id, ctx }) {
 /** Run by category — accepts both "builtin:<id>" and "http:<url>".
  *  This is what the automation executor calls when a skill is
  *  resolved from on-chain metadata; centralising the dispatch here
- *  means the route layer doesn't need to know about HTTP skills. */
-async function runByCategory({ category, ctx }) {
+ *  means the route layer doesn't need to know about HTTP skills.
+ *
+ *  Safety gate: HTTP skills are author-hosted code at an arbitrary
+ *  URL we don't control. The orchestrator sends user params there
+ *  AND mints a callback token the endpoint can use to talk to the
+ *  user's agent — so a malicious skill could exfiltrate prompts +
+ *  replies. We block HTTP execution unless `verified === true`,
+ *  forcing admin review before any new endpoint runs. Built-in
+ *  skills bypass the gate (we wrote them).
+ */
+async function runByCategory({ category, ctx, verified = false }) {
   const c = classifyCategory(category);
   if (!c) throw new Error(`Unrunnable skill category: ${category}`);
   if (c.kind === "builtin") return run({ id: c.key, ctx });
-  if (c.kind === "http")    return httpRunner.execute({ ...ctx, http_url: c.url });
+  if (c.kind === "http") {
+    if (!verified) {
+      const err = new Error("HTTP skill awaiting admin verification");
+      err.code = "SKILL_UNVERIFIED";
+      throw err;
+    }
+    return httpRunner.execute({ ...ctx, http_url: c.url });
+  }
   throw new Error(`Unsupported runtime: ${c.kind}`);
 }
 
