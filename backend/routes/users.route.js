@@ -14,7 +14,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet, hydratePosts } = require("../services/feedHelpers");
+const { getOrCreateUser, hydratePosts } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 
 async function resolveUser(key) {
   const k = String(key || "").toLowerCase().trim();
