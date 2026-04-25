@@ -46,11 +46,15 @@ let manualDisconnect = false;
 let lastConfig = { wallet: null, ticketProvider: null, trackers: null };
 
 // Wallet the *current* socket is server-confirmed authed for. Set on
-// `{type:"authed", ok:true}`, cleared on close. Used to suppress
-// redundant ticket fetches — every ticket fetch is a signed REST call,
-// which surfaces a wallet popup on most NEAR wallets, so a stale
-// "already authed for this wallet" must never re-sign.
+// `{type:"authed", ok:true}`, cleared on close.
 let authedWallet = null;
+// Wallet we've *attempted* to auth on the current socket (set when
+// sendAuth starts, before the await). Distinct from authedWallet so we
+// can suppress concurrent connect() calls during the auth-in-flight
+// window — every ticket fetch is a signed REST call that surfaces a
+// wallet popup, and AppShell remounts on every route nav. Cleared on
+// close so a fresh socket re-attempts.
+let authAttemptedFor = null;
 
 const listeners = new Map();   // type -> Set<fn>
 
@@ -93,15 +97,17 @@ export function connect({ wallet = null, ticketProvider = null, trackers = null 
   }
 
   if (ws && (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING)) {
-    // Already open. Re-auth ONLY if the wallet just changed — the
-    // server-side binding is durable for the lifetime of the socket,
-    // so re-minting on every connect() call (e.g. AppShell remounting
-    // on route nav) would surface a wallet popup per click.
+    // Already connecting/open. Only kick a new auth handshake if we
+    // have not yet attempted one on this socket for this wallet.
+    // authAttemptedFor covers both "in-flight" and "completed" — both
+    // states must suppress re-signing, since each retry is a wallet
+    // popup. AppShell remounts on every route nav, so without this
+    // guard every click would re-sign.
     if (
       ws.readyState === ws.OPEN &&
       lastConfig.wallet &&
       lastConfig.ticketProvider &&
-      authedWallet !== lastConfig.wallet
+      authAttemptedFor !== lastConfig.wallet
     ) {
       void sendAuth();
     }
@@ -124,6 +130,10 @@ export function connect({ wallet = null, ticketProvider = null, trackers = null 
   ws.addEventListener("open", () => {
     backoffMs = 1_000;
     setStatus("connected");
+    // Fresh socket — clear any prior in-flight memo so the new socket
+    // gets its own auth attempt.
+    authAttemptedFor = null;
+    authedWallet = null;
     if (lastConfig.wallet && lastConfig.ticketProvider) {
       void sendAuth();
     } else if (lastConfig.trackers) {
@@ -155,6 +165,7 @@ export function connect({ wallet = null, ticketProvider = null, trackers = null 
 
   const onClose = () => {
     authedWallet = null;
+    authAttemptedFor = null;
     setStatus("disconnected");
     if (!manualDisconnect) scheduleReconnect();
   };
@@ -165,14 +176,20 @@ export function connect({ wallet = null, ticketProvider = null, trackers = null 
 async function sendAuth() {
   if (!ws || ws.readyState !== ws.OPEN) return;
   if (!lastConfig.wallet || !lastConfig.ticketProvider) return;
+  // Mark BEFORE the await so a concurrent connect() call sees the
+  // in-flight attempt and doesn't kick off a second ticket fetch.
+  // Cleared on close, so a fresh socket re-attempts.
+  authAttemptedFor = lastConfig.wallet;
   try {
     const t = await lastConfig.ticketProvider();
     if (!t?.ticket || !ws || ws.readyState !== ws.OPEN) return;
     ws.send(JSON.stringify({ type: "auth", wallet: lastConfig.wallet, ticket: t.ticket }));
   } catch {
-    // Ticket fetch failed (offline, signing rejected). Connection
-    // stays open as a public socket — DMs/notifications won't arrive
-    // until the next reconnect succeeds in minting a ticket.
+    // Ticket fetch failed (offline, signing rejected, backend down).
+    // Connection stays open as a public socket. We deliberately leave
+    // authAttemptedFor set so we don't loop the wallet popup if the
+    // user rejected — a new attempt is gated on socket close or wallet
+    // change. A page refresh also gives them a fresh attempt.
   }
 }
 
@@ -184,6 +201,7 @@ export function disconnect() {
     ws = null;
   }
   authedWallet = null;
+  authAttemptedFor = null;
   lastConfig = { wallet: null, ticketProvider: null, trackers: null };
   setStatus("disconnected");
 }
