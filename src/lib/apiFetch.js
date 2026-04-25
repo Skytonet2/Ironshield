@@ -12,6 +12,7 @@
 // contexts (event handlers, tests, libs), the provider registers the
 // live selector + walletType through setWalletState below.
 
+import { Buffer } from "buffer";
 import { API_BASE } from "./apiBase";
 
 const RECIPIENT = "ironshield.near";
@@ -30,12 +31,13 @@ async function sha256Hex(input) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function decodeBase64Url(s) {
+// Decode base64url to a Node-style Buffer. Wallet selector adapters
+// (Meteor / HERE / HOT / Intear) call Buffer.isBuffer(nonce) and reject
+// plain Uint8Array — Buffer is a subclass but isBuffer() is identity-strict.
+function decodeBase64UrlToBuffer(s) {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);
-  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + pad;
+  return Buffer.from(b64, "base64");
 }
 
 async function fetchNonce(api) {
@@ -61,8 +63,9 @@ async function signRequest({ method, path, body, nonce }) {
   const bodyStr = typeof body === "string" ? body : body == null ? "" : "";
   const hash = await sha256Hex(bodyStr);
   const message = `ironshield-auth:v1\n${method.toUpperCase()}\n${path}\n${hash}`;
-  const nonceBytes = decodeBase64Url(nonce);
-  const signed = await wallet.signMessage({ message, recipient: RECIPIENT, nonce: nonceBytes });
+  const nonceBuf = decodeBase64UrlToBuffer(nonce);
+  if (nonceBuf.length !== 32) throw new Error(`bad nonce length: ${nonceBuf.length}`);
+  const signed = await wallet.signMessage({ message, recipient: RECIPIENT, nonce: nonceBuf });
   if (!signed?.signature || !signed?.publicKey || !signed?.accountId) {
     throw new Error("sign-message-failed");
   }
