@@ -16,8 +16,10 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   Zap, Play, Plus, Loader2, X, Clock, Webhook, Bot, Trash2, Power, Package,
+  ChevronDown, ChevronRight, RefreshCw, Check, AlertCircle,
 } from "lucide-react";
 import useAutomations from "@/hooks/useAutomations";
+import useAutomationRuns from "@/hooks/useAutomationRuns";
 import useSkillRegistry from "@/hooks/useSkillRegistry";
 
 const PRESETS = [
@@ -385,56 +387,8 @@ export default function AutomationRulesPanel({ t, agentAccount }) {
       {!auto.loading && auto.rules.length > 0 && (
         <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
           {auto.rules.map(rule => (
-            <li key={rule.id} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 12px",
-              background: t.bgSurface, border: `1px solid ${t.border}`,
-              borderRadius: 10,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: t.white, display: "flex", alignItems: "center", gap: 8 }}>
-                  {rule.name}
-                  {!rule.enabled && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999,
-                                   background: "rgba(245,158,11,0.18)", color: "#f59e0b" }}>Paused</span>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2,
-                              display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={chip(t)}><TriggerLabel trigger={rule.trigger} /></span>
-                  <span>→</span>
-                  <span style={chip(t)}><ActionLabel action={rule.action} /></span>
-                  {rule.last_run_at && (
-                    <span style={{ color: t.textDim, marginLeft: 4 }}>
-                      last: {rule.last_run_status} · {timeAgo(rule.last_run_at)}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <button type="button" onClick={() => handleFire(rule)}
-                      disabled={busyId === `fire:${rule.id}`}
-                      title="Run now" aria-label="Run now"
-                      style={iconBtn(t, busyId === `fire:${rule.id}`)}>
-                {busyId === `fire:${rule.id}`
-                  ? <Loader2 size={12} style={{ animation: "ma-spin 0.9s linear infinite" }} />
-                  : <Play size={12} />}
-              </button>
-              <button type="button" onClick={() => handleToggle(rule)}
-                      disabled={busyId === `toggle:${rule.id}`}
-                      title={rule.enabled ? "Pause" : "Resume"} aria-label="Toggle"
-                      style={iconBtn(t, busyId === `toggle:${rule.id}`, rule.enabled ? "#10b981" : t.textMuted)}>
-                <Power size={12} />
-              </button>
-              <button type="button" onClick={() => handleDelete(rule)}
-                      disabled={busyId === `delete:${rule.id}`}
-                      title="Delete" aria-label="Delete"
-                      style={iconBtn(t, busyId === `delete:${rule.id}`)}>
-                {busyId === `delete:${rule.id}`
-                  ? <Loader2 size={12} style={{ animation: "ma-spin 0.9s linear infinite" }} />
-                  : <Trash2 size={12} />}
-              </button>
-            </li>
+            <RuleRow key={rule.id} t={t} rule={rule} busyId={busyId}
+                     onFire={handleFire} onToggle={handleToggle} onDelete={handleDelete} />
           ))}
         </ul>
       )}
@@ -446,6 +400,211 @@ export default function AutomationRulesPanel({ t, agentAccount }) {
       )}
     </section>
   );
+}
+
+/* ─────────────── Per-rule row + history drawer ─────────────── */
+
+function RuleRow({ t, rule, busyId, onFire, onToggle, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <li style={{
+      background: t.bgSurface, border: `1px solid ${t.border}`,
+      borderRadius: 10, overflow: "hidden",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "10px 12px",
+      }}>
+        <button type="button" onClick={() => setExpanded(v => !v)}
+                aria-label={expanded ? "Hide history" : "Show history"}
+                title={expanded ? "Hide history" : "Show history"}
+                style={{
+                  width: 24, height: 24, borderRadius: 6, flexShrink: 0,
+                  background: "transparent", border: "none",
+                  color: t.textMuted, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                }}>
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: t.white, display: "flex", alignItems: "center", gap: 8 }}>
+            {rule.name}
+            {!rule.enabled && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999,
+                             background: "rgba(245,158,11,0.18)", color: "#f59e0b" }}>Paused</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2,
+                        display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={chip(t)}><TriggerLabel trigger={rule.trigger} /></span>
+            <span>→</span>
+            <span style={chip(t)}><ActionLabel action={rule.action} /></span>
+            {rule.last_run_at && (
+              <RunBadge t={t} status={rule.last_run_status} when={rule.last_run_at} />
+            )}
+            <span style={{ color: t.textDim, marginLeft: 4 }}>{rule.run_count || 0} runs</span>
+          </div>
+        </div>
+
+        <button type="button" onClick={() => onFire(rule)}
+                disabled={busyId === `fire:${rule.id}`}
+                title="Run now" aria-label="Run now"
+                style={iconBtn(t, busyId === `fire:${rule.id}`)}>
+          {busyId === `fire:${rule.id}`
+            ? <Loader2 size={12} style={{ animation: "ma-spin 0.9s linear infinite" }} />
+            : <Play size={12} />}
+        </button>
+        <button type="button" onClick={() => onToggle(rule)}
+                disabled={busyId === `toggle:${rule.id}`}
+                title={rule.enabled ? "Pause" : "Resume"} aria-label="Toggle"
+                style={iconBtn(t, busyId === `toggle:${rule.id}`, rule.enabled ? "#10b981" : t.textMuted)}>
+          <Power size={12} />
+        </button>
+        <button type="button" onClick={() => onDelete(rule)}
+                disabled={busyId === `delete:${rule.id}`}
+                title="Delete" aria-label="Delete"
+                style={iconBtn(t, busyId === `delete:${rule.id}`)}>
+          {busyId === `delete:${rule.id}`
+            ? <Loader2 size={12} style={{ animation: "ma-spin 0.9s linear infinite" }} />
+            : <Trash2 size={12} />}
+        </button>
+      </div>
+
+      {expanded && <RuleRunHistory t={t} ruleId={rule.id} />}
+    </li>
+  );
+}
+
+function RunBadge({ t, status, when }) {
+  const ok = status === "ok";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      fontSize: 10.5, padding: "1px 7px", borderRadius: 999,
+      background: ok ? "rgba(16,185,129,0.18)" : "rgba(239,68,68,0.18)",
+      color: ok ? "#10b981" : "#fca5a5",
+      fontWeight: 700,
+    }}>
+      {ok ? <Check size={9} /> : <AlertCircle size={9} />}
+      {ok ? "ok" : "error"} · {timeAgo(when)}
+    </span>
+  );
+}
+
+function RuleRunHistory({ t, ruleId }) {
+  const { runs, loading, error, reload } = useAutomationRuns(ruleId);
+  const [openRunId, setOpenRunId] = useState(null);
+
+  return (
+    <div style={{
+      borderTop: `1px solid ${t.border}`,
+      background: t.bgCard,
+      padding: "10px 14px 12px",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 8,
+      }}>
+        <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 600,
+                      textTransform: "uppercase", letterSpacing: 0.6 }}>
+          Recent runs {runs.length ? `(${runs.length})` : ""}
+        </div>
+        <button type="button" onClick={() => reload()} disabled={loading}
+                aria-label="Refresh runs" title="Refresh"
+                style={{
+                  width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                  background: "transparent", border: "none",
+                  color: t.textMuted, cursor: loading ? "not-allowed" : "pointer",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                }}>
+          {loading
+            ? <Loader2 size={11} style={{ animation: "ma-spin 0.9s linear infinite" }} />
+            : <RefreshCw size={11} />}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ fontSize: 11, color: "#fca5a5" }}>{error}</div>
+      )}
+      {!loading && !error && runs.length === 0 && (
+        <div style={{ fontSize: 11.5, color: t.textDim, padding: "8px 0" }}>
+          No runs yet. The rule fires on its trigger or via the Run-now button.
+        </div>
+      )}
+
+      {runs.length > 0 && (
+        <ol style={{
+          margin: 0, padding: 0, listStyle: "none",
+          display: "flex", flexDirection: "column", gap: 4,
+        }}>
+          {runs.map(run => {
+            const open = openRunId === run.id;
+            const ok = run.status === "ok";
+            const body = ok ? run.output : run.error;
+            return (
+              <li key={run.id} style={{
+                background: t.bgSurface, border: `1px solid ${t.border}`,
+                borderRadius: 8, fontSize: 11.5,
+              }}>
+                <button type="button" onClick={() => setOpenRunId(open ? null : run.id)}
+                        style={{
+                          width: "100%", padding: "8px 10px",
+                          background: "transparent", border: "none",
+                          color: t.text, cursor: "pointer",
+                          display: "flex", alignItems: "center", gap: 8,
+                          textAlign: "left",
+                        }}>
+                  {open ? <ChevronDown size={11} color={t.textDim} />
+                        : <ChevronRight size={11} color={t.textDim} />}
+                  <span style={{
+                    fontFamily: "var(--font-jetbrains-mono), monospace",
+                    color: ok ? "#10b981" : "#fca5a5",
+                    fontWeight: 700, fontSize: 10.5, minWidth: 38,
+                  }}>{ok ? "OK" : "ERR"}</span>
+                  <span style={{ color: t.textDim, fontFamily: "var(--font-jetbrains-mono), monospace", flexShrink: 0 }}>
+                    {run.source}
+                  </span>
+                  <span style={{ flex: 1, color: t.textMuted, overflow: "hidden",
+                                 textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {(body || "").slice(0, 120)}
+                  </span>
+                  <span style={{ color: t.textDim, flexShrink: 0 }}>
+                    {timeAgo(run.fired_at)}
+                  </span>
+                </button>
+                {open && (
+                  <div style={{
+                    padding: "0 10px 10px",
+                    fontFamily: "var(--font-jetbrains-mono), monospace",
+                    fontSize: 11, color: t.text,
+                    whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  }}>
+                    <pre style={{
+                      margin: 0, padding: 8,
+                      background: t.bg, border: `1px solid ${t.border}`,
+                      borderRadius: 6, maxHeight: 240, overflow: "auto",
+                    }}>{prettyJson(body)}</pre>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function prettyJson(text) {
+  if (!text) return "—";
+  try {
+    const parsed = JSON.parse(text);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return String(text);
+  }
 }
 
 const chip = (t) => ({
