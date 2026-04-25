@@ -22,17 +22,22 @@
 
 require("dotenv").config();
 const { connect, keyStores, providers } = require("near-api-js");
-const fs   = require("fs");
-const path = require("path");
 
 const { getAgentAccount }                                        = require("./nearSigner");
 const { pushProposalCreated, pushProposalFinalized, pushProposalExecuted } = require("./governancePusher");
+const agentState = require("../db/agentState");
 
-const PROMPT_FILE  = path.join(__dirname, "../../agent/activePrompt.json");
-const MISSION_FILE = path.join(__dirname, "../../agent/activeMission.json");
-const STATE_FILE   = path.join(__dirname, "../../agent/listenerState.json");
+// Fail loud if creds the aggregator absolutely needs are missing. Render
+// will surface a non-zero exit and email the operator. Better than the
+// previous silent no-op that quietly skipped vote aggregation forever.
+for (const k of ["AGENT_ACCOUNT_ID", "AGENT_PRIVATE_KEY", "STAKING_CONTRACT_ID"]) {
+  if (!process.env[k]) {
+    console.error(`[FATAL] governance listener requires ${k} — aggregator will not run`);
+    process.exit(1);
+  }
+}
 
-const STAKING_CONTRACT = process.env.STAKING_CONTRACT_ID || "ironshield.near";
+const STAKING_CONTRACT = process.env.STAKING_CONTRACT_ID;
 const POLL_INTERVAL_MS = parseInt(process.env.GOV_POLL_INTERVAL_MS || "300000", 10); // 5 min default
 const NODE_URL         = process.env.NEAR_RPC_URL || "https://rpc.mainnet.near.org";
 
@@ -42,28 +47,24 @@ const NEAR_CONFIG = {
   keyStore:  new keyStores.InMemoryKeyStore(),
 };
 
-// State shape:
+// State shape persisted in agent_state.listenerState:
 // {
-//   lastSeenId:    -1,         // highest executed proposal we've applied to disk
+//   lastSeenId:    -1,         // highest executed proposal we've applied
 //   announcedIds:  { created: [], finalized: [], executed: [] }
 // }
-function readState() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-    return {
-      lastSeenId:   raw.lastSeenId   ?? -1,
-      announcedIds: {
-        created:   Array.isArray(raw.announcedIds?.created)   ? raw.announcedIds.created   : [],
-        finalized: Array.isArray(raw.announcedIds?.finalized) ? raw.announcedIds.finalized : [],
-        executed:  Array.isArray(raw.announcedIds?.executed)  ? raw.announcedIds.executed  : [],
-      },
-    };
-  } catch {
-    return { lastSeenId: -1, announcedIds: { created: [], finalized: [], executed: [] } };
-  }
+async function readState() {
+  const raw = await agentState.get("listenerState");
+  if (!raw) return { lastSeenId: -1, announcedIds: { created: [], finalized: [], executed: [] } };
+  return {
+    lastSeenId:   raw.lastSeenId   ?? -1,
+    announcedIds: {
+      created:   Array.isArray(raw.announcedIds?.created)   ? raw.announcedIds.created   : [],
+      finalized: Array.isArray(raw.announcedIds?.finalized) ? raw.announcedIds.finalized : [],
+      executed:  Array.isArray(raw.announcedIds?.executed)  ? raw.announcedIds.executed  : [],
+    },
+  };
 }
-const writeState = (s) => fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
-const writeJson  = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
+const writeState = (s) => agentState.set("listenerState", s);
 
 const has = (arr, id) => arr.includes(id);
 const remember = (arr, id) => { if (!has(arr, id)) arr.push(id); };
@@ -137,11 +138,11 @@ async function tryAnnounce(proposals, state) {
 }
 
 // ── IronClaw runtime updater ────────────────────────────────────
-function applyExecutedToRuntime(proposals, state) {
+async function applyExecutedToRuntime(proposals, state) {
   const newExec = proposals.filter(p => p.executed && p.passed && p.id > state.lastSeenId);
   for (const p of newExec) {
     if (p.proposal_type === "PromptUpdate") {
-      writeJson(PROMPT_FILE, { content: p.content, updatedAt: new Date().toISOString(), proposalId: p.id });
+      await agentState.set("activePrompt", { content: p.content, updatedAt: new Date().toISOString(), proposalId: p.id });
       // This prompt is injected into every call agentConnector.js makes
       // to our IronShield agent running on IronClaw (NEAR's hosted
       // agent runtime). We do NOT mutate IronClaw's own config — we
@@ -149,7 +150,7 @@ function applyExecutedToRuntime(proposals, state) {
       console.log(`[governance] IronShield agent prompt updated by proposal #${p.id}: "${p.title}" (will ship on next IronClaw call)`);
     }
     if (p.proposal_type === "Mission") {
-      writeJson(MISSION_FILE, { content: p.content, updatedAt: new Date().toISOString(), proposalId: p.id });
+      await agentState.set("activeMission", { content: p.content, updatedAt: new Date().toISOString(), proposalId: p.id });
       console.log(`[governance] IronShield agent mission updated by proposal #${p.id}: "${p.title}" (will ship on next IronClaw call)`);
     }
     if (p.id > state.lastSeenId) state.lastSeenId = p.id;
@@ -165,13 +166,13 @@ async function pollGovernance() {
       return;
     }
 
-    const state = readState();
+    const state = await readState();
 
     await tryAggregate(proposals);
     await tryAnnounce(proposals, state);
-    applyExecutedToRuntime(proposals, state);
+    await applyExecutedToRuntime(proposals, state);
 
-    writeState(state);
+    await writeState(state);
   } catch (err) {
     console.error("[Governance] Poll error:", err.message);
   }

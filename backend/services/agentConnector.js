@@ -14,26 +14,26 @@
 // so callers don't need to know which is active. Governance-injected
 // prompt + mission are still prepended in both modes.
 const fetch = require("node-fetch");
-const path  = require("path");
-const fs    = require("fs");
 const ironclaw = require("./ironclawClient");
+const agentState = require("../db/agentState");
 
 const ENDPOINT        = process.env.NEAR_AI_ENDPOINT     || "https://cloud-api.near.ai/v1/chat/completions";
 const API_KEY         = process.env.NEAR_AI_KEY          || "";
 const MODEL           = process.env.NEAR_AI_MODEL        || "Qwen/Qwen3-30B-A3B-Instruct-2507";
 const IRONCLAW_MODE   = String(process.env.IRONCLAW_AGENT_MODE || "").toLowerCase() === "true";
 
-const PROMPT_FILE   = path.join(__dirname, "../../agent/activePrompt.json");
-const MISSION_FILE  = path.join(__dirname, "../../agent/activeMission.json");
-
-const readJson = (file) => {
-  try { const d = JSON.parse(fs.readFileSync(file, "utf8")); return d; } catch { return {}; }
-};
-
+// Cached governance context. getCached returns last-known value (possibly
+// null on a cold cache) and refreshes in the background — adds zero DB
+// hits to the AI hot path. The fallback strings below cover the cold-
+// start case before the first refresh completes.
+const GOV_TTL_MS = 30_000;
 const getGovContext = () => {
-  const govPrompt  = readJson(PROMPT_FILE).content  || "";
-  const govMission = readJson(MISSION_FILE).content || "Monitor for scams, phishing links, and malicious wallets.";
-  return { govPrompt, govMission };
+  const prompt  = agentState.getCached("activePrompt",  GOV_TTL_MS);
+  const mission = agentState.getCached("activeMission", GOV_TTL_MS);
+  return {
+    govPrompt:  prompt?.content  || "",
+    govMission: mission?.content || "Monitor for scams, phishing links, and malicious wallets.",
+  };
 };
 
 /* ── MODE 1: CRYPTO RESEARCH SYSTEM PROMPT ────────────────────── */

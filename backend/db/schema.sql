@@ -922,3 +922,21 @@ CREATE TABLE IF NOT EXISTS admin_wallets (
   daily_ai_budget_usd  NUMERIC,
   added_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ── Agent runtime state (Day 3.2 — replaces 4 mutable JSON files) ─────
+-- Single key→jsonb store for IronClaw runtime config + listener state.
+-- Replaces agent/activePrompt.json, agent/activeMission.json,
+-- agent/listenerState.json, and agent/loopState.json — those lived on
+-- ephemeral container disk, which meant duplicate Telegram pushes after
+-- every Render restart and lost prompt updates on cold deploys.
+--
+-- Used keys (informal, no constraint):
+--   activePrompt    — { content, updatedAt, proposalId }
+--   activeMission   — { content, updatedAt, proposalId }
+--   listenerState   — { lastSeenId, announcedIds: { created, finalized, executed } }
+--   loopState       — autonomousLoop.js bookkeeping
+CREATE TABLE IF NOT EXISTS agent_state (
+  key        TEXT        PRIMARY KEY,
+  value      JSONB       NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

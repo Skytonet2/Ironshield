@@ -44,6 +44,9 @@ const migrate = async () => {
     await pool.query(schema);
     console.log("[DB] Schema migration complete");
     await seedAdminAllowlist();
+    // One-shot disk→DB copy for the four legacy agent JSON files. No-op
+    // when none exist on disk (which is the normal state on fresh deploys).
+    await require("./agentState").migrateFromDisk(require("path").resolve(__dirname, "../.."));
   } catch (err) {
     console.error("[DB] Migration error:", err.message);
     throw err;
