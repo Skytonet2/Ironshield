@@ -27,8 +27,22 @@ import {
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
+import useAgentConnections from "@/hooks/useAgentConnections";
+import AgentAvatar from "@/components/agents/AgentAvatar";
 
 const ACTIVE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+/** Pluck the avatar reference out of a connection row's `meta` blob.
+ *  Mirrors the dashboard's avatarFromConn — same shape from chain
+ *  (string-encoded JSON) or backend (object). */
+function avatarFromConn(conn) {
+  if (!conn?.meta) return null;
+  let m = conn.meta;
+  if (typeof m === "string") {
+    try { m = JSON.parse(m); } catch { return null; }
+  }
+  return m?.avatar_url || null;
+}
 
 function truncAddr(a) {
   if (!a) return "";
@@ -172,7 +186,7 @@ function StatsStrip({ t, hasProfile, installedCount, totalAgents }) {
 
 function ConnectedRow({
   t, profile, address, stats, ironclawSource, installedCount,
-  variant = "primary", agentAccount, onRemove, removing,
+  variant = "primary", agentAccount, avatar = null, onRemove, removing,
 }) {
   const active = isAgentActive(stats);
   const permissionLines = [
@@ -201,14 +215,32 @@ function ConnectedRow({
       borderRadius: 14, marginBottom: 10,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-        <span aria-hidden style={{
-          width: 48, height: 48, flexShrink: 0, borderRadius: 12,
-          background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          color: "#fff",
-        }}>
-          <Package size={22} />
-        </span>
+        {avatar ? (
+          // The picker output (preset:* | data: | https:) — render
+          // through the shared AgentAvatar so it matches the dashboard
+          // header and wizard preview. Square radius bridges to the
+          // existing row aesthetic; AgentAvatar's own circle still
+          // shows inside.
+          <span style={{
+            width: 48, height: 48, flexShrink: 0, borderRadius: 12,
+            overflow: "hidden",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            background: t.bgSurface,
+          }}>
+            <AgentAvatar value={avatar} size={48} />
+          </span>
+        ) : (
+          // Pre-launch / pre-Phase-8 agents that never set an avatar
+          // get the original gradient + Package fallback.
+          <span aria-hidden style={{
+            width: 48, height: 48, flexShrink: 0, borderRadius: 12,
+            background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            color: "#fff",
+          }}>
+            <Package size={22} />
+          </span>
+        )}
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: t.white }}>
@@ -457,6 +489,13 @@ export default function ManageAgentsPage() {
   const { connected, address, showModal } = useWallet?.() || {};
   const agent = useAgent();
   const { profile, profileLoading } = agent;
+  // Owner-wide connections feed avatars for every row. The hook
+  // walks chain + backend and merges by (agent_account, framework),
+  // so we get one entry per (sub-)agent / framework combination.
+  // We index by agent_account and pick the first connection's
+  // avatar — agents typically have one framework binding; a future
+  // PR can prefer the active connection if multi-framework is common.
+  const ownerConnections = useAgentConnections({});
 
   // Pin the hook's ref-unstable callbacks so our effects don't retrigger
   // every render and spin up an infinite fetch loop. useAgent rebuilds
@@ -568,6 +607,19 @@ export default function ManageAgentsPage() {
   const installedCount = installed.length;
   const totalAgents = (profile ? 1 : 0) + subAgents.length;
 
+  // Avatar lookup keyed by agent_account. We dedupe on first hit
+  // because most owners have one framework per agent and the picker
+  // writes the same avatar across them anyway.
+  const avatarByAccount = useMemo(() => {
+    const map = new Map();
+    for (const c of ownerConnections.connections || []) {
+      if (map.has(c.agent_account)) continue;
+      const a = avatarFromConn(c);
+      if (a) map.set(c.agent_account, a);
+    }
+    return map;
+  }, [ownerConnections.connections]);
+
   return (
     <>
       <PageHeader t={t} onCreate={handleCreate} disabled={creating || !profile} />
@@ -617,6 +669,7 @@ export default function ManageAgentsPage() {
               ironclawSource={ironclawSource}
               installedCount={installedCount}
               variant="primary"
+              avatar={avatarByAccount.get(profile.owner) || null}
             />
             {subAgents.map(sub => (
               <ConnectedRow
@@ -629,6 +682,7 @@ export default function ManageAgentsPage() {
                 installedCount={0}
                 variant="sub"
                 agentAccount={sub.agent_account}
+                avatar={avatarByAccount.get(sub.agent_account) || null}
                 onRemove={handleRemove}
                 removing={removingAccount === sub.agent_account}
               />
