@@ -209,7 +209,10 @@ router.get("/list", async (req, res, next) => {
         price_near: Number(r.price),
         volume24h,
         volume_24h: volume24h,
-        change24h: 0, // TODO: compute from sparkline
+        // change_24h is computed by the Day 10 sparkline indexer, not yet live.
+        // Until then the row renders flat (0) which the frontend already
+        // tolerates — no fake numbers.
+        change24h: 0,
         change_24h: 0,
         age: `${Math.round(ageHours)}h`,
         created_at: r.created_at,
@@ -448,16 +451,17 @@ router.get("/creator/:wallet", async (req, res, next) => {
       [wallet]
     );
 
+    // claimableFees and totalPnl require the trade-fee accumulator + cost-
+    // basis tracker that lands in Day 10. Until then both render as 0; the
+    // dashboard explains "fees claimable: 0 — coming with NewsCoin v1".
     const coins = rows.map((r) => ({
       id: r.id,
       name: r.name,
       ticker: r.ticker,
       mcap: Number(r.mcap),
       holdings: Number(r.holdings),
-      claimableFees: 0, // TODO: compute from trade fee accumulator
+      claimableFees: 0,
     }));
-
-    // Total PnL is placeholder until we track cost basis
     const totalPnl = 0;
     const totalClaimable = coins.reduce((s, c) => s + c.claimableFees, 0);
 

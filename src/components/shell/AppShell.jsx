@@ -787,9 +787,6 @@ function BottomBar() {
         <span style={{ textTransform: "capitalize" }}>{wsStatus}</span>
       </span>
       <span style={chip}>Feed</span>
-      <span style={chip}>Deploys</span>
-      <span style={chip}>+ Creation Panel</span>
-      <span style={{ ...chip, opacity: 0.6 }}>?</span>
       <div style={{ flex: 1 }} />
       <span style={chip}>SOL {fmtUsd(prices.sol)}</span>
       <span style={chip}>NEAR {fmtUsd(prices.near)}</span>

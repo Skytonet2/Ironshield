@@ -317,7 +317,11 @@ router.post("/:id/leave", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/rooms/:id/close — host only, closes room and (mock) refunds stake
+// POST /api/rooms/:id/close — host only. Closes the room and queues the
+// stake-refund decision. The on-chain refund itself is wired in Day 13
+// (rooms feature complete) — until then refund_tx_hash stays NULL and the
+// response carries refund_status: "pending" | "forfeited" so the frontend
+// can show an honest "refund pending" state instead of a fake tx hash.
 router.post("/:id/close", requireWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
@@ -326,13 +330,13 @@ router.post("/:id/close", requireWallet, async (req, res, next) => {
     if (room.rows[0].host_id !== user.id) return res.status(403).json({ error: "not host" });
 
     const refundOk = (room.rows[0].flagged_violations || 0) === 0;
-    const refundTx = refundOk ? `mock_refund_${room.rows[0].id}_${Date.now().toString(36)}` : null;
+    const refundStatus = refundOk ? "pending" : "forfeited";
 
     await db.query(
       `UPDATE feed_rooms
-          SET status='closed', closed_at=NOW(), refund_tx_hash=$1
-        WHERE id=$2`,
-      [refundTx, room.rows[0].id]
+          SET status='closed', closed_at=NOW(), refund_tx_hash=NULL
+        WHERE id=$1`,
+      [room.rows[0].id]
     );
     await db.query(
       "UPDATE feed_room_participants SET left_at=NOW() WHERE room_id=$1 AND left_at IS NULL",
@@ -364,7 +368,12 @@ router.post("/:id/close", requireWallet, async (req, res, next) => {
     }
 
     res.json({
-      ok: true, refundTx,
+      ok: true,
+      // refundTx stays null until Day 13 wires the on-chain refund. The
+      // status field tells the UI what to render: "pending" → spinner +
+      // "refund processing"; "forfeited" → "stake forfeited (room flagged)".
+      refundTx: null,
+      refundStatus,
       summary: {
         totalParticipants: summary.rows[0].total_participants,
         totalSpeakers:     summary.rows[0].total_speakers,
