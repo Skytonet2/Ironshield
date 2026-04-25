@@ -11,6 +11,8 @@
 const router = require("express").Router();
 const adapters = require("../services/agents");
 const store    = require("../services/agents/connectionStore");
+const automationStore   = require("../services/agents/automationStore");
+const automationExecutor = require("../services/agents/automationExecutor");
 
 // Wallet auth: the same x-wallet header pattern the rest of the
 // backend uses. Mutations require the header to match the `owner`
@@ -168,6 +170,111 @@ router.delete("/connect", async (req, res) => {
   try {
     const removed = await store.remove({ owner, agent_account, framework });
     res.json({ ok: removed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Automation rules
+// ─────────────────────────────────────────────────────────────────────
+//
+// These mount under /api/agents/automations. Same wallet-auth pattern
+// as /connect — the x-wallet header must equal the row's `owner`.
+
+router.get("/automations/:agent_account", async (req, res) => {
+  try {
+    const rows = await automationStore.listForAccount(req.params.agent_account);
+    res.json({ automations: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/automations", async (req, res) => {
+  const wallet = requireOwner(req, res); if (!wallet) return;
+  const { agent_account, name, description, trigger, action, enabled } = req.body || {};
+  if (!agent_account || !name || !trigger || !action) {
+    return res.status(400).json({ error: "agent_account, name, trigger, action required" });
+  }
+  try {
+    const row = await automationStore.create({
+      owner: wallet, agent_account, name, description, trigger, action, enabled,
+    });
+    res.json({ automation: row });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch("/automations/:id", async (req, res) => {
+  const wallet = requireOwner(req, res); if (!wallet) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const row = await automationStore.update(id, wallet, req.body || {});
+    if (!row) return res.status(404).json({ error: "Not found" });
+    res.json({ automation: row });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete("/automations/:id", async (req, res) => {
+  const wallet = requireOwner(req, res); if (!wallet) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const removed = await automationStore.remove(id, wallet);
+    res.json({ ok: removed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manual fire: useful for testing a rule from the dashboard.
+router.post("/automations/:id/fire", async (req, res) => {
+  const wallet = requireOwner(req, res); if (!wallet) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  let rule;
+  try { rule = await automationStore.findOne(id, wallet); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
+  if (!rule) return res.status(404).json({ error: "Not found" });
+  try {
+    const result = await automationExecutor.run({ automation: rule, source: "manual" });
+    res.json({ ok: result.status === "ok", ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Webhook fire: public — no x-wallet — meant for upstream services
+// pinging us. The id alone authenticates because the URL is the
+// shared secret. Rotate by deleting + recreating the rule.
+router.post("/automations/:id/webhook", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  let rule;
+  try { rule = await automationStore.findById(id); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
+  if (!rule)              return res.status(404).json({ error: "Not found" });
+  if (!rule.enabled)      return res.status(409).json({ error: "Rule disabled" });
+  if (rule.trigger?.type !== "webhook") return res.status(409).json({ error: "Rule isn't webhook-triggered" });
+  try {
+    const result = await automationExecutor.run({ automation: rule, source: "webhook" });
+    res.json({ ok: result.status === "ok", ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get("/automations/:id/runs", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const runs = await automationStore.listRuns(id, 25);
+    res.json({ runs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

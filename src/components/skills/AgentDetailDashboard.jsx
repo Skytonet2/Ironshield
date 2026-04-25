@@ -25,6 +25,7 @@ import {
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import useAgentConnections from "@/hooks/useAgentConnections";
+import AutomationRulesPanel from "@/components/skills/AutomationRulesPanel";
 
 const FRAMEWORK_LABEL = {
   openclaw:    "OpenClaw",
@@ -614,18 +615,7 @@ export default function AgentDetailDashboard({ account: accountProp }) {
         display: "grid", gap: 18,
         gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
       }} className="ix-agent-grid-3">
-        <section style={cardStyle(t)}>
-          <SectionTitle t={t} icon={Zap} title="Automation rules" />
-          <p style={{ margin: "6px 0 12px", fontSize: 12.5, color: t.textMuted, lineHeight: 1.5 }}>
-            Cross-framework if-this-then-that rules ship with the next IronShield release. They run on our orchestrator and call your agent for LLM judgment.
-          </p>
-          <div style={{
-            padding: 14, background: t.bgSurface, border: `1px dashed ${t.border}`,
-            borderRadius: 10, fontSize: 12, color: t.textDim, textAlign: "center",
-          }}>
-            Coming soon
-          </div>
-        </section>
+        <AutomationRulesPanel t={t} agentAccount={account} />
 
         <ActivityBlock t={t} activity={stats?.activity_log || []} />
 

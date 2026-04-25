@@ -826,3 +826,55 @@ CREATE TABLE IF NOT EXISTS agent_connections (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_connections_owner   ON agent_connections(owner);
 CREATE INDEX IF NOT EXISTS idx_agent_connections_account ON agent_connections(agent_account);
+
+-- ── Automation rules ──────────────────────────────────────────────────
+-- Cross-framework if-this-then-that rules. The orchestrator polls the
+-- triggers, asks the user's agent for LLM judgement when needed, and
+-- fires the action. Rules live off-chain (volume + iteration speed)
+-- but their fingerprint will be promoted on-chain in Phase 9 once
+-- the trigger / action vocabulary stabilises.
+--
+-- Trigger types (`trigger.type`):
+--   schedule  — cron expression in `trigger.cron`, evaluated UTC
+--   webhook   — fires on POST /api/agents/automations/:id/fire
+--   message   — fires when the agent receives a message via sandbox
+--
+-- Action types (`action.type`):
+--   ask_agent       — sends `action.prompt` to the agent and stores reply
+--   call_skill      — invokes an installed Phase-7 skill (skill_id in action)
+--   webhook_out     — POSTs `action.payload` to action.url
+--
+-- We keep both blobs free-form JSON so adding a new trigger or action
+-- type doesn't require a migration.
+CREATE TABLE IF NOT EXISTS agent_automations (
+  id              SERIAL PRIMARY KEY,
+  owner           TEXT NOT NULL,
+  agent_account   TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  trigger         JSONB NOT NULL,                          -- { type, cron?, channel?, ... }
+  action          JSONB NOT NULL,                          -- { type, prompt?, url?, skill_id?, ... }
+  enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+  last_run_at     TIMESTAMPTZ,
+  last_run_status TEXT,                                    -- 'ok' | 'error'
+  last_run_output TEXT,
+  next_run_at     TIMESTAMPTZ,                             -- pre-computed for schedule triggers
+  run_count       INTEGER NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_automations_owner   ON agent_automations(owner);
+CREATE INDEX IF NOT EXISTS idx_automations_account ON agent_automations(agent_account);
+CREATE INDEX IF NOT EXISTS idx_automations_due
+  ON agent_automations(next_run_at) WHERE enabled = TRUE AND next_run_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS agent_automation_runs (
+  id           SERIAL PRIMARY KEY,
+  automation_id INTEGER NOT NULL REFERENCES agent_automations(id) ON DELETE CASCADE,
+  fired_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  source       TEXT NOT NULL,                              -- 'schedule' | 'webhook' | 'manual'
+  status       TEXT NOT NULL,                              -- 'ok' | 'error'
+  output       TEXT,
+  error        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_automation_runs_aid ON agent_automation_runs(automation_id, fired_at DESC);
