@@ -2,6 +2,7 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
 
 // GET /api/governance/proposals — list proposals
 router.get("/proposals", async (req, res) => {
@@ -41,10 +42,11 @@ router.get("/proposals/:id", async (req, res) => {
 });
 
 // POST /api/governance/proposals — create proposal
-router.post("/proposals", async (req, res) => {
-  const { title, description, proposal_type, proposer, content, expires_at } = req.body;
-  if (!title || !proposal_type || !proposer) {
-    return res.status(400).json({ success: false, error: "title, proposal_type, and proposer required" });
+router.post("/proposals", requireWallet, async (req, res) => {
+  const { title, description, proposal_type, content, expires_at } = req.body;
+  const proposer = req.wallet;
+  if (!title || !proposal_type) {
+    return res.status(400).json({ success: false, error: "title and proposal_type required" });
   }
 
   try {
@@ -60,9 +62,10 @@ router.post("/proposals", async (req, res) => {
 });
 
 // POST /api/governance/proposals/:id/vote — cast vote
-router.post("/proposals/:id/vote", async (req, res) => {
-  const { user_wallet, vote, power = 1 } = req.body;
-  if (!user_wallet || !vote) return res.status(400).json({ success: false, error: "user_wallet and vote required" });
+router.post("/proposals/:id/vote", requireWallet, async (req, res) => {
+  const { vote, power = 1 } = req.body;
+  const user_wallet = req.wallet;
+  if (!vote) return res.status(400).json({ success: false, error: "vote required" });
   if (!["for", "against"].includes(vote)) return res.status(400).json({ success: false, error: "vote must be 'for' or 'against'" });
 
   try {
@@ -97,7 +100,10 @@ router.post("/proposals/:id/vote", async (req, res) => {
   }
 });
 
-// POST /api/governance/sync — sync proposals from chain (called by governanceListener)
+// public: server-to-server endpoint called by governanceListener (a separate
+// Render worker, no NEAR wallet). Day 4 will replace with a shared-secret
+// header so this isn't open to the world; for Day 1 it stays unauthenticated
+// to keep the listener loop working until that swap lands.
 router.post("/sync", async (req, res) => {
   const { proposals } = req.body;
   if (!Array.isArray(proposals)) return res.status(400).json({ success: false, error: "proposals array required" });

@@ -13,15 +13,7 @@ const adapters = require("../services/agents");
 const store    = require("../services/agents/connectionStore");
 const automationStore   = require("../services/agents/automationStore");
 const automationExecutor = require("../services/agents/automationExecutor");
-
-// Wallet auth: the same x-wallet header pattern the rest of the
-// backend uses. Mutations require the header to match the `owner`
-// in the body — no header, no write.
-function requireOwner(req, res) {
-  const wallet = (req.get("x-wallet") || "").trim();
-  if (!wallet) { res.status(401).json({ error: "x-wallet header required" }); return null; }
-  return wallet;
-}
+const requireWallet = require("../middleware/requireWallet");
 
 // ── GET /api/agents/frameworks
 // Public list of supported frameworks for the wizard's framework picker.
@@ -36,7 +28,7 @@ router.get("/frameworks", (_req, res) => {
 // commit.
 //
 // Body: { framework, external_id?, endpoint?, auth? }
-router.post("/validate", async (req, res) => {
+router.post("/validate", requireWallet, async (req, res) => {
   const { framework, external_id, endpoint, auth } = req.body || {};
   if (!framework) return res.status(400).json({ error: "framework required" });
   let adapter;
@@ -55,8 +47,8 @@ router.post("/validate", async (req, res) => {
 // agent_connections. The plaintext `auth` is encrypted at rest.
 //
 // Body: { owner, agent_account, framework, external_id?, endpoint?, auth? }
-router.post("/connect", async (req, res) => {
-  const wallet = requireOwner(req, res); if (!wallet) return;
+router.post("/connect", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const { owner, agent_account, framework, external_id, endpoint, auth, meta } = req.body || {};
   if (!owner || !agent_account || !framework) {
     return res.status(400).json({ error: "owner, agent_account, framework required" });
@@ -118,8 +110,8 @@ router.get("/connections/:agent_account", async (req, res) => {
 // what the dashboard "Test your agent" panel calls.
 //
 // Body: { owner, agent_account, framework, message, systemPrompt?, meta? }
-router.post("/sandbox", async (req, res) => {
-  const wallet = requireOwner(req, res); if (!wallet) return;
+router.post("/sandbox", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const { owner, agent_account, framework, message, systemPrompt, meta } = req.body || {};
   if (owner !== wallet) {
     return res.status(403).json({ error: "Cannot speak on behalf of another account" });
@@ -160,8 +152,8 @@ router.post("/sandbox", async (req, res) => {
 
 // ── DELETE /api/agents/connect
 // Body: { owner, agent_account, framework }
-router.delete("/connect", async (req, res) => {
-  const wallet = requireOwner(req, res); if (!wallet) return;
+router.delete("/connect", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const { owner, agent_account, framework } = req.body || {};
   if (owner !== wallet) return res.status(403).json({ error: "Forbidden" });
   if (!owner || !agent_account || !framework) {
@@ -191,8 +183,8 @@ router.get("/automations/:agent_account", async (req, res) => {
   }
 });
 
-router.post("/automations", async (req, res) => {
-  const wallet = requireOwner(req, res); if (!wallet) return;
+router.post("/automations", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const { agent_account, name, description, trigger, action, enabled } = req.body || {};
   if (!agent_account || !name || !trigger || !action) {
     return res.status(400).json({ error: "agent_account, name, trigger, action required" });
@@ -207,8 +199,8 @@ router.post("/automations", async (req, res) => {
   }
 });
 
-router.patch("/automations/:id", async (req, res) => {
-  const wallet = requireOwner(req, res); if (!wallet) return;
+router.patch("/automations/:id", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
   try {
@@ -220,8 +212,8 @@ router.patch("/automations/:id", async (req, res) => {
   }
 });
 
-router.delete("/automations/:id", async (req, res) => {
-  const wallet = requireOwner(req, res); if (!wallet) return;
+router.delete("/automations/:id", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
   try {
@@ -233,8 +225,8 @@ router.delete("/automations/:id", async (req, res) => {
 });
 
 // Manual fire: useful for testing a rule from the dashboard.
-router.post("/automations/:id/fire", async (req, res) => {
-  const wallet = requireOwner(req, res); if (!wallet) return;
+router.post("/automations/:id/fire", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
   let rule;
@@ -249,9 +241,10 @@ router.post("/automations/:id/fire", async (req, res) => {
   }
 });
 
-// Webhook fire: public — no x-wallet — meant for upstream services
-// pinging us. The id alone authenticates because the URL is the
-// shared secret. Rotate by deleting + recreating the rule.
+// public: id-as-shared-secret — upstream services ping this URL with
+// the rule id alone. Rotate by deleting + recreating the rule. No
+// signed-message auth because the caller is a third-party webhook
+// source that won't have a NEAR wallet.
 router.post("/automations/:id/webhook", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });

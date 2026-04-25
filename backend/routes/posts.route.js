@@ -2,7 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet, postHash, hydratePosts } = require("../services/feedHelpers");
+const { getOrCreateUser, postHash, hydratePosts } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 const { enqueue } = require("../services/batchWorker");
 
 const ALLOWED_TIERS = ["Bronze", "Silver", "Gold", "Legendary"];

@@ -5,7 +5,8 @@ const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 const agent = require("../services/agentConnector");
 
 // Group @handle rules: 3–24 chars, lowercase letters/digits/underscore.
