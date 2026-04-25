@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IronShield
 
-## Getting Started
+**NEAR-native governance protocol that controls IronClaw, the AI agent runtime.**
 
-First, run the development server:
+$IRONCLAW token holders vote on the agent's system prompt and mission. When a proposal passes, the vote rewrites IronClaw's runtime config — the next AI call uses the new prompt. End-to-end on-chain governance of agent behavior, not metadata.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+> Anyone can run IronClaw locally. To run it autonomously — making decisions, holding funds, acting for others — you deploy through IronShield, where the community sets the rules.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Live on NEAR mainnet at [`ironshield.near`](https://nearblocks.io/address/ironshield.near) — Phase 8.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## What's live today
 
-## Learn More
+### Smart contracts (mainnet, Rust + NEAR SDK)
 
-To learn more about Next.js, take a look at the following resources:
+- **Staking** — MasterChef-style pool with FT callbacks
+- **Governance** — proposals, voting, execution, on-chain event emission
+- **Agent registry** — 50+ methods, on-chain agent ↔ framework binding (1604 lines in `agents.rs`)
+- **Skill marketplace** — create, install, metadata, verification
+- **Pre-token + Vanguard NFT governance** — bonus voting weight + revenue share for Vanguard holders
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Backend (Express on Render, Postgres)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- ~40 routes covering feed, agents, skills, governance, DMs, rooms, NewsCoin, trading, bridge, automations, Telegram, push, media
+- 899-line schema, real DB-backed
+- Real NEAR AI integration (Llama-3.1) — system prompts read from on-chain governance state on every call
+- WebSocket feed hub for live updates
+- Governance listener service: chain events → runtime config
 
-## Deploy on Vercel
+### Frontend (Next.js 16 static export, Cloudflare Pages)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- 18 pages: feed, agents, skills, governance, staking, rooms, bridge, messages, NewsCoin, portfolio, treasury, automations, profile, rewards, settings, ecosystem, docs
+- `@near-wallet-selector` v10 — Meteor, HERE, HOT, Intear, MyNearWallet
+- Live at https://ironshield.pages.dev
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Telegram bot
+
+- `/link`, `/portfolio`, `/alerts`, `/vote`, `/digest` commands
+- https://t.me/IronClawHQ
+
+---
+
+## Revenue / token capture
+
+| Stream | Mechanism |
+|---|---|
+| Skill marketplace | 15% of every install fee → treasury, 85% → creator. On-chain enforced. |
+| Token-volume fees | 20% of NEAR token-volume fees route to treasury |
+| Pay-per-report | $IRONCLAW spent on full scam / contract audits |
+| IronShield Pro | Stake-lock $IRONCLAW for Pro perks (higher AI budget, badge, themes) |
+| Treasury use | Funds IronClaw inference + $IRONCLAW buybacks |
+
+---
+
+## Why NEAR
+
+- **The runtime is here.** IronClaw is NEAR AI's open-source agent runtime.
+- **NEAR keys make every prompt change cryptographically attributable to a specific on-chain vote.** No other chain offers this primitive natively.
+- **Treasury, marketplace, settlement all on-contract.** No bridges in the critical governance path.
+
+---
+
+## Live URLs
+
+- **Frontend:** https://ironshield.pages.dev
+- **Contract:** [`ironshield.near`](https://nearblocks.io/address/ironshield.near) (Phase 8)
+- **Telegram:** https://t.me/IronClawHQ
+
+---
+
+## Contact
+
+[ your email / X handle / TG handle here ]
