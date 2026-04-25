@@ -17,7 +17,7 @@ mod agents;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
-pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentPermissions, AgentFlags, SubAgent};
+pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentPermissions, AgentFlags, SubAgent, AgentConnection};
 
 pub type PoolId = u32;
 
@@ -202,6 +202,13 @@ pub struct StakingContract {
     /// consulted when checking uniqueness so a handle can't collide
     /// across the primary + sub namespaces. Prefix b"Q".
     pub sub_agent_handles: UnorderedMap<String, AccountId>,
+
+    // ── Phase 8: external-framework connections ──────────────────────
+    /// Per-agent_account list of public framework bindings (OpenClaw,
+    /// IronClaw on NEAR AI, self-hosted Hermes, ...). Auth tokens
+    /// stay off-chain in the backend connection store; this map only
+    /// holds the public side so the binding is auditable. Prefix b"X".
+    pub agent_connections: UnorderedMap<AccountId, Vec<AgentConnection>>,
 }
 
 #[near]
@@ -272,6 +279,9 @@ impl StakingContract {
             // Phase 7 Sub-PR C — multi-agent per wallet. Prefixes b"O" + b"Q".
             owner_agents:        UnorderedMap::new(b"O"),
             sub_agent_handles:   UnorderedMap::new(b"Q"),
+
+            // Phase 8 — external-framework connections. Prefix b"X".
+            agent_connections:   UnorderedMap::new(b"X"),
         }
     }
 }

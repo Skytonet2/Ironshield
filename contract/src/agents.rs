@@ -149,6 +149,39 @@ pub struct AgentPermissions {
     pub daily_spent_day:   u32,
 }
 
+/// Phase 8: external-framework binding for an agent identity. IronShield
+/// is a launchpad and control plane; the runtime lives on someone else's
+/// platform (OpenClaw, IronClaw on NEAR AI Cloud, self-hosted Hermes,
+/// etc.). On-chain we record the *public* binding — which framework an
+/// agent is reachable through, what its id is there, and where to find
+/// it — so the connection is auditable without trusting our backend.
+///
+/// Auth tokens (API keys, HMAC secrets, gateway tokens) are NEVER
+/// stored on-chain. Those live in the backend connection store keyed
+/// by (owner, agent_account, framework) and only ever leave the box
+/// through adapter calls the orchestrator makes on the user's behalf.
+///
+/// `meta` is a free-form JSON string for non-secret extras (display
+/// name, avatar URL, personality label, validated info from the last
+/// health-poll). Bounded at 1024 bytes so a single agent can't bloat
+/// the parent's storage.
+#[near(serializers=[borsh, json])]
+#[derive(Clone)]
+pub struct AgentConnection {
+    pub framework:   String,    // "openclaw" | "ironclaw" | "self_hosted" | future
+    pub external_id: String,    // agent id within the framework (≤ 96 chars)
+    pub endpoint:    String,    // base URL the orchestrator POSTs to (≤ 256 chars)
+    pub created_at:  u64,
+    pub last_seen:   u64,       // ns timestamp of the most recent successful call
+    pub meta:        String,    // JSON blob, ≤ 1024 chars
+}
+
+pub const MAX_FRAMEWORK_LEN:   usize = 32;
+pub const MAX_EXTERNAL_ID_LEN: usize = 96;
+pub const MAX_ENDPOINT_LEN:    usize = 256;
+pub const MAX_META_LEN:        usize = 1024;
+pub const MAX_CONNECTIONS_PER_AGENT: usize = 8;
+
 /// Phase 7 (Sub-PR C): a secondary agent owned by the same wallet as the
 /// primary `AgentProfile`. Each one is a separate on-chain NEAR account
 /// (e.g. `agent2.alice.near`) with its own handle, bio, and point balance.
@@ -978,6 +1011,181 @@ impl StakingContract {
     pub fn get_sub_agents_total(&self) -> u32 {
         let mut total: u32 = 0;
         for (_, list) in self.owner_agents.iter() {
+            total = total.saturating_add(list.len() as u32);
+        }
+        total
+    }
+
+    // ── Phase 8: external-framework agent connections ──────────────────────
+    //
+    // The on-chain binding between an agent identity (primary or sub)
+    // and the framework runtime it lives on. Auth tokens stay
+    // off-chain in the backend; this map only holds the public side
+    // (framework, external_id, endpoint, last_seen, meta). Same
+    // ownership model as Phase 7C: the caller must either be the
+    // agent_account directly, OR be the parent wallet of a registered
+    // sub-agent matching agent_account.
+
+    fn assert_owns(&self, caller: &AccountId, agent_account: &AccountId) {
+        if caller == agent_account { return; } // primary identity
+        // Sub-agent path: caller's owner_agents list must contain this account.
+        let list = self.owner_agents.get(caller).cloned()
+            .expect("Caller has no sub-agents");
+        assert!(
+            list.iter().any(|s| &s.agent_account == agent_account),
+            "Caller does not own agent_account {}",
+            agent_account
+        );
+    }
+
+    /// Owner: register or update a framework binding for one of their
+    /// agent identities. Idempotent on (agent_account, framework) —
+    /// re-calling overwrites the prior row in place. Created_at is
+    /// preserved across updates; last_seen is left at 0 so the next
+    /// orchestrator health-ping populates it.
+    pub fn set_agent_connection(
+        &mut self,
+        agent_account: AccountId,
+        framework:     String,
+        external_id:   String,
+        endpoint:      String,
+        meta:          Option<String>,
+    ) {
+        assert!(!self.paused, "Contract is paused");
+        let caller = env::predecessor_account_id();
+        self.assert_owns(&caller, &agent_account);
+
+        let fw = framework.trim().to_string();
+        assert!(!fw.is_empty() && fw.len() <= MAX_FRAMEWORK_LEN,
+            "framework required and ≤{} chars", MAX_FRAMEWORK_LEN);
+        let xid = external_id.trim().to_string();
+        assert!(xid.len() <= MAX_EXTERNAL_ID_LEN,
+            "external_id ≤{} chars", MAX_EXTERNAL_ID_LEN);
+        let ep = endpoint.trim().to_string();
+        assert!(ep.len() <= MAX_ENDPOINT_LEN,
+            "endpoint ≤{} chars", MAX_ENDPOINT_LEN);
+        let meta_str = meta.unwrap_or_default();
+        assert!(meta_str.len() <= MAX_META_LEN,
+            "meta ≤{} chars", MAX_META_LEN);
+
+        let mut list = self.agent_connections.get(&agent_account).cloned().unwrap_or_default();
+        let now = env::block_timestamp();
+        if let Some(pos) = list.iter().position(|c| c.framework == fw) {
+            // Preserve created_at; let last_seen be re-stamped by the
+            // orchestrator's mark_seen call after the next successful
+            // health poll.
+            let prev = &list[pos];
+            let preserved_created = prev.created_at;
+            list[pos] = AgentConnection {
+                framework:   fw.clone(),
+                external_id: xid,
+                endpoint:    ep,
+                created_at:  preserved_created,
+                last_seen:   prev.last_seen,
+                meta:        meta_str,
+            };
+        } else {
+            assert!(
+                list.len() < MAX_CONNECTIONS_PER_AGENT,
+                "Connection limit reached ({} per agent)",
+                MAX_CONNECTIONS_PER_AGENT,
+            );
+            list.push(AgentConnection {
+                framework:   fw.clone(),
+                external_id: xid,
+                endpoint:    ep,
+                created_at:  now,
+                last_seen:   0,
+                meta:        meta_str,
+            });
+        }
+        self.agent_connections.insert(agent_account.clone(), list);
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"agent_connection_set\",\"data\":{{\"agent_account\":\"{}\",\"framework\":\"{}\"}}}}",
+            agent_account, fw
+        ));
+    }
+
+    /// Owner: drop a framework binding. The off-chain credential row
+    /// in the backend is unaffected — call DELETE /api/agents/connect
+    /// from the dashboard if you want to clear the auth blob too.
+    pub fn remove_agent_connection(&mut self, agent_account: AccountId, framework: String) {
+        let caller = env::predecessor_account_id();
+        self.assert_owns(&caller, &agent_account);
+
+        let fw = framework.trim().to_string();
+        let mut list = self.agent_connections.get(&agent_account).cloned()
+            .expect("No connections on this agent");
+        let pos = list.iter().position(|c| c.framework == fw)
+            .expect("Connection not found");
+        list.remove(pos);
+        if list.is_empty() {
+            self.agent_connections.remove(&agent_account);
+        } else {
+            self.agent_connections.insert(agent_account.clone(), list);
+        }
+
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"agent_connection_removed\",\"data\":{{\"agent_account\":\"{}\",\"framework\":\"{}\"}}}}",
+            agent_account, fw
+        ));
+    }
+
+    /// Orchestrator-only: stamp last_seen after a successful health
+    /// poll or sandbox round-trip. Lets the dashboard show "Live" /
+    /// "stale" without trusting only off-chain data.
+    pub fn mark_agent_connection_seen(&mut self, agent_account: AccountId, framework: String) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            self.orchestrator_id,
+            "Only the orchestrator can mark connections seen"
+        );
+        let fw = framework.trim().to_string();
+        let mut list = self.agent_connections.get(&agent_account).cloned()
+            .expect("No connections on this agent");
+        let pos = list.iter().position(|c| c.framework == fw)
+            .expect("Connection not found");
+        list[pos].last_seen = env::block_timestamp();
+        self.agent_connections.insert(agent_account, list);
+    }
+
+    /// All framework bindings on one agent identity.
+    pub fn get_agent_connections(&self, agent_account: AccountId) -> Vec<AgentConnection> {
+        self.agent_connections.get(&agent_account).cloned().unwrap_or_default()
+    }
+
+    /// Walk every (sub-)agent owned by `owner` and return their
+    /// connections paired with the agent_account they're attached
+    /// to. Bounded by MAX_SUB_AGENTS_PER_OWNER × MAX_CONNECTIONS_PER_AGENT
+    /// (currently 10 × 8 = 80).
+    pub fn list_agent_connections_for_owner(
+        &self,
+        owner: AccountId,
+    ) -> Vec<(AccountId, AgentConnection)> {
+        let mut out: Vec<(AccountId, AgentConnection)> = Vec::new();
+
+        // Primary identity = the owner account itself.
+        if self.agent_profiles.get(&owner).is_some() {
+            for c in self.agent_connections.get(&owner).cloned().unwrap_or_default() {
+                out.push((owner.clone(), c));
+            }
+        }
+        // Sub-agents.
+        if let Some(subs) = self.owner_agents.get(&owner).cloned() {
+            for s in subs {
+                for c in self.agent_connections.get(&s.agent_account).cloned().unwrap_or_default() {
+                    out.push((s.agent_account.clone(), c));
+                }
+            }
+        }
+        out
+    }
+
+    /// Total connections across all agents — admin telemetry.
+    pub fn get_agent_connections_total(&self) -> u32 {
+        let mut total: u32 = 0;
+        for (_, list) in self.agent_connections.iter() {
             total = total.saturating_add(list.len() as u32);
         }
         total

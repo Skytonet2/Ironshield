@@ -6,9 +6,10 @@
 // agent_account, framework), and on-chain register_agent /
 // register_sub_agent stays the source of truth for who owns what.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE as API } from "@/lib/apiBase";
 import { useWallet } from "@/lib/contexts";
+import useNear, { STAKING_CONTRACT } from "@/hooks/useNear";
 
 const FRAMEWORK_FALLBACK = [
   { key: "openclaw",    display: "OpenClaw",    docs_url: "https://openclaw.ai/docs" },
@@ -18,6 +19,13 @@ const FRAMEWORK_FALLBACK = [
 
 export default function useAgentConnections({ agentAccount } = {}) {
   const { address } = useWallet();
+  // useNear's viewMethod is a fresh closure on every wallet-context
+  // render; pin it via ref so reload's identity stays stable across
+  // renders. Listing it as a dep would trigger an infinite update
+  // loop (effect → setState → re-render → new viewMethod → effect …).
+  const { viewMethod } = useNear();
+  const viewMethodRef = useRef(viewMethod);
+  viewMethodRef.current = viewMethod;
   const [frameworks, setFrameworks] = useState(FRAMEWORK_FALLBACK);
   const [connections, setConnections] = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -40,17 +48,63 @@ export default function useAgentConnections({ agentAccount } = {}) {
 
   const reload = useCallback(async () => {
     if (!address && !agentAccount) { setConnections([]); return; }
-    if (!API) { setConnections([]); return; }
     setLoading(true);
     setError(null);
     try {
-      const url = agentAccount
+      // Pull both sources in parallel: chain holds the canonical public
+      // binding (Phase 8); backend holds the auth blob + last-poll
+      // status. Merge by (agent_account, framework) so the dashboard
+      // shows a single row per binding even when one side hasn't
+      // caught up yet.
+      const apiUrl = agentAccount
         ? `${API}/api/agents/connections/${encodeURIComponent(agentAccount)}`
         : `${API}/api/agents/connections?owner=${encodeURIComponent(address)}`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      setConnections(Array.isArray(j?.connections) ? j.connections : []);
+      const apiPromise = API
+        ? fetch(apiUrl).then(r => r.ok ? r.json() : { connections: [] }).catch(() => ({ connections: [] }))
+        : Promise.resolve({ connections: [] });
+      const chainPromise = (async () => {
+        const view = viewMethodRef.current;
+        if (!view) return [];
+        if (agentAccount) {
+          const rows = await view(STAKING_CONTRACT, "get_agent_connections", { agent_account: agentAccount }).catch(() => null);
+          return Array.isArray(rows) ? rows.map(c => ({ agent_account: agentAccount, ...c })) : [];
+        }
+        if (address) {
+          const rows = await view(STAKING_CONTRACT, "list_agent_connections_for_owner", { owner: address }).catch(() => null);
+          return Array.isArray(rows) ? rows.map(([acct, c]) => ({ agent_account: acct, ...c })) : [];
+        }
+        return [];
+      })();
+
+      const [apiRes, chainRows] = await Promise.all([apiPromise, chainPromise]);
+      const apiRows = Array.isArray(apiRes?.connections) ? apiRes.connections : [];
+
+      // Merge: chain row first (so public binding is canonical), then
+      // overlay backend's status / has_auth where the same key exists.
+      const byKey = new Map();
+      for (const c of chainRows) {
+        byKey.set(`${c.agent_account}:${c.framework}`, {
+          agent_account: c.agent_account,
+          framework:     c.framework,
+          external_id:   c.external_id || null,
+          endpoint:      c.endpoint    || null,
+          status:        "on_chain",
+          source:        "chain",
+          last_seen_ns:  c.last_seen   || 0,
+          meta:          c.meta        || "",
+          has_auth:      false,
+        });
+      }
+      for (const r of apiRows) {
+        const k = `${r.agent_account}:${r.framework}`;
+        const existing = byKey.get(k);
+        byKey.set(k, {
+          ...(existing || {}),
+          ...r,
+          source: existing ? "both" : "backend",
+        });
+      }
+      setConnections(Array.from(byKey.values()));
     } catch (e) {
       setError(e?.message || "Failed to load connections");
       setConnections([]);
