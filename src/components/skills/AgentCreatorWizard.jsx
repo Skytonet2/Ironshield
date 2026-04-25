@@ -457,6 +457,10 @@ export default function AgentCreatorWizard() {
   const { connected, address, showModal } = useWallet?.() || {};
   const agent = useAgent();
   const conn  = useAgentConnections();
+  // `agent.profile` is populated by useAgent's auto-fetch on address
+  // change. Used to swap the wizard's header copy + the launch
+  // button label between "first agent" and "additional agent".
+  const hasPrimary = Boolean(agent.profile);
 
   const [step, setStep] = useState(1);
   const [state, setState] = useState({
@@ -486,17 +490,34 @@ export default function AgentCreatorWizard() {
     setLaunching(true);
     setError(null);
     try {
-      // 1. on-chain: register sub-agent (creates handle.<owner>.near
-      //    in spirit; the actual sub-account creation is delegated to
-      //    useAgent.createSubAgent which batches it with the contract
-      //    call). Skip if the user already has a primary handle that
-      //    matches — they want to reuse it.
-      const existing = await agent.getAgentByHandle?.(state.handle).catch(() => null);
+      // Three branches for "where does this agent's identity come from":
+      //
+      //   (a) Caller already has a primary AgentProfile + the handle
+      //       matches → reuse the primary, just attach the framework
+      //       connection. agent_account === their NEAR account.
+      //
+      //   (b) Caller has NO primary profile yet → register the primary
+      //       (register_agent on-chain). This is the fix for first-time
+      //       users coming from /skills install gate; the previous code
+      //       jumped to createSubAgent which the contract rejects when
+      //       there's no parent profile.
+      //
+      //   (c) Caller has a primary, but with a different handle → spin
+      //       up a sub-agent on a new sub-account (createSubAgent).
+      //
+      // We figure out which branch by reading on-chain state up front.
+      const myProfile = await agent.fetchProfile?.().catch(() => null);
       let agent_account;
-      if (existing && existing.owner === address) {
-        // Reuse the primary identity; framework connection attaches to it.
+
+      if (!myProfile) {
+        // (b) First-time. Register the primary.
+        await agent.registerAgent({ handle: state.handle, bio: state.bio });
+        agent_account = address;
+      } else if (myProfile.handle === state.handle) {
+        // (a) Reuse — same handle, same owner.
         agent_account = address;
       } else {
+        // (c) Additional agent for an already-registered owner.
         const res = await agent.createSubAgent({
           handle: state.handle,
           bio:    state.bio,
@@ -573,7 +594,8 @@ export default function AgentCreatorWizard() {
           fontSize: "clamp(24px, 2.4vw, 32px)", margin: 0,
           fontWeight: 800, color: t.white, letterSpacing: -0.4,
         }}>
-          Launch your AI agent <span style={{
+          {hasPrimary ? "Add another agent" : "Launch your first agent"}
+          <span style={{
             fontSize: 11, padding: "3px 8px", verticalAlign: "middle",
             background: `${t.accent}22`, color: t.accent,
             borderRadius: 999, marginLeft: 8, fontWeight: 700,
