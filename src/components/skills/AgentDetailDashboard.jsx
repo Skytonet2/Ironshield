@@ -26,6 +26,19 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import useAgentConnections from "@/hooks/useAgentConnections";
 import AutomationRulesPanel from "@/components/skills/AutomationRulesPanel";
+import AgentAvatar from "@/components/agents/AgentAvatar";
+
+/** Pull the avatar reference out of a connection row's `meta` blob.
+ *  meta is stored as JSON on-chain (a string field) and as an
+ *  object in the backend response — we accept either shape. */
+function avatarFromConn(conn) {
+  if (!conn?.meta) return null;
+  let m = conn.meta;
+  if (typeof m === "string") {
+    try { m = JSON.parse(m); } catch { return null; }
+  }
+  return m?.avatar_url || null;
+}
 
 const FRAMEWORK_LABEL = {
   openclaw:    "OpenClaw",
@@ -93,12 +106,9 @@ function HeaderBlock({ t, profile, account, primaryConn, skillsCount, onPause, p
       borderRadius: 16, padding: "20px 22px", marginBottom: 18,
       display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 18, alignItems: "center",
     }} className="ix-agent-header">
-      <span style={{
-        width: 64, height: 64, borderRadius: "50%", flexShrink: 0,
-        background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        color: "#fff",
-      }}><Bot size={26} /></span>
+      <AgentAvatar value={avatarFromConn(primaryConn)} size={64} />
+
+
 
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

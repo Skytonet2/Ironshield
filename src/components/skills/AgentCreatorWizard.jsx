@@ -22,6 +22,9 @@ import {
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import useAgentConnections from "@/hooks/useAgentConnections";
+import AgentAvatar from "@/components/agents/AgentAvatar";
+import AvatarPicker from "@/components/agents/AvatarPicker";
+import { defaultAvatar } from "@/components/agents/avatarPresets";
 
 /* ─────────────── Framework cards ─────────────── */
 
@@ -100,10 +103,6 @@ function Step1Identity({ t, state, set, isHandleAvail }) {
                     placeholder="Finds airdrops across chains, alerts you on Telegram."
                     rows={3} style={{ ...input(t), resize: "vertical" }} />
         </Field>
-        <Field t={t} label="Avatar URL" hint="Paste a public image URL (square, ≥256×256). Cloudflare-image upload coming soon.">
-          <input value={state.avatarUrl} onChange={e => set({ avatarUrl: e.target.value })}
-                 placeholder="https://example.com/avatar.png" style={input(t)} />
-        </Field>
         <Field t={t} label="Personality" hint="Display label only. Adapter passes it as system prompt where supported.">
           <select value={state.personality} onChange={e => set({ personality: e.target.value })} style={input(t)}>
             <option>Helpful</option>
@@ -114,6 +113,16 @@ function Step1Identity({ t, state, set, isHandleAvail }) {
           </select>
         </Field>
       </Grid>
+
+      {/* Avatar picker spans the full width below the form fields. The
+          live preview + presets grid + upload button all live inside
+          the picker so this card stays focused on identity. */}
+      <div style={{ marginTop: 16 }}>
+        <AvatarPicker
+          value={state.avatarUrl}
+          onChange={(v) => set({ avatarUrl: v })}
+        />
+      </div>
     </Section>
   );
 }
@@ -303,19 +312,7 @@ function PreviewRail({ t, state }) {
       <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 14 }}>How your agent will appear.</div>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-        {state.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={state.avatarUrl} alt="" width={48} height={48}
-               style={{ borderRadius: "50%", flexShrink: 0, objectFit: "cover" }}
-               onError={(e) => { e.currentTarget.style.display = "none"; }} />
-        ) : (
-          <span style={{
-            width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
-            background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            color: "#fff",
-          }}><Bot size={20} /></span>
-        )}
+        <AgentAvatar value={state.avatarUrl} size={48} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.white }}>
             {state.name || "Your agent"}
@@ -463,7 +460,7 @@ export default function AgentCreatorWizard() {
 
   const [step, setStep] = useState(1);
   const [state, setState] = useState({
-    name: "", handle: "", bio: "", avatarUrl: "", personality: "Helpful",
+    name: "", handle: "", bio: "", avatarUrl: defaultAvatar(), personality: "Helpful",
     framework: "openclaw",
     cred: {}, // external_id, endpoint, auth
   });
