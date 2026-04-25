@@ -940,3 +940,38 @@ CREATE TABLE IF NOT EXISTS agent_state (
   value      JSONB       NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ── Media upload audit + per-wallet daily quota (Day 5.1) ─────────────
+-- One row per successful upload. The quota check is a 24-hour rolling
+-- count keyed on `wallet`. Admins (admin_wallets) bypass the cap; for
+-- everyone else: default 10/day. The index keeps the COUNT query off
+-- the heap.
+CREATE TABLE IF NOT EXISTS media_uploads (
+  id          SERIAL      PRIMARY KEY,
+  wallet      TEXT        NOT NULL,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  bytes       INTEGER     NOT NULL,
+  content_type TEXT       NOT NULL,
+  url         TEXT        NOT NULL,
+  host        TEXT        NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_media_uploads_wallet_at
+  ON media_uploads (wallet, uploaded_at DESC);
+
+-- ── Per-wallet AI $ cap (Day 5.3) ────────────────────────────────────
+-- wallet_budgets: per-wallet daily cap in USD. Missing rows default to
+-- the constant in aiBudget.js. Admins (admin_wallets row) get
+-- admin_wallets.daily_ai_budget_usd instead — see aiBudget.getBudget.
+CREATE TABLE IF NOT EXISTS wallet_budgets (
+  wallet              TEXT       PRIMARY KEY,
+  daily_ai_budget_usd NUMERIC    NOT NULL DEFAULT 5.0,
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- wallet_ai_spend: today's accumulated cost. Row keyed (wallet, day).
+-- Updated via UPSERT after each NEAR AI call lands.
+CREATE TABLE IF NOT EXISTS wallet_ai_spend (
+  wallet    TEXT    NOT NULL,
+  day       DATE    NOT NULL,
+  cost_usd  NUMERIC NOT NULL DEFAULT 0,
+  PRIMARY KEY (wallet, day)
+);
