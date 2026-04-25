@@ -59,10 +59,20 @@ async function healthPoll({ external_id, endpoint, auth }) {
   return v.ok ? "active" : "disconnected";
 }
 
-// Chat round-trip: open a thread, send the user turn, poll the SSE
-// stream until the assistant message is committed, and return the
-// reply. Threads are persistent on IronClaw's side — callers that
-// want stateful chat should pass a `thread_id` in `meta`.
+// Chat round-trip: open a thread, send the user turn, subscribe to
+// the SSE event stream until the matching assistant message lands,
+// and return the reply. Threads are persistent on IronClaw's side —
+// callers that want stateful chat should pass a `thread_id` in
+// `meta`.
+//
+// SSE is the canonical delivery on IronClaw; switching from the old
+// 800ms polling loop drops sandbox-chat latency from ~1s+ to as
+// little as the model takes to start streaming. Falls back to a
+// short polling window if SSE 404s (older IronClaw deployments).
+
+const SSE_TIMEOUT_MS = 25_000;
+const POLL_TIMEOUT_MS = 25_000;
+
 async function sendMessage({ endpoint, auth, message, systemPrompt, meta = {} }) {
   const base = pickBase(endpoint);
 
@@ -93,13 +103,132 @@ async function sendMessage({ endpoint, auth, message, systemPrompt, meta = {} })
   if (!sRes.ok) throw new Error(`IronClaw send ${sRes.status}: ${await sRes.text()}`);
   const sent = await sRes.json();
 
-  // Poll for the assistant turn. IronClaw's SSE stream is the canonical
-  // delivery, but for a sandbox round-trip a short polling window keeps
-  // the adapter HTTP-only and easier to test. Real-time streaming is
-  // reserved for a future SSE-aware path.
-  const startedAt = Date.now();
+  // Try SSE first. A 404 / 4xx falls through to the polling path so
+  // older deployments keep working.
   let reply = null;
-  while (Date.now() - startedAt < 25_000) {
+  try {
+    reply = await readReplyFromSse({ base, auth, threadId, sentId: sent.message_id });
+  } catch (sseErr) {
+    if (!String(sseErr?.message || "").includes("HTTP 4")) {
+      console.warn("[ironclaw] SSE failed, falling back to polling:", sseErr.message);
+    }
+    reply = await readReplyFromPolling({ base, auth, threadId, sentId: sent.message_id });
+  }
+
+  return {
+    reply: reply || "(IronClaw is still processing; refresh the dashboard to see the reply)",
+    raw:   { threadId, sent_id: sent.message_id || null },
+  };
+}
+
+/** Subscribe to /api/chat/events and resolve when an assistant
+ *  message tied to our `sentId` lands. We accumulate streamed text
+ *  events ('delta' | 'token') and commit on a 'done' / 'message'
+ *  envelope — IronClaw's protocol is best-effort backward-compatible. */
+async function readReplyFromSse({ base, auth, threadId, sentId }) {
+  const url = `${base}/api/chat/events?thread_id=${encodeURIComponent(threadId)}`;
+  const res = await fetch(url, {
+    headers: { ...authHeaders(auth), "Accept": "text/event-stream" },
+    timeout: 8000,                  // connect timeout only
+  });
+  if (!res.ok) throw new Error(`SSE HTTP ${res.status}`);
+  if (!res.body || !res.body[Symbol.asyncIterator]) {
+    // node-fetch v2 returns Readable; v3 returns web ReadableStream.
+    // We handle both via getReader() + a tiny shim.
+    return await readSseFromReadable(res, sentId);
+  }
+  return await readSseFromAsyncIterable(res.body, sentId);
+}
+
+async function readSseFromAsyncIterable(stream, sentId) {
+  const startedAt = Date.now();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let acc    = "";
+  const deadline = setTimeout(() => stream.destroy?.(), SSE_TIMEOUT_MS);
+  try {
+    for await (const chunk of stream) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const event = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const settled = handleSseEvent(event, sentId, (delta) => { acc += delta; });
+        if (settled !== null) return settled || acc;
+      }
+      if (Date.now() - startedAt > SSE_TIMEOUT_MS) break;
+    }
+  } finally {
+    clearTimeout(deadline);
+  }
+  return acc || null;
+}
+
+async function readSseFromReadable(res, sentId) {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    let buffer = "", acc = "";
+    const timer = setTimeout(() => { res.body.destroy(); resolve(acc || null); }, SSE_TIMEOUT_MS);
+    res.body.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const event = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const settled = handleSseEvent(event, sentId, (delta) => { acc += delta; });
+        if (settled !== null) {
+          clearTimeout(timer);
+          res.body.destroy();
+          return resolve(settled || acc);
+        }
+      }
+      if (Date.now() - startedAt > SSE_TIMEOUT_MS) {
+        clearTimeout(timer);
+        res.body.destroy();
+        resolve(acc || null);
+      }
+    });
+    res.body.on("error", (err) => { clearTimeout(timer); reject(err); });
+    res.body.on("end",   ()    => { clearTimeout(timer); resolve(acc || null); });
+  });
+}
+
+/** Parse one SSE event block. Calls `onDelta(text)` for streamed
+ *  tokens and returns either:
+ *    - null  → keep reading
+ *    - ""    → commit whatever we've accumulated
+ *    - "..." → final reply text from the server
+ */
+function handleSseEvent(rawEvent, sentId, onDelta) {
+  const dataLines = rawEvent.split(/\n/).filter(l => l.startsWith("data:"));
+  if (!dataLines.length) return null;
+  const data = dataLines.map(l => l.slice(5).trim()).join("\n");
+  if (!data) return null;
+  let parsed;
+  try { parsed = JSON.parse(data); }
+  catch { return null; }
+
+  const type = parsed.type || parsed.event || parsed.kind;
+  // Ignore events that don't match our send (heartbeats, other turns).
+  if (sentId && parsed.in_reply_to && parsed.in_reply_to !== sentId &&
+      parsed.parent_id && parsed.parent_id !== sentId) {
+    return null;
+  }
+
+  if (type === "delta" || type === "token" || type === "chunk") {
+    const piece = parsed.delta || parsed.token || parsed.content || "";
+    if (piece) onDelta(piece);
+    return null;
+  }
+  if (type === "message" || type === "done" || type === "complete") {
+    return parsed.content || parsed.reply || "";
+  }
+  return null;
+}
+
+async function readReplyFromPolling({ base, auth, threadId, sentId }) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
     await new Promise(r => setTimeout(r, 800));
     const tRes = await fetch(`${base}/api/chat/thread/${encodeURIComponent(threadId)}/messages`, {
       headers: authHeaders(auth),
@@ -109,14 +238,11 @@ async function sendMessage({ endpoint, auth, message, systemPrompt, meta = {} })
     const list = await tRes.json().catch(() => null);
     const msgs = Array.isArray(list?.messages) ? list.messages : Array.isArray(list) ? list : [];
     const assistant = msgs
-      .filter(m => m.role === "assistant" && (!sent.message_id || m.parent_id === sent.message_id || m.in_reply_to === sent.message_id))
+      .filter(m => m.role === "assistant" && (!sentId || m.parent_id === sentId || m.in_reply_to === sentId))
       .pop();
-    if (assistant?.content) { reply = assistant.content; break; }
+    if (assistant?.content) return assistant.content;
   }
-  return {
-    reply: reply || "(IronClaw is still processing; refresh the dashboard to see the reply)",
-    raw:   { threadId, sent_id: sent.message_id || null },
-  };
+  return null;
 }
 
 async function listMetrics({ external_id, endpoint, auth }) {

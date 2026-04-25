@@ -23,10 +23,11 @@ app.use("/api/verify",    require("./routes/verify.route"));
 app.use("/api/portfolio", require("./routes/portfolio.route"));
 app.use("/api/security",  require("./routes/security.route"));
 app.use("/api/chat",      require("./routes/chat.route"));
-// Mount /avatar BEFORE /agents so the specific prefix wins (Express
-// dispatches in declaration order — agents.route falls through fine
-// either way, but ordering by specificity reads cleaner).
-app.use("/api/agents/avatar", require("./routes/avatars.route"));
+// Mount /avatar + /channels BEFORE /agents so the specific prefixes
+// win (Express dispatches in declaration order — agents.route falls
+// through fine either way, but ordering by specificity reads cleaner).
+app.use("/api/agents/avatar",   require("./routes/avatars.route"));
+app.use("/api/agents/channels", require("./routes/channels.route"));
 app.use("/api/agents",    require("./routes/agents.route"));
 app.use("/api/skills",    require("./routes/skills.route"));
 app.use("/api/trending",  require("./routes/trending.route"));

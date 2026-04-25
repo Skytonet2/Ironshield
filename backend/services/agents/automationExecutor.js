@@ -6,10 +6,36 @@
 // one place.
 
 const fetch = require("node-fetch");
+const { providers } = require("near-api-js");
 const adapters = require("./index");
 const store    = require("./connectionStore");
 const automationStore = require("./automationStore");
 const skillRegistry = require("../skills");
+
+const STAKING_CONTRACT = process.env.STAKING_CONTRACT || "ironshield.near";
+const NEAR_RPC_URL     = process.env.NEAR_RPC_URL     || "https://rpc.mainnet.near.org";
+let _nearProvider = null;
+function nearProvider() {
+  if (!_nearProvider) _nearProvider = new providers.JsonRpcProvider({ url: NEAR_RPC_URL });
+  return _nearProvider;
+}
+
+/** Look up SkillMetadata.verified for a given skill_id by calling
+ *  get_skill_metadata on the contract. Returns null on failure so
+ *  callers can decide how to handle that — automationExecutor treats
+ *  missing metadata as unverified (fail-safe). */
+async function readSkillMetadata(skillId) {
+  const args = Buffer.from(JSON.stringify({ skill_id: Number(skillId) })).toString("base64");
+  const res = await nearProvider().query({
+    request_type: "call_function",
+    finality:     "final",
+    account_id:   STAKING_CONTRACT,
+    method_name:  "get_skill_metadata",
+    args_base64:  args,
+  });
+  const text = Buffer.from(res.result).toString();
+  return JSON.parse(text);
+}
 
 async function run({ automation, source = "manual" }) {
   const startedAt = Date.now();
@@ -132,7 +158,22 @@ async function callSkill(rule) {
   if (category) {
     // Lets HTTP skills (and any future runtime kind) flow through
     // the same dispatch we'd use from /api/skills/run.
-    return skillRegistry.runByCategory({ category, ctx });
+    //
+    // Verified gate: HTTP skills are author-hosted at an arbitrary
+    // URL — we only execute them when the on-chain SkillMetadata
+    // marks them verified by the contract owner. The skill_id on
+    // the rule's action is the source of truth; if it's missing or
+    // we can't read chain state, default to unverified (refuse).
+    let verified = false;
+    if (action.skill_id != null) {
+      try {
+        const meta = await readSkillMetadata(action.skill_id);
+        verified = Boolean(meta?.verified);
+      } catch (err) {
+        console.warn(`[automation] couldn't read SkillMetadata for #${action.skill_id}:`, err.message);
+      }
+    }
+    return skillRegistry.runByCategory({ category, ctx, verified });
   }
 
   return {
