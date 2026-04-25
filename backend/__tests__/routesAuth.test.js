@@ -25,9 +25,7 @@ const ROUTES = {
   posts:      { file: require("../routes/posts.route"),      public: [] },
   governance: {
     file:   require("../routes/governance.route"),
-    // /sync is a server-to-server endpoint; Day 4 will gate it with a
-    // shared secret. Documented inline in the route file.
-    public: [["post", "/sync"]],
+    public: [],  // /sync removed Day 4 — was never called.
   },
 };
 

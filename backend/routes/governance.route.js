@@ -100,35 +100,15 @@ router.post("/proposals/:id/vote", requireWallet, async (req, res) => {
   }
 });
 
-// public: server-to-server endpoint called by governanceListener (a separate
-// Render worker, no NEAR wallet). Day 4 will replace with a shared-secret
-// header so this isn't open to the world; for Day 1 it stays unauthenticated
-// to keep the listener loop working until that swap lands.
-router.post("/sync", async (req, res) => {
-  const { proposals } = req.body;
-  if (!Array.isArray(proposals)) return res.status(400).json({ success: false, error: "proposals array required" });
-
-  try {
-    let synced = 0;
-    for (const p of proposals) {
-      await db.query(
-        `INSERT INTO proposals (chain_id, title, description, proposal_type, proposer, content, votes_for, votes_against, status, executed, executed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (chain_id) DO UPDATE SET
-           votes_for = EXCLUDED.votes_for,
-           votes_against = EXCLUDED.votes_against,
-           status = EXCLUDED.status,
-           executed = EXCLUDED.executed,
-           executed_at = EXCLUDED.executed_at`,
-        [p.id, p.title, p.description, p.proposal_type, p.proposer, p.content,
-         p.votes_for || 0, p.votes_against || 0, p.status || "active", p.executed || false, p.executed_at]
-      );
-      synced++;
-    }
-    res.json({ success: true, synced });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+// /api/governance/sync intentionally removed (Day 4 cleanup).
+//
+// The route was originally intended for a server-to-server proposals
+// mirror called by governanceListener, but the listener does its own
+// agent_state writes and the proposals table is read directly off-chain
+// via near-api-js viewMethod from the frontend. Nothing in the repo
+// calls /sync — confirmed by grep — so leaving it open was a needless
+// attack surface (a public POST that bulk-upserts the proposals table).
+// If a future listener-to-server mirror is needed, re-add with a
+// shared-secret gate from day 1.
 
 module.exports = router;
