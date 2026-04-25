@@ -182,6 +182,12 @@ function ConnectedRow({
   if (ironclawSource) {
     permissionLines.push({ icon: ExternalLink, label: "Bridge IronClaw posts" });
   }
+  // Detail dashboard route — keyed by `account` (the on-chain owner
+  // for primary agents, agent_account for sub-agents). Falls back to
+  // handle for the legacy /agents/configure page.
+  const detailHref = `/agents/view?account=${encodeURIComponent(
+    variant === "sub" ? agentAccount : profile.owner
+  )}`;
   const configureHref = `/agents/configure?handle=${encodeURIComponent(profile.handle)}`;
   const isSub = variant === "sub";
 
@@ -293,8 +299,19 @@ function ConnectedRow({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Link href={configureHref} style={{
+        <Link href={detailHref} style={{
           padding: "10px 16px",
+          background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+          border: "none",
+          borderRadius: 10, fontSize: 12, fontWeight: 700, color: "#fff",
+          textDecoration: "none", whiteSpace: "nowrap",
+          display: "inline-flex", alignItems: "center", gap: 6,
+          boxShadow: "0 6px 16px rgba(168,85,247,0.25)",
+        }}>
+          <ArrowRight size={12} /> Open
+        </Link>
+        <Link href={configureHref} style={{
+          padding: "10px 14px",
           background: t.bgSurface, border: `1px solid ${t.border}`,
           borderRadius: 10, fontSize: 12, fontWeight: 700, color: t.text,
           textDecoration: "none", whiteSpace: "nowrap",
@@ -500,14 +517,16 @@ export default function ManageAgentsPage() {
   const handleCreate = useCallback(async () => {
     setError(null);
     if (!connected) { showModal?.(); return; }
-    if (!profile) {
-      if (typeof window !== "undefined") window.location.href = "/agent";
-      return;
-    }
+    // Route to the launchpad wizard for both first-time and additional
+    // agent creation. The old inline `prompt()` was a placeholder while
+    // we built the real wizard.
+    if (typeof window !== "undefined") window.location.href = "/agents/create";
+    return;
 
-    // Prompt for a handle. Deliberately lightweight — the dedicated
-    // create-agent wizard covers richer UX for the primary; sub-agent
-    // creation is "name it and go".
+    // Legacy quick-create kept here for reference; remove once the
+    // wizard has been live for one release. (Unreachable — the early
+    // return above always wins.)
+    // eslint-disable-next-line no-unreachable
     const handle = typeof window !== "undefined"
       ? window.prompt("New agent handle (3–32 chars, letters/numbers/_/-):")
       : null;

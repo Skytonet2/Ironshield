@@ -796,3 +796,33 @@ ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activated_at      TIMESTAMPTZ
 ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activated_tx_hash TEXT;
 ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activation_near   NUMERIC(40,18);
 ALTER TABLE feed_tg_links ADD COLUMN IF NOT EXISTS activation_usd    NUMERIC(10,2);
+
+-- ── Phase 8 staging: external-framework agent connections ─────────────
+-- IronShield is a launchpad + control plane on top of agent frameworks
+-- (OpenClaw / IronClaw / self-hosted). On-chain register_agent stays
+-- the source of truth for identity; this table stores the framework
+-- credentials + endpoint that on-chain rows can't safely hold (API
+-- keys, bot tokens, webhook secrets). Promoted to chain in Phase 8
+-- once the shape stabilises — until then this is the live store the
+-- adapters read from.
+--
+-- One row per (owner, agent_account, framework) tuple — an owner CAN
+-- connect the same agent to multiple frameworks simultaneously, e.g.
+-- the same handle linked to both OpenClaw and a webhook fallback.
+CREATE TABLE IF NOT EXISTS agent_connections (
+  id              SERIAL PRIMARY KEY,
+  owner           TEXT NOT NULL,                            -- NEAR account (parent)
+  agent_account   TEXT NOT NULL,                            -- agent's NEAR account (e.g. agent2.alice.near)
+  framework       TEXT NOT NULL,                            -- 'openclaw' | 'ironclaw' | 'self_hosted'
+  external_id     TEXT,                                     -- agent id inside the framework
+  endpoint        TEXT,                                     -- base URL we POST to
+  auth_encrypted  TEXT,                                     -- AES-256-GCM blob (API key / token / HMAC secret)
+  status          TEXT NOT NULL DEFAULT 'pending',          -- pending | active | disconnected
+  last_seen       TIMESTAMPTZ,                              -- updated by health poll
+  meta            JSONB NOT NULL DEFAULT '{}'::jsonb,       -- framework-specific extras (HMAC alg, ironclaw thread id, etc.)
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(owner, agent_account, framework)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_connections_owner   ON agent_connections(owner);
+CREATE INDEX IF NOT EXISTS idx_agent_connections_account ON agent_connections(agent_account);
