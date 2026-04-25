@@ -22,6 +22,7 @@
 const airdropScan   = require("./airdrop_scan");
 const dailyBriefing = require("./daily_briefing");
 const summariseUrl  = require("./summarise_url");
+const httpRunner    = require("./http_runner");
 
 const REGISTRY = {};
 function register(mod) {
@@ -32,12 +33,26 @@ register(airdropScan);
 register(dailyBriefing);
 register(summariseUrl);
 
-/** Returns the registry-bound key extracted from on-chain
- *  SkillMetadata.category, or null if the skill isn't builtin. */
-function keyFromCategory(category) {
+/** Resolve a SkillMetadata.category to an executable shape:
+ *    "builtin:<id>" → { kind: "builtin", key }     (registered above)
+ *    "http:<url>"   → { kind: "http", url }         (HTTP runner)
+ *    anything else  → null                           (metadata-only)
+ */
+function classifyCategory(category) {
   if (!category || typeof category !== "string") return null;
-  const m = category.match(/^builtin:([a-z0-9_]+)$/);
-  return m ? m[1] : null;
+  const b = category.match(/^builtin:([a-z0-9_]+)$/);
+  if (b) return { kind: "builtin", key: b[1] };
+  if (category.startsWith("http:")) {
+    const url = category.slice(5);
+    if (/^https?:\/\//i.test(url)) return { kind: "http", url };
+  }
+  return null;
+}
+
+/** Legacy alias retained for callers that only care about built-ins. */
+function keyFromCategory(category) {
+  const c = classifyCategory(category);
+  return c?.kind === "builtin" ? c.key : null;
 }
 
 function listManifests() {
@@ -52,10 +67,26 @@ function listManifests() {
 
 function get(id) { return REGISTRY[id] || null; }
 
+/** Run by built-in id (legacy callers + the automation executor). */
 async function run({ id, ctx }) {
   const mod = get(id);
   if (!mod) throw new Error(`Unknown built-in skill: ${id}`);
   return mod.execute(ctx || {});
 }
 
-module.exports = { REGISTRY, listManifests, get, run, keyFromCategory };
+/** Run by category — accepts both "builtin:<id>" and "http:<url>".
+ *  This is what the automation executor calls when a skill is
+ *  resolved from on-chain metadata; centralising the dispatch here
+ *  means the route layer doesn't need to know about HTTP skills. */
+async function runByCategory({ category, ctx }) {
+  const c = classifyCategory(category);
+  if (!c) throw new Error(`Unrunnable skill category: ${category}`);
+  if (c.kind === "builtin") return run({ id: c.key, ctx });
+  if (c.kind === "http")    return httpRunner.execute({ ...ctx, http_url: c.url });
+  throw new Error(`Unsupported runtime: ${c.kind}`);
+}
+
+module.exports = {
+  REGISTRY, listManifests, get, run, runByCategory,
+  classifyCategory, keyFromCategory,
+};

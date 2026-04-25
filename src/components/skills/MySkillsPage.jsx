@@ -238,7 +238,7 @@ export default function MySkillsPage() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Link href={`/skills/${skill.id}`} style={{
+                <Link href={`/skills/view?id=${skill.id}`} style={{
                   padding: "9px 14px",
                   background: t.bgSurface, border: `1px solid ${t.border}`,
                   borderRadius: 10, fontSize: 12, fontWeight: 700, color: t.text,

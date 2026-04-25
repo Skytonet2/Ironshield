@@ -679,7 +679,7 @@ function InstalledSkillsTab({ t, skills, loading, isOwner, onUninstall, busyId }
             <Package size={16} />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <Link href={`/skills/${s.id}`} style={{
+            <Link href={`/skills/view?id=${s.id}`} style={{
               fontSize: 13, fontWeight: 700, color: t.white, textDecoration: "none",
             }}>
               {s.name}
