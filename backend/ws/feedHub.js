@@ -1,27 +1,44 @@
 // backend/ws/feedHub.js
 //
 // WebSocket hub for the AIO feed stream. One Set of clients, broadcast
-// fan-out, exponential-backoff friendly client-side. This is a *public*
-// broadcast bus right now — Privy (Phase 2) will add per-socket JWT
-// verification and turn `wallet` + `trade` events into authenticated
-// topics. Today, every connected client sees every event that passes
-// the client's own `subscribe` filter.
+// fan-out, exponential-backoff friendly client-side. Public events
+// (trades, dex, newpair, etc.) flow through `broadcast()` and reach
+// every subscribed client.
+//
+// Per-wallet private events (DMs, notifications) flow through
+// `publish(wallet, event)` and reach only sockets that completed the
+// HMAC-ticket auth handshake for that wallet. Day 5.5 added this path
+// when /api/dm/conversations and /api/notifications polling was
+// removed — the WS replacement has to be auth-gated because broadcast
+// would leak per-wallet metadata across all connected clients.
 //
 // Shape of a FeedEvent is mirrored in src/lib/ws/wsClient.js — keep the
 // two in sync.
 //
 // Attached to the existing Express HTTP server via `attach(server)`.
-// We *don't* create our own HTTP server; sharing avoids a second open
-// port on Render's single-port allocation.
 
 const { WebSocketServer } = require("ws");
 const { nanoid } = require("nanoid");
+const wsTicket = require("../services/wsTicket");
 
 const clients = new Set();
+// wallet -> Set of client entries authed for that wallet. Maintained
+// in lockstep with `clients`; entries appear here only after a valid
+// ticket on the `auth` message.
+const walletIndex = new Map();
 
-// Origin allowlist. Rendering the comma-separated env into a Set once
-// at boot is cheaper than splitting on every connection. Dev origins
-// are always allowed so `npm run dev:all` works out-of-the-box.
+function indexAdd(wallet, entry) {
+  let set = walletIndex.get(wallet);
+  if (!set) { set = new Set(); walletIndex.set(wallet, set); }
+  set.add(entry);
+}
+function indexRemove(wallet, entry) {
+  const set = walletIndex.get(wallet);
+  if (!set) return;
+  set.delete(entry);
+  if (set.size === 0) walletIndex.delete(wallet);
+}
+
 const DEV_ORIGINS = new Set([
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -34,20 +51,15 @@ const PROD_ORIGINS = new Set(
 );
 
 function originAllowed(origin) {
-  if (!origin) return true; // server-to-server tools, curl, etc.
+  if (!origin) return true;
   return DEV_ORIGINS.has(origin) || PROD_ORIGINS.has(origin);
 }
 
-/**
- * Attach a WS server to an existing HTTP server.
- * The WS path is `/ws/feed` so the same hostname can continue serving
- * REST on everything else.
- */
 function attach(server) {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
-    if (req.url !== "/ws/feed") return; // let other upgrade handlers win
+    if (req.url !== "/ws/feed") return;
     const origin = req.headers.origin;
     if (!originAllowed(origin)) {
       socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -60,15 +72,13 @@ function attach(server) {
   });
 
   wss.on("connection", (ws) => {
-    // Per-socket state. `subs` is a Set<FeedEventType>; empty means
-    // "pass everything" (matches the client's filter semantics).
     const state = {
       id: nanoid(8),
       subs: new Set(),
-      authed: false,
-      userId: null,
+      authedWallet: null,
     };
-    clients.add({ ws, state });
+    const entry = { ws, state };
+    clients.add(entry);
 
     ws.send(JSON.stringify({ type: "hello", id: state.id, ts: Date.now() }));
 
@@ -82,18 +92,29 @@ function attach(server) {
           ws.send(JSON.stringify({ type: "pong", ts: Date.now() }));
           break;
 
-        case "auth":
-          // Privy JWT verification lands in Phase 2. Today we trust any
-          // string, mark the socket authed, and let it through — every
-          // event is still public so this is just bookkeeping.
-          state.authed = !!msg.token;
-          state.userId = msg.userId || null;
-          ws.send(JSON.stringify({ type: "authed", ok: state.authed }));
+        case "auth": {
+          // Ticket-gated wallet binding. Old shape `{token, userId}`
+          // (Phase 2 placeholder) is rejected — sockets that don't
+          // present a valid ticket simply never appear in walletIndex
+          // and never receive a wallet-targeted event.
+          const { wallet, ticket } = msg;
+          const verified = ticket ? wsTicket.verify(ticket) : null;
+          if (!verified || !wallet || verified.wallet !== String(wallet).toLowerCase().trim()) {
+            ws.send(JSON.stringify({ type: "authed", ok: false, error: "bad-ticket" }));
+            break;
+          }
+          // If this socket re-auths for a different wallet, detach the
+          // old binding first.
+          if (state.authedWallet && state.authedWallet !== verified.wallet) {
+            indexRemove(state.authedWallet, entry);
+          }
+          state.authedWallet = verified.wallet;
+          indexAdd(verified.wallet, entry);
+          ws.send(JSON.stringify({ type: "authed", ok: true, wallet: verified.wallet }));
           break;
+        }
 
         case "subscribe":
-          // Replace the sub set rather than union — clients that want
-          // to widen their filter should send the full desired list.
           if (Array.isArray(msg.trackers)) {
             state.subs = new Set(msg.trackers);
             ws.send(JSON.stringify({ type: "subscribed", trackers: [...state.subs] }));
@@ -101,25 +122,24 @@ function attach(server) {
           break;
 
         default:
-          // Unknown message types are ignored; never crash on client junk.
           break;
       }
     });
 
     ws.on("close", () => {
-      for (const c of clients) if (c.ws === ws) { clients.delete(c); break; }
+      if (state.authedWallet) indexRemove(state.authedWallet, entry);
+      clients.delete(entry);
     });
 
-    ws.on("error", () => { /* let close handler run; nothing to log here */ });
+    ws.on("error", () => { /* close handler runs */ });
   });
 
   return wss;
 }
 
 /**
- * Broadcast a FeedEvent to every subscribed client. Safe to call from
- * anywhere in the backend (cron jobs, route handlers, on-chain
- * listeners). Adds `id` + `ts` if the caller didn't.
+ * Broadcast a FeedEvent to every subscribed client. Public events only
+ * (no per-wallet content) — DMs and notifications must use publish().
  */
 function broadcast(event) {
   if (!event || !event.type) return;
@@ -132,12 +152,39 @@ function broadcast(event) {
   for (const { ws, state } of clients) {
     if (ws.readyState !== ws.OPEN) continue;
     if (state.subs.size > 0 && !state.subs.has(normalized.type)) continue;
-    try { ws.send(payload); } catch { /* drop; close handler cleans up */ }
+    try { ws.send(payload); } catch { /* drop */ }
+  }
+}
+
+/**
+ * Publish a FeedEvent only to sockets that authenticated for `wallet`.
+ * Used for `dm:new` and `notification:new` — events that would leak
+ * cross-wallet metadata if broadcast.
+ *
+ * Subscription filters still apply: a socket that did `subscribe` to a
+ * narrow tracker list must include the event's type, otherwise the
+ * client would have to widen its filter just to receive private events.
+ * In practice clients keep DM/notification types in their tracker set.
+ */
+function publish(wallet, event) {
+  if (!wallet || !event || !event.type) return;
+  const set = walletIndex.get(String(wallet).toLowerCase().trim());
+  if (!set || set.size === 0) return;
+  const normalized = {
+    id: event.id || nanoid(12),
+    ts: event.ts || Date.now(),
+    ...event,
+  };
+  const payload = JSON.stringify({ type: "event", event: normalized });
+  for (const { ws, state } of set) {
+    if (ws.readyState !== ws.OPEN) continue;
+    if (state.subs.size > 0 && !state.subs.has(normalized.type)) continue;
+    try { ws.send(payload); } catch { /* drop */ }
   }
 }
 
 function stats() {
-  return { clients: clients.size };
+  return { clients: clients.size, wallets: walletIndex.size };
 }
 
-module.exports = { attach, broadcast, stats };
+module.exports = { attach, broadcast, publish, stats };

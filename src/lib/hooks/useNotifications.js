@@ -2,14 +2,15 @@
 // useNotifications — shared store for the Notifications drawer and
 // every badge it feeds (TopNav bell, mobile bottom-nav Alerts).
 //
-// One module-level fetch loop keeps every consumer in sync. Polls
-// /api/notifications every 30s while a wallet is connected; pauses
-// when no one's subscribed to save bandwidth.
+// One module-level fetch seeds the cache on wallet connect; from then
+// on the WS `notification:new` event prepends new rows in real time
+// (Day 5.5 — replaced the old 30s poll on /api/notifications).
+// Consumers can still call reload() to re-pull authoritatively (e.g.
+// after a markAllRead / dismiss flow that mutates server state in a
+// way the WS event doesn't cover).
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiFetch";
-
-const POLL_MS = 30_000;
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -26,7 +27,6 @@ let state = {
   unreadCount: 0,
   lastFetch: 0,
 };
-let pollTimer = null;
 const listeners = new Set();
 
 function emit() {
@@ -48,30 +48,29 @@ async function refresh() {
   } catch { /* keep previous state */ }
 }
 
-function startPoll() {
-  if (pollTimer) return;
-  pollTimer = setInterval(refresh, POLL_MS);
-}
-function stopPoll() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+// Called by AppShell when a `notification:new` WS event arrives.
+// Idempotent on id so a re-emit (server retry, page refocus refetch
+// race) doesn't double-count unread.
+export function prependNotification(n) {
+  if (!n || n.id == null) return;
+  if (state.items.some((existing) => existing.id === n.id)) return;
+  const items = [n, ...state.items].slice(0, 200);
+  const unreadCount = items.filter((x) => !x.read_at).length;
+  state = { ...state, items, unreadCount };
+  emit();
 }
 
 export function useNotifications(wallet) {
   const [snap, setSnap] = useState(state);
 
   useEffect(() => {
-    // When the wallet changes, reset and refetch.
     if (state.wallet !== wallet) {
       state = { wallet: wallet || null, items: [], unreadCount: 0, lastFetch: 0 };
       emit();
       if (wallet) refresh();
     }
     listeners.add(setSnap);
-    if (wallet) startPoll();
-    return () => {
-      listeners.delete(setSnap);
-      if (listeners.size === 0) stopPoll();
-    };
+    return () => { listeners.delete(setSnap); };
   }, [wallet]);
 
   return {

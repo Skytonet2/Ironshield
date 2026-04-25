@@ -8,6 +8,7 @@ const db = require("../db/client");
 const { getOrCreateUser } = require("../services/feedHelpers");
 const requireWallet = require("../middleware/requireWallet");
 const agent = require("../services/agentConnector");
+const feedHub = require("../ws/feedHub");
 
 // Group @handle rules: 3–24 chars, lowercase letters/digits/underscore.
 const HANDLE_RE = /^[a-z0-9_]{3,24}$/;
@@ -409,6 +410,27 @@ router.post("/groups/:groupId/send", requireWallet, async (req, res, next) => {
     );
     await db.query("UPDATE feed_group_chats SET last_message_at=NOW() WHERE id=$1", [gid]);
 
+    // Live WS push to every group member except the author. Same shape
+    // as the 1:1 dm:new event, with groupId in place of conversationId.
+    try {
+      const memberRows = await db.query(
+        `SELECT u.wallet_address FROM feed_group_chat_members m
+           JOIN feed_users u ON u.id = m.user_id
+          WHERE m.group_id = $1 AND m.user_id <> $2`,
+        [gid, me.id]
+      );
+      for (const { wallet_address } of memberRows.rows) {
+        if (wallet_address) {
+          feedHub.publish(wallet_address, {
+            type: "dm:new",
+            groupId: gid,
+            fromId: me.id,
+            messageId: r.rows[0].id,
+          });
+        }
+      }
+    } catch { /* best-effort */ }
+
     // TG fanout to every group member except the author. `group_msg`
     // setting defaults ON per the 2026-04-22 migration; existing
     // users without the key opt in by default (we treat missing as
@@ -550,6 +572,23 @@ router.post("/send", requireWallet, async (req, res, next) => {
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [conversationId, me.id, toId, encryptedPayload, nonce]);
     await db.query("UPDATE feed_conversations SET last_message_at=NOW() WHERE id=$1", [conversationId]);
+
+    // Live WS push to the recipient's authed sockets. Replaces the 30s
+    // poll on /api/dm/conversations the AppShell used to run. Body is
+    // ciphertext-only — server can't read it — so the event carries
+    // just routing metadata; the client refetches the conversation.
+    try {
+      const peer = await db.query("SELECT wallet_address FROM feed_users WHERE id=$1", [toId]);
+      const peerWallet = peer.rows[0]?.wallet_address;
+      if (peerWallet) {
+        feedHub.publish(peerWallet, {
+          type: "dm:new",
+          conversationId,
+          fromId: me.id,
+          messageId: r.rows[0].id,
+        });
+      }
+    } catch { /* best-effort */ }
 
     // Fire-and-forget push to the recipient. DMs are E2E encrypted, so the
     // server cannot read the text — we send a generic "New message" with a

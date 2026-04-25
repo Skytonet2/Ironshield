@@ -21,8 +21,10 @@ import { usePathname } from "next/navigation";
 import {
   LazyMotion, domAnimation, m, AnimatePresence, pageVariants,
 } from "@/lib/motion";
-import { useNotifications } from "@/lib/hooks/useNotifications";
+import { useNotifications, prependNotification } from "@/lib/hooks/useNotifications";
 import { usePWA } from "@/lib/usePWA";
+import * as wsClient from "@/lib/ws/wsClient";
+import { fetchWsTicket } from "@/lib/wsTicket";
 import NotificationsDrawer from "@/components/notifications/NotificationsDrawer";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -847,9 +849,11 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
   // literally cannot fire without an active worker.
   usePWA(walletAddress);
 
-  // DM unread count for the mobile Messages tab badge. Lives in the
-  // shell (not the /messages page) so the badge updates even when the
-  // user is on /feed or /portfolio. Same 30s cadence as notifications.
+  // DM unread count for the mobile Messages tab badge. One-shot fetch
+  // on wallet connect to seed the counter, then live updates via the
+  // WS `dm:new` event (Day 5.5 — replaces the old 30s poll). The poll
+  // was burning ~33 req/s of pure idle traffic at 1k connected users;
+  // the WS path moves that to 0.
   const [dmUnread, setDmUnread] = useState(0);
   useEffect(() => {
     if (!walletAddress) { setDmUnread(0); return; }
@@ -862,7 +866,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
       return "https://ironclaw-backend.onrender.com";
     })();
     let alive = true;
-    const poll = async () => {
+    (async () => {
       try {
         const r = await fetch(`${API}/api/dm/conversations`, {
           headers: { "x-wallet": walletAddress },
@@ -873,10 +877,32 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
         const total = (j.conversations || []).reduce((s, c) => s + (c.unread || 0), 0);
         setDmUnread(total);
       } catch { /* silent */ }
-    };
-    poll();
-    const id = setInterval(poll, 30_000);
-    return () => { alive = false; clearInterval(id); };
+    })();
+    // Optimistic +1 on every dm:new pushed for this wallet. The user
+    // landing on /messages clears unread on the server, and the next
+    // wallet-change re-seed pulls authoritative truth.
+    const off = wsClient.addListener("dm:new", () => {
+      if (!alive) return;
+      setDmUnread((n) => n + 1);
+    });
+    return () => { alive = false; off(); };
+  }, [walletAddress]);
+
+  // Authenticated WS connection for live DM + notification delivery.
+  // Ticket is minted via signed REST per /api/auth/ws-ticket and
+  // re-fetched on every reconnect; wsClient handles the auth handshake
+  // before any subscribe.
+  useEffect(() => {
+    if (!walletAddress) return;
+    wsClient.connect({
+      wallet: walletAddress.toLowerCase(),
+      ticketProvider: fetchWsTicket,
+      trackers: ["dm:new", "notification:new"],
+    });
+    const off = wsClient.addListener("notification:new", (event) => {
+      if (event?.notification) prependNotification(event.notification);
+    });
+    return () => { off(); };
   }, [walletAddress]);
 
   // AppShell routes CREATE / bridge / scan / search centrally so every
