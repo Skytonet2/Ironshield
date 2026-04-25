@@ -135,9 +135,20 @@ export default function SkillDetailPage() {
     setError(null);
     setSuccess(null);
     try {
+      // Same agent-profile gate the marketplace enforces. The contract
+      // would reject the install_skill call anyway; doing the check here
+      // gives a clean redirect to the launchpad instead of a wallet
+      // panic.
+      const profile = await agentRef.current.fetchProfile?.();
+      if (!profile) {
+        if (typeof window !== "undefined") {
+          window.alert("Register an agent before installing skills. Taking you to the launchpad.");
+          window.location.href = "/agents/create";
+        }
+        return;
+      }
       await agentRef.current.installSkill?.(skill.id, String(skill.price_yocto || "0"));
       setSuccess("Installed.");
-      // Refresh installed list so the button flips to "Installed".
       const inst = await agentRef.current.getInstalledSkills?.(address).catch(() => []);
       setInstalled(Array.isArray(inst) ? inst : []);
     } catch (e) {

@@ -19,14 +19,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bot, Pause, Play, Settings, Copy, Check, ExternalLink, Plus,
+  Bot, Pause, Settings, Copy, Check, ExternalLink, Plus,
   Activity, Loader2, Send, Package, Zap, Sparkles, ShieldCheck,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import useAgentConnections from "@/hooks/useAgentConnections";
 import AutomationRulesPanel from "@/components/skills/AutomationRulesPanel";
-import AgentChannelsPanel from "@/components/skills/AgentChannelsPanel";
 import AgentAvatar from "@/components/agents/AgentAvatar";
 
 /** Pull the avatar reference out of a connection row's `meta` blob.
@@ -92,7 +91,7 @@ function StatusPill({ t, icon: Icon, label, value, accent }) {
 
 /* ─────────────── Header ─────────────── */
 
-function HeaderBlock({ t, profile, account, primaryConn, skillsCount, onPause, paused }) {
+function HeaderBlock({ t, profile, account, primaryConn, skillsCount }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -151,13 +150,6 @@ function HeaderBlock({ t, profile, account, primaryConn, skillsCount, onPause, p
       </div>
 
       <div style={{ display: "flex", gap: 8, flexShrink: 0 }} className="ix-agent-actions">
-        <button type="button" onClick={onPause} style={{
-          padding: "9px 14px", background: t.bgSurface, border: `1px solid ${t.border}`,
-          borderRadius: 10, fontSize: 12, fontWeight: 700, color: t.text,
-          display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer",
-        }}>
-          {paused ? <><Play size={12} /> Resume</> : <><Pause size={12} /> Pause</>}
-        </button>
         <Link href={`/agents/configure?handle=${encodeURIComponent(profile?.handle || "")}`} style={{
           padding: "9px 14px",
           background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
@@ -510,7 +502,6 @@ export default function AgentDetailDashboard({ account: accountProp }) {
   const [profile, setProfile]   = useState(null);
   const [stats, setStats]       = useState(null);
   const [installed, setInstalled] = useState([]);
-  const [paused, setPaused]     = useState(false);
   const [testingFw, setTestingFw] = useState(null);
 
   // Load on-chain data for the target account.
@@ -587,8 +578,6 @@ export default function AgentDetailDashboard({ account: accountProp }) {
         account={account}
         primaryConn={primaryConn}
         skillsCount={installed.length}
-        paused={paused}
-        onPause={() => setPaused(p => !p)}
       />
 
       <div style={{
@@ -633,9 +622,6 @@ export default function AgentDetailDashboard({ account: accountProp }) {
         <PerformanceBlock t={t} stats={stats} />
       </div>
 
-      <div style={{ marginTop: 18 }}>
-        <AgentChannelsPanel t={t} agentAccount={account} />
-      </div>
 
       <style jsx global>{`
         @keyframes ma-spin { to { transform: rotate(360deg); } }
