@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSettings } from "@/lib/stores/settingsStore";
+import { setWalletState as setApiFetchWalletState } from "@/lib/apiFetch";
 
 // Cache a single near-api-js Near instance across the whole app. We build it
 // lazily and reuse it for both viewMethod reads (anonymous account) and per-
@@ -152,6 +153,13 @@ export function WalletProvider({ children }) {
   const googleTokenClient = useRef(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Mirror selector + walletType into apiFetch's module-level ref so
+  // non-hook callers (the apiFetch wrapper itself, libs, tests) can
+  // sign requests without prop-drilling the selector. Reset on signOut.
+  useEffect(() => {
+    setApiFetchWalletState({ selector, walletType });
+  }, [selector, walletType]);
 
   // Referral claim: once a wallet connects, see if the visitor arrived
   // via a /?ref=<code> link (stashed in localStorage by the inline

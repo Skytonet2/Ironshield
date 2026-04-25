@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import { useWallet } from "@/lib/contexts";
 
 export default function useAutomations({ agentAccount } = {}) {
@@ -30,12 +31,15 @@ export default function useAutomations({ agentAccount } = {}) {
 
   useEffect(() => { reload(); }, [reload]);
 
+  // Day 1.3 smoke caller: this is the first frontend route to use the
+  // signed-message apiFetch wrapper. update/remove/fire stay on the
+  // legacy x-wallet path until Task 1.4 swaps them across the board.
   const create = useCallback(async ({ name, description, trigger, action, enabled }) => {
     if (!API)     throw new Error("Backend not reachable");
     if (!address) throw new Error("Connect a wallet first");
-    const r = await fetch(`${API}/api/agents/automations`, {
+    const r = await apiFetch(`/api/agents/automations`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-wallet": address },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ agent_account: agentAccount, name, description, trigger, action, enabled }),
     });
     const j = await r.json();
