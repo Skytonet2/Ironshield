@@ -878,3 +878,22 @@ CREATE TABLE IF NOT EXISTS agent_automation_runs (
   error        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_automation_runs_aid ON agent_automation_runs(automation_id, fired_at DESC);
+
+-- ── Avatar uploads ────────────────────────────────────────────────────
+-- One row per uploaded avatar image. Resized to 256×256 JPEG client-
+-- side before upload, so each row is bounded (≈30–60KB typical). The
+-- SHA-256 column lets us de-duplicate identical uploads and serve the
+-- same id for repeats. Uploads are owned by the wallet that uploaded
+-- them — overwrite-protected via UNIQUE(owner, sha256).
+CREATE TABLE IF NOT EXISTS agent_avatars (
+  id            SERIAL PRIMARY KEY,
+  owner         TEXT NOT NULL,
+  agent_account TEXT,                                       -- nullable: pre-launch uploads
+  content_type  TEXT NOT NULL DEFAULT 'image/jpeg',
+  bytes         BYTEA NOT NULL,
+  sha256        TEXT NOT NULL,
+  size_bytes    INTEGER NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (owner, sha256)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_avatars_owner ON agent_avatars(owner);
