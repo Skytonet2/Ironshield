@@ -260,7 +260,11 @@ function RoomViewInner() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "close failed");
-      setClosedSummary({ ...j.summary, refundTx: j.refundTx });
+      // Day 5.2 backend swap: response now carries refundStatus
+      // ("pending" | "forfeited") + refundTx (null until Day 13 wires
+      // the on-chain refund). Forward both so the modal can render an
+      // honest state — "Refund pending" beats faking a tx hash.
+      setClosedSummary({ ...j.summary, refundTx: j.refundTx, refundStatus: j.refundStatus });
     } catch (e) { alert(e?.message || "Couldn't close"); }
     finally { setClosing(false); }
   };
@@ -771,7 +775,16 @@ function Section({ t, title, count, children }) {
 }
 
 function ClosedSummaryModal({ t, summary, room, onClose }) {
-  const refunded = !!summary.refundTx;
+  // Three states post Day 5.2:
+  //   - refundStatus="pending"  + refundTx=null → "Refund pending" (Day 13
+  //                                                wires the chain call)
+  //   - refundStatus="pending"  + refundTx=<hash> → "Stake refunded"
+  //   - refundStatus="forfeited"                  → "Stake withheld"
+  // Older builds may still return only refundTx; treat truthy as success.
+  const refundStatus = summary.refundStatus
+    || (summary.refundTx ? "pending" : "forfeited");
+  const refunded = refundStatus !== "forfeited";
+  const refundOnChain = !!summary.refundTx;
   const stakeAmt = room?.stake?.amountHuman ?? room?.stake?.amount ?? "";
   const stakeUsd = room?.stake?.amountUsd ?? 0;
 
@@ -858,14 +871,20 @@ function ClosedSummaryModal({ t, summary, room, onClose }) {
           </span>
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <div style={{ color: t.white, fontSize: 14, fontWeight: 800 }}>
-              {refunded ? "Stake refunded" : "Stake withheld"}
+              {refunded
+                ? (refundOnChain ? "Stake refunded" : "Refund pending")
+                : "Stake withheld"}
             </div>
             <div style={{
               fontSize: 11, color: t.textMuted, marginTop: 2,
               fontFamily: "var(--font-jetbrains-mono), monospace",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>
-              {refunded ? `${summary.refundTx.slice(0, 14)}…` : "Room flagged for violations"}
+              {refunded
+                ? (refundOnChain
+                    ? `${summary.refundTx.slice(0, 14)}…`
+                    : "Settling on-chain shortly")
+                : "Room flagged for violations"}
             </div>
           </div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>
