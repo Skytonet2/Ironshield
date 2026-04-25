@@ -5,6 +5,7 @@ const agent         = require("../services/agentConnector");
 const tokenLookup   = require("../services/tokenLookup");
 const socialMonitor = require("../services/socialMonitor");
 const requireWallet = require("../middleware/requireWallet");
+const { rateLimit } = require("../services/rateLimiter");
 
 /**
  * Detect if the user message is asking about a specific token/crypto.
@@ -45,10 +46,9 @@ function extractTokenQuery(message) {
   return null;
 }
 
-router.post("/", requireWallet, async (req, res) => {
+router.post("/", requireWallet, rateLimit("ai"), async (req, res) => {
   try {
     const { message } = req.body;
-    const userId = req.wallet;
     if (!message) return res.status(400).json({ success: false, error: "No message provided" });
 
     // Check if the user is asking about a specific token — fetch real data first
