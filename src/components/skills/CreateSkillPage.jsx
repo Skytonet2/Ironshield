@@ -474,16 +474,16 @@ function PageHeader({ t, draft, savedAt, onSave, onPreview, onNext, onBack, step
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
-        <button type="button" onClick={onSave} style={ghostBtn(t)}>
-          <Save size={13} /> Save draft
+      <div className="cs-header-cta" style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+        <button type="button" onClick={onSave} aria-label="Save draft" style={ghostBtn(t)}>
+          <Save size={13} /> <span className="cs-cta-label">Save draft</span>
         </button>
-        <button type="button" onClick={onPreview} style={secondaryBtn(t)}>
-          <Eye size={13} /> Preview
+        <button type="button" onClick={onPreview} aria-label="Preview" style={secondaryBtn(t)}>
+          <Eye size={13} /> <span className="cs-cta-label">Preview</span>
         </button>
         {step > 0 && (
-          <button type="button" onClick={onBack} style={secondaryBtn(t, busy)}>
-            <ArrowLeft size={13} /> Back
+          <button type="button" onClick={onBack} aria-label="Back" style={secondaryBtn(t, busy)}>
+            <ArrowLeft size={13} /> <span className="cs-cta-label">Back</span>
           </button>
         )}
         <button type="button" onClick={onNext} disabled={!canAdvance || busy}
@@ -705,7 +705,7 @@ function LogicConfigPanel({ t, draft, set }) {
         <PanelHeader t={t} Icon={Layers} title="Inputs" hint="What does this skill need?" />
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
           {draft.inputs.map(field => (
-            <div key={field.id} style={{
+            <div key={field.id} className="cs-input-row" style={{
               display: "grid", gridTemplateColumns: "1fr 100px auto", gap: 6,
               alignItems: "center",
               padding: "8px 10px",
@@ -1134,7 +1134,7 @@ function StepPermissions({ t, draft, set }) {
                 <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: t.white }}>{group.label}</h3>
                 <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 2 }}>{group.blurb}</div>
               </div>
-              <div style={{ marginLeft: "auto", display: "flex", gap: 18, fontSize: 11.5, color: t.textDim }}>
+              <div className="cs-perm-cols" style={{ marginLeft: "auto", display: "flex", gap: 18, fontSize: 11.5, color: t.textDim }}>
                 <span style={{ width: 80, textAlign: "right" }}>Permission</span>
                 <span style={{ width: 70, textAlign: "right" }}>Risk Level</span>
               </div>
@@ -1145,33 +1145,33 @@ function StepPermissions({ t, draft, set }) {
                 const on = !!draft.perms[p.key];
                 const rc = RISK_COLOR[p.risk];
                 return (
-                  <div key={p.key} style={{
+                  <div key={p.key} className="cs-perm-row" style={{
                     display: "grid",
                     gridTemplateColumns: "auto 1fr 100px 80px 22px",
                     alignItems: "center", gap: 10,
                     padding: "12px 0", borderBottom: `1px solid ${t.border}`,
                   }}>
-                    <span style={{
+                    <span className="cs-perm-icon" style={{
                       width: 28, height: 28, borderRadius: 8,
                       background: t.bgSurface, color: t.textMuted,
                       display: "inline-flex", alignItems: "center", justifyContent: "center",
                     }}>
                       <PermIcon perm={p.key} size={14} />
                     </span>
-                    <div style={{ minWidth: 0 }}>
+                    <div className="cs-perm-label" style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: t.white }}>{p.label}</div>
                       <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 1 }}>{p.sub}</div>
                     </div>
-                    <div style={{ justifySelf: "end" }}>
+                    <div className="cs-perm-toggle" style={{ justifySelf: "end" }}>
                       <Toggle t={t} on={on} onChange={() => togglePerm(p.key)} />
                     </div>
-                    <span style={{
+                    <span className="cs-perm-risk" style={{
                       justifySelf: "end",
                       fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
                       background: rc.bg, color: rc.fg, border: `1px solid ${rc.brd}`,
                       textTransform: "capitalize",
                     }}>{p.risk}</span>
-                    <HelpCircle size={14} color={t.textDim} style={{ justifySelf: "end" }} />
+                    <HelpCircle className="cs-perm-help" size={14} color={t.textDim} style={{ justifySelf: "end" }} />
                   </div>
                 );
               })}
@@ -1707,7 +1707,7 @@ function SkillCardPreview({ t, draft, compact }) {
   const cat = CATEGORIES.find(c => c.key === draft.category)?.label;
   const price = priceLabel(draft);
   return (
-    <div style={{
+    <div className="cs-card-preview" style={{
       display: "grid",
       gridTemplateColumns: compact ? "1fr" : "minmax(0, 1fr) 240px",
       gap: 14, padding: 0,
@@ -2002,7 +2002,48 @@ export default function CreateSkillPage() {
         }
 
         @media (max-width: 720px) {
+          /* Field grid (Step 1 — Category + Tags) stacks. */
           .sk-basics-grid { grid-template-columns: 1fr !important; }
+
+          /* Header CTAs hide their secondary text label, only keep
+             the icon. The primary Next/Publish button keeps its text. */
+          .cs-header-cta .cs-cta-label { display: none !important; }
+          .cs-header-cta button { padding: 9px 11px !important; }
+
+          /* Step 2 — Inputs row reflows: full-width label on top,
+             type select + delete button below it. */
+          .cs-input-row {
+            grid-template-columns: 1fr auto !important;
+            grid-template-areas:
+              "label  delete"
+              "type   type" !important;
+            row-gap: 6px !important;
+          }
+          .cs-input-row > input { grid-area: label; }
+          .cs-input-row > div   { grid-area: type;  }
+          .cs-input-row > button{ grid-area: delete;}
+
+          /* Step 3 — Permission rows reflow into a 2-row layout:
+             icon + label across the top, toggle + risk + help below. */
+          .cs-perm-row {
+            grid-template-columns: auto 1fr auto !important;
+            grid-template-areas:
+              "icon    label   help"
+              "toggle  toggle  risk" !important;
+            row-gap: 8px !important;
+          }
+          .cs-perm-icon   { grid-area: icon; }
+          .cs-perm-label  { grid-area: label; }
+          .cs-perm-help   { grid-area: help; }
+          .cs-perm-toggle { grid-area: toggle; justify-self: start !important; }
+          .cs-perm-risk   { grid-area: risk; }
+
+          /* The "Permission · Risk Level" column header in each
+             permission group is meaningless once the row collapses. */
+          .cs-perm-cols { display: none !important; }
+
+          /* Step 5 — Marketplace card preview stacks. */
+          .cs-card-preview { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </>
