@@ -8,6 +8,12 @@ const db      = require("../db/client");
 const { rateLimit } = require("../services/rateLimiter");
 const requireWallet = require("../middleware/requireWallet");
 const wsTicket = require("../services/wsTicket");
+const sessionToken = require("../services/sessionToken");
+
+// /login MUST run on a fresh signature — accepting a token here would
+// let a stolen token mint a fresh one and never expire. Build a
+// signature-only variant of the middleware for this single route.
+const requireSignedWallet = requireWallet.makeRequireWallet({ allowToken: false });
 
 const TTL_MS = 5 * 60 * 1000;
 
@@ -27,6 +33,15 @@ router.get("/nonce", rateLimit("nonce"), async (_req, res, next) => {
 router.post("/ws-ticket", requireWallet, (req, res) => {
   const { ticket, expMs } = wsTicket.issue(req.wallet);
   res.json({ ticket, expiresAt: expMs });
+});
+
+// POST /api/auth/login — signed-once entry that mints a 24h session
+// token. The client stores the token and presents it as
+// `Authorization: Bearer <token>` on subsequent mutating calls,
+// bypassing per-action signMessage popups.
+router.post("/login", requireSignedWallet, (req, res) => {
+  const { token, expMs } = sessionToken.issue(req.wallet);
+  res.json({ token, expiresAt: expMs, wallet: req.wallet });
 });
 
 module.exports = router;

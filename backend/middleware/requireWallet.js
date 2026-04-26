@@ -5,6 +5,7 @@
 const crypto = require("crypto");
 const { PublicKey } = require("near-api-js/lib/utils/key_pair");
 const db = require("../db/client");
+const sessionToken = require("../services/sessionToken");
 
 const RECIPIENT     = "ironshield.near";
 const NONCE_TTL_MS  = 5 * 60 * 1000;
@@ -86,8 +87,28 @@ function decodeBase64Url(s) {
   return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64");
 }
 
-function makeRequireWallet({ db: dbClient = db, fetchKeys = getRegisteredKeys } = {}) {
+function makeRequireWallet({ db: dbClient = db, fetchKeys = getRegisteredKeys, allowToken = true } = {}) {
   return async function requireWallet(req, res, next) {
+    // Day 5.6 — try Bearer JWT first. Clients that have signed in once
+    // via /api/auth/login present the token here and skip the per-call
+    // NEP-413 sign + nonce dance entirely. /api/auth/login itself is
+    // built with allowToken=false so it always demands a fresh sig.
+    if (allowToken) {
+      const auth = req.header("authorization");
+      if (auth && /^Bearer\s+/i.test(auth)) {
+        const token = auth.replace(/^Bearer\s+/i, "").trim();
+        const verified = sessionToken.verify(token);
+        if (verified) {
+          req.wallet = verified.wallet;
+          return next();
+        }
+        // Sender claimed a Bearer; treat a bad one as an active failure
+        // (distinct code so the client can clear stale storage and
+        // fall back to signing).
+        return reject(res, "bad-token", "session token invalid or expired");
+      }
+    }
+
     const wallet    = req.header("x-wallet");
     const publicKey = req.header("x-public-key");
     const nonceB64  = req.header("x-nonce");
