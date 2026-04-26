@@ -796,6 +796,24 @@ function ReferralsTab({ t, address, stats, onCode }) {
         launch, trade, or tracker claim they make — the exact split is set by
         governance and will be surfaced here when it's live.
       </div>
+
+      {/* IronShield Pro stub — Day 6.4. Day 18 lands the real flow.
+          Until then the AppShell upgrade card scrolls here so the link
+          doesn't 404 and users see expected timing. */}
+      <section id="pro" style={{
+        padding: 16, borderRadius: 14,
+        border: `1px solid rgba(168,85,247,0.35)`,
+        background: "linear-gradient(135deg, rgba(168,85,247,0.10), rgba(59,130,246,0.06))",
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.text, letterSpacing: -0.2, marginBottom: 6 }}>
+          IronShield Pro
+        </div>
+        <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.55 }}>
+          Pro tier launches with v1.0.0 — stake-locked membership with priority AI budget,
+          bonus uPoint multipliers, and early access to new feed surfaces. Sit tight; the
+          Day-18 release fills this section in with the real flow.
+        </div>
+      </section>
     </div>
   );
 }

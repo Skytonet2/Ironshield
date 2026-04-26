@@ -334,9 +334,11 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
       </div>
 
       {/* IronShield Pro upgrade card — sticks to the bottom of the
-          rail. Gradient fill, subtle glow, premium call-to-action. */}
+          rail. Gradient fill, subtle glow, premium call-to-action.
+          Pro tier launches with v1.0.0 (Day 21). Until then this links
+          to a stub section on /rewards rather than 404'ing. */}
       <a
-        href="/rewards"
+        href="/rewards#pro"
         style={{
           display: "block", textDecoration: "none",
           padding: 14, borderRadius: 14,
