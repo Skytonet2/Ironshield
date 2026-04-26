@@ -584,12 +584,27 @@ router.post("/:coinId/verify-trade", requireWallet, async (req, res, next) => {
     if (!coinRes.rows.length)
       return res.status(404).json({ error: "coin not found" });
 
-    // Verify the transaction on-chain
+    // Verify the transaction on-chain. txStatus throws when the tx
+    // hasn't propagated to the queried RPC yet — common race when the
+    // client submits and immediately calls verify. Retry up to 5×2s
+    // before giving up so in-flight txs don't get permanently rejected.
     let txResult;
-    try {
-      txResult = await provider.txStatus(txHash, wallet, "FINAL");
-    } catch (err) {
-      return res.status(400).json({ error: `Transaction verification failed: ${err.message}` });
+    {
+      const MAX_ATTEMPTS = 5;
+      const DELAY_MS = 2000;
+      let lastErr;
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        try {
+          txResult = await provider.txStatus(txHash, wallet, "FINAL");
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (i < MAX_ATTEMPTS - 1) await new Promise(r => setTimeout(r, DELAY_MS));
+        }
+      }
+      if (!txResult) {
+        return res.status(400).json({ error: `Transaction verification failed: ${lastErr?.message || "tx not found"}` });
+      }
     }
 
     const tx = txResult.transaction;
