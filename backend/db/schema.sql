@@ -975,3 +975,36 @@ CREATE TABLE IF NOT EXISTS wallet_ai_spend (
   cost_usd  NUMERIC NOT NULL DEFAULT 0,
   PRIMARY KEY (wallet, day)
 );
+
+-- ── Hot-path indexes (Day 6.1) ────────────────────────────────────────
+-- Functional and partial indexes added after auditing every pool.query
+-- callsite in backend/routes against existing schema coverage. Each
+-- entry below corresponds to a query that fires per page-load or per
+-- user action and was demonstrably index-less prior to this section.
+
+-- feed_users wallet/username lookup. Every profile, DM, social,
+-- tips, and posts route resolves identity via
+-- `WHERE LOWER(wallet_address)=$1 OR LOWER(username)=$1`. The raw
+-- UNIQUE on wallet_address and idx_feed_users_username don't apply
+-- under LOWER(); functional indexes do. Postgres planner unions both
+-- via BitmapOr for the OR'd lookup.
+CREATE INDEX IF NOT EXISTS idx_feed_users_wallet_lower
+  ON feed_users (LOWER(wallet_address));
+CREATE INDEX IF NOT EXISTS idx_feed_users_username_lower
+  ON feed_users (LOWER(username));
+
+-- Profile post list and post-count: `WHERE author_id=$1 AND deleted_at
+-- IS NULL ORDER BY created_at DESC LIMIT 50`. Existing
+-- idx_feed_posts_author finds the rows but forces a sort + post-filter;
+-- this partial index pre-orders and skips deleted rows, so the LIMIT 50
+-- is a straight scan of the index head.
+CREATE INDEX IF NOT EXISTS idx_feed_posts_author_active
+  ON feed_posts (author_id, created_at DESC) WHERE deleted_at IS NULL;
+
+-- Bulk read-all on notifications: `UPDATE ... WHERE user_id=$1 AND
+-- read_at IS NULL`. The existing (user_id, created_at DESC) reads all
+-- of a user's notifications and filters in-memory; for a power user
+-- with thousands of read rows that's wasteful. Partial index lets
+-- the UPDATE touch only the unread set.
+CREATE INDEX IF NOT EXISTS idx_feed_notifs_unread
+  ON feed_notifications (user_id) WHERE read_at IS NULL;
