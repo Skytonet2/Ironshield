@@ -1,0 +1,33 @@
+# docker-compose.test.yml — local test database
+#
+# Spins up a fresh Postgres on port 5433 (one above the default so it
+# doesn't collide with any local Postgres you might have running).
+# Volume-less by design: every `docker-compose -f docker-compose.test.yml down`
+# wipes state, which is exactly what you want for tests.
+#
+# Usage:
+#   npm run test:db:up      # start
+#   npm run test:db:down    # stop + wipe
+#   npm run test:db:reset   # down + up (fresh schema)
+#
+# Connect from the backend with:
+#   DATABASE_URL=postgresql://test:test@localhost:5433/ironshield_test
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: ironshield-test-db
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: ironshield_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d ironshield_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    # tmpfs keeps everything in RAM — fast restarts, no leftover state.
+    tmpfs:
+      - /var/lib/postgresql/data
