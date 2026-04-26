@@ -11,6 +11,32 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, hydratePosts } = require("../services/feedHelpers");
+const feedHub = require("../ws/feedHub");
+
+// GET /api/users/presence?wallet=<address>
+//   { online: bool, lastSeenAt: ISO|null }
+//
+// Initial-state lookup for the DM header presence badge. Live
+// transitions ride on the WS `presence:update` broadcasts; clients
+// call this once on conversation open so they don't have to wait
+// for the next 0↔1 crossing.
+router.get("/presence", async (req, res, next) => {
+  try {
+    const wallet = String(req.query.wallet || "").toLowerCase().trim();
+    if (!wallet) return res.status(400).json({ error: "wallet required" });
+    const online = feedHub.hasAuthedSocket(wallet);
+    let lastSeenAt = null;
+    if (!online) {
+      const r = await db.query(
+        "SELECT last_seen_at FROM feed_users WHERE LOWER(wallet_address) = $1 LIMIT 1",
+        [wallet]
+      );
+      const ts = r.rows[0]?.last_seen_at;
+      if (ts) lastSeenAt = new Date(ts).toISOString();
+    }
+    res.json({ online, lastSeenAt });
+  } catch (e) { next(e); }
+});
 
 async function resolveUser(key) {
   const k = String(key || "").toLowerCase().trim();

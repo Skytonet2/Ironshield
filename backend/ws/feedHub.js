@@ -20,12 +20,42 @@
 const { WebSocketServer } = require("ws");
 const { nanoid } = require("nanoid");
 const wsTicket = require("../services/wsTicket");
+const db = require("../db/client");
 
 const clients = new Set();
 // wallet -> Set of client entries authed for that wallet. Maintained
 // in lockstep with `clients`; entries appear here only after a valid
 // ticket on the `auth` message.
 const walletIndex = new Map();
+
+// DM presence: emit `presence:update` events when a wallet's
+// connection count crosses 0↔1. Online state is the live walletIndex;
+// the offline "last seen" timestamp is persisted to feed_users on
+// disconnect so peers that reload after the disconnect still get a
+// meaningful "Active 5m ago" badge.
+//
+// We deliberately broadcast presence (not publish per-wallet). Public-ish
+// signal: anyone you've DM'd with sees your online state, and the
+// per-peer filter happens client-side. publish() would force the hub
+// to know "who cares about wallet X" which it doesn't.
+function emitPresenceOnline(wallet) {
+  broadcast({ type: "presence:update", wallet, online: true });
+}
+async function emitPresenceOffline(wallet) {
+  let lastSeenAt = new Date().toISOString();
+  try {
+    const r = await db.query(
+      "UPDATE feed_users SET last_seen_at = NOW() WHERE LOWER(wallet_address) = $1 RETURNING last_seen_at",
+      [wallet]
+    );
+    if (r.rows[0]?.last_seen_at) lastSeenAt = new Date(r.rows[0].last_seen_at).toISOString();
+  } catch (err) {
+    // DB blip — broadcast best-effort with our local timestamp. Peer
+    // dashboards still update; the persisted state lags one cycle.
+    console.warn("[feedHub] last_seen_at persist failed:", err.message);
+  }
+  broadcast({ type: "presence:update", wallet, online: false, lastSeenAt });
+}
 
 function indexAdd(wallet, entry) {
   let set = walletIndex.get(wallet);
@@ -104,12 +134,21 @@ function attach(server) {
             break;
           }
           // If this socket re-auths for a different wallet, detach the
-          // old binding first.
+          // old binding first. If that drops the prior wallet's count
+          // to zero, fire its offline event before swapping.
           if (state.authedWallet && state.authedWallet !== verified.wallet) {
-            indexRemove(state.authedWallet, entry);
+            const prev = state.authedWallet;
+            indexRemove(prev, entry);
+            if (!walletIndex.has(prev)) emitPresenceOffline(prev);
           }
+          // Detect the 0→1 crossing. If walletIndex didn't have an
+          // entry for this wallet yet, this auth just brought them
+          // online — emit before the index add so the broadcast
+          // reflects the transition cleanly.
+          const wasOffline = !walletIndex.has(verified.wallet);
           state.authedWallet = verified.wallet;
           indexAdd(verified.wallet, entry);
+          if (wasOffline) emitPresenceOnline(verified.wallet);
           ws.send(JSON.stringify({ type: "authed", ok: true, wallet: verified.wallet }));
           break;
         }
@@ -127,7 +166,14 @@ function attach(server) {
     });
 
     ws.on("close", () => {
-      if (state.authedWallet) indexRemove(state.authedWallet, entry);
+      if (state.authedWallet) {
+        const w = state.authedWallet;
+        indexRemove(w, entry);
+        // 1→0 crossing. indexRemove deletes the wallet's set entirely
+        // when the last socket leaves; check has() rather than peek
+        // at set.size (the set is gone by here).
+        if (!walletIndex.has(w)) emitPresenceOffline(w);
+      }
       clients.delete(entry);
     });
 
