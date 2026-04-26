@@ -47,6 +47,8 @@ services:
         fromEnvironment: LIVEKIT_API_KEY
       - key: LIVEKIT_API_SECRET
         fromEnvironment: LIVEKIT_API_SECRET
+      - key: TELEGRAM_BOT_BACKEND_SECRET
+        fromEnvironment: TELEGRAM_BOT_BACKEND_SECRET
       - key: ANTHROPIC_API_KEY
         fromEnvironment: ANTHROPIC_API_KEY
       - key: VAPID_PUBLIC_KEY
@@ -102,7 +104,11 @@ services:
         fromEnvironment: TELEGRAM_BOT_TOKEN
       - key: TELEGRAM_WEBHOOK_SECRET
         fromEnvironment: TELEGRAM_WEBHOOK_SECRET
+      - key: TELEGRAM_BOT_BACKEND_SECRET
+        fromEnvironment: TELEGRAM_BOT_BACKEND_SECRET
       - key: WEBHOOK_URL
         fromEnvironment: WEBHOOK_URL
+      - key: BACKEND_URL
+        fromEnvironment: BACKEND_URL
       - key: DATABASE_URL
         fromEnvironment: DATABASE_URL

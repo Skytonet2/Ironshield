@@ -1059,3 +1059,23 @@ CREATE INDEX IF NOT EXISTS idx_feed_posts_author_active
 -- the UPDATE touch only the unread set.
 CREATE INDEX IF NOT EXISTS idx_feed_notifs_unread
   ON feed_notifications (user_id) WHERE read_at IS NULL;
+
+-- ── Telegram link hardening (post-Day 9) ─────────────────────────────
+-- Pre-hardening, /api/tg/claim accepted a bare `wallet` body field
+-- and /api/tg/add-wallet upserted feed_users.id into the caller's
+-- feed_tg_links row — both with no proof of wallet ownership. That
+-- routed the wallet's private DM/notification fan-out to the caller,
+-- which is the eavesdropping leak the user reported.
+--
+-- The new /claim path stamps `link_code` on every legitimate link
+-- (and rejects anonymous codes). Rows that lack `link_code` therefore
+-- predate the hardening and may carry a borrowed user_id. Nullify so
+-- private fan-out stops; affected users re-link via the website +
+-- /start <code> in TG to restore notifications.
+--
+-- Idempotent: post-fix, every legit row has link_code set, so this
+-- only fires on stale rows. Runs on every boot via schema.sql.
+UPDATE feed_tg_links
+   SET user_id = NULL
+ WHERE link_code IS NULL
+   AND user_id IS NOT NULL;
