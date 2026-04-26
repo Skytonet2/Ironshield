@@ -367,6 +367,14 @@ ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_post_tx TEXT;
 ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS onchain_tx TEXT;
 -- Day 8.2: per-message delivery state. read_at already exists.
 ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+-- Day 8.3: per-message key fingerprints so the recipient can locate
+-- the matching secret key even after their wallet has rotated keys.
+-- 16-hex-char prefix of BLAKE2b(pubkey raw bytes); collision-resistant
+-- enough to distinguish the handful of keys a single wallet ever holds.
+-- Nullable: legacy rows from before 8.3 stay readable via the current
+-- keypair (the only keypair the client knew about back then).
+ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS sender_key_fp TEXT;
+ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS recipient_key_fp TEXT;
 
 -- ============================================================
 -- Monetization: tips, gates, rooms, creator revenue

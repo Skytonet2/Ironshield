@@ -594,21 +594,30 @@ router.get("/:conversationId/messages", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/dm/send  body: { conversationId, encryptedPayload, nonce }
+// POST /api/dm/send  body: { conversationId, encryptedPayload, nonce,
+//                              senderKeyFp?, recipientKeyFp? }
 router.post("/send", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
-    const { conversationId, encryptedPayload, nonce } = req.body || {};
+    const { conversationId, encryptedPayload, nonce, senderKeyFp, recipientKeyFp } = req.body || {};
     if (!encryptedPayload || !nonce) return res.status(400).json({ error: "encryptedPayload + nonce required" });
+    // Day 8.3 fingerprints are advisory metadata — clients may omit
+    // them (older builds) and the message is still encrypted/decryptable
+    // via the currently-published dm_pubkey. Tight bound + lowercase
+    // hex shape check so a malicious client can't shove pages of junk.
+    const fpOk = (v) => v == null || (typeof v === "string" && /^[0-9a-f]{8,32}$/.test(v));
+    if (!fpOk(senderKeyFp) || !fpOk(recipientKeyFp)) {
+      return res.status(400).json({ error: "invalid key fingerprint" });
+    }
     const conv = await db.query("SELECT * FROM feed_conversations WHERE id=$1", [conversationId]);
     if (!conv.rows.length) return res.status(404).json({ error: "conversation not found" });
     const c = conv.rows[0];
     if (c.participant_a !== me.id && c.participant_b !== me.id) return res.status(403).json({ error: "not a participant" });
     const toId = c.participant_a === me.id ? c.participant_b : c.participant_a;
     const r = await db.query(
-      `INSERT INTO feed_dms (conversation_id, from_id, to_id, encrypted_payload, nonce)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [conversationId, me.id, toId, encryptedPayload, nonce]);
+      `INSERT INTO feed_dms (conversation_id, from_id, to_id, encrypted_payload, nonce, sender_key_fp, recipient_key_fp)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [conversationId, me.id, toId, encryptedPayload, nonce, senderKeyFp || null, recipientKeyFp || null]);
     await db.query("UPDATE feed_conversations SET last_message_at=NOW() WHERE id=$1", [conversationId]);
 
     // Live WS push to the recipient's authed sockets. Replaces the 30s

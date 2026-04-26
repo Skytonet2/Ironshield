@@ -29,6 +29,7 @@ import {
 import {
   getOrCreateKeypair, exportPublicKey,
   encrypt as naclEncrypt, decrypt as naclDecrypt,
+  getKeypairByFp, fingerprint as keyFingerprint,
 } from "@/lib/dmCrypto";
 import {
   splitBody, detectAutomationIntent, encodeChip,
@@ -773,6 +774,8 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             conversationId: conv.id,
             encryptedPayload: enc.encryptedPayload,
             nonce: enc.nonce,
+            senderKeyFp: enc.senderKeyFp,
+            recipientKeyFp: enc.recipientKeyFp,
           },
         });
         onSent?.({
@@ -1385,7 +1388,24 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
   if (!body) {
     if (conv.kind === "direct") {
       if (keypair && conv.peer?.dmPubkey && m.encrypted_payload && m.nonce) {
-        body = naclDecrypt(m.encrypted_payload, m.nonce, conv.peer.dmPubkey, keypair) || "[unable to decrypt]";
+        // Day 8.3: pick the secret half by fingerprint. The current
+        // keypair handles every message until we rotate; after a
+        // rotation, getKeypairByFp finds older keys in localStorage
+        // history. If nothing matches (cleared site data, fresh
+        // device), we render a graceful placeholder instead of the
+        // ambiguous "[unable to decrypt]".
+        let kp = keypair;
+        if (m.recipient_key_fp && m.recipient_key_fp !== keypair.fp) {
+          kp = getKeypairByFp(wallet, m.recipient_key_fp);
+        }
+        if (!kp) {
+          body = "[encrypted with rotated key]";
+        } else {
+          body = naclDecrypt(m.encrypted_payload, m.nonce, conv.peer.dmPubkey, kp)
+            || (m.sender_key_fp && m.sender_key_fp !== keyFingerprint(conv.peer.dmPubkey)
+                ? "[encrypted with rotated key]"
+                : "[unable to decrypt]");
+        }
       } else {
         body = "[encrypted]";
       }
