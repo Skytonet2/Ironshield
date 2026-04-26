@@ -29,10 +29,15 @@ pub const MAX_SKILL_CATEGORY_LEN:    usize = 32;
 pub const MAX_SKILL_IMAGE_URL_LEN:   usize = 256;
 
 /// Basis-points split on paid skill installs. 10_000 = 100%, so
-/// PLATFORM_FEE_BPS=100 → 1% platform / 99% author. Constants so the
-/// split is auditable in one place and can't drift between the Rust
-/// call site and whatever the frontend displays.
-pub const PLATFORM_FEE_BPS:          u32 = 100;
+/// PLATFORM_FEE_BPS=1500 → 15% platform / 85% author. Constants so
+/// the split is auditable in one place and can't drift between the
+/// Rust call site and whatever the frontend displays.
+///
+/// History: started at 100 bps (1%) through Phase 9. Day 15 raised to
+/// 1500 bps (15%) — product decision tying skills revenue to platform
+/// economics. Off-chain dashboards (backend/routes/skills.route.js
+/// PLATFORM_FEE_BPS) must update in lockstep or sales numbers diverge.
+pub const PLATFORM_FEE_BPS:          u32 = 1500;
 pub const BPS_DENOM:                 u32 = 10_000;
 
 // ── Phase 7 (Sub-PR C): multi-agent caps ──────────────────────────────────
@@ -1399,8 +1404,9 @@ impl StakingContract {
 
     /// Phase 7: `install_skill` is now `#[payable]`. Caller must attach
     /// at least `skill.price_yocto` yoctoNEAR. The deposit is split
-    /// 99% → skill author, 1% → contract owner. Free skills (price 0)
-    /// accept a zero-deposit call and do no transfers.
+    /// 85% → skill author, 15% → contract owner (Day 15 split; was
+    /// 99/1 through Phase 9). Free skills (price 0) accept a
+    /// zero-deposit call and do no transfers.
     #[payable]
     pub fn install_skill(&mut self, skill_id: u64) {
         let owner = env::predecessor_account_id();
@@ -1422,9 +1428,9 @@ impl StakingContract {
                 "Insufficient deposit: skill costs {} yoctoNEAR, received {}",
                 price, attached
             );
-            // Split the EXACT price; any overpay is refunded on transfer
-            // below so an accidental drag-and-drop doesn't move funds
-            // beyond the install.
+            // Split the EXACT price 85/15 (Day 15) — any overpay is
+            // refunded on transfer below so an accidental drag-and-drop
+            // doesn't move funds beyond the install.
             let platform_cut = price.saturating_mul(PLATFORM_FEE_BPS as u128) / (BPS_DENOM as u128);
             let author_cut   = price.saturating_sub(platform_cut);
             if author_cut > 0 {
