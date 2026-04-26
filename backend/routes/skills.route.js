@@ -10,11 +10,20 @@
 // SkillMetadata.category = "builtin:<key>" run the matching module.
 
 const router = require("express").Router();
+const { providers } = require("near-api-js");
 const adapters = require("../services/agents");
 const connectionStore = require("../services/agents/connectionStore");
 const skills = require("../services/skills");
 const httpRunner = require("../services/skills/http_runner");
 const requireWallet = require("../middleware/requireWallet");
+const db = require("../db/client");
+
+const RPC_URL = process.env.NEAR_RPC_URL || "https://rpc.fastnear.com";
+const provider = new providers.JsonRpcProvider({ url: RPC_URL });
+const SKILLS_CONTRACT = process.env.STAKING_CONTRACT_ID || process.env.CONTRACT_ID || "ironshield.near";
+// Platform cut on skill installs. Must match the contract's
+// PLATFORM_FEE_BPS — change here if the contract ever rotates.
+const PLATFORM_FEE_BPS = 100; // 1.00%
 
 /** GET /api/skills/registry
  *  Public list of every executable built-in skill + its expected
@@ -153,6 +162,178 @@ router.post("/http_callback/:token", async (req, res) => {
     res.json({ reply: out?.reply || "", framework: conn.framework });
   } catch (err) {
     res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Skill sales — Day 16 ─────────────────────────────────────────────
+//
+// Client-reports-server-verifies pattern (mirrors NewsCoin verify-trade).
+// Frontend calls this right after a successful install_skill tx; the
+// server pulls the tx from the chain, parses the skill_installed event
+// log, derives revenue split from PLATFORM_FEE_BPS, and inserts into
+// skill_sales. Dedupe is by tx_hash PK so retries are safe.
+
+/** POST /api/skills/record-install
+ *  Body: { txHash }
+ *  Client posts immediately after install_skill confirms; server
+ *  re-verifies on-chain. Free installs (paid=false) are accepted but
+ *  not persisted — they aren't revenue.
+ */
+router.post("/record-install", requireWallet, async (req, res) => {
+  try {
+    const wallet = req.wallet;
+    const { txHash } = req.body || {};
+    if (!txHash || typeof txHash !== "string") {
+      return res.status(400).json({ error: "txHash required" });
+    }
+
+    // Idempotent shortcut — already indexed.
+    const existing = await db.query(
+      "SELECT tx_hash FROM skill_sales WHERE tx_hash=$1 LIMIT 1",
+      [txHash]
+    );
+    if (existing.rows.length) return res.json({ ok: true, indexed: true, deduped: true });
+
+    // Verify on-chain. Retry up to 5×2s for in-flight propagation
+    // (same pattern as Day 11 newscoin verify-trade).
+    let txResult;
+    {
+      const MAX = 5, DELAY = 2000;
+      let lastErr;
+      for (let i = 0; i < MAX; i++) {
+        try { txResult = await provider.txStatus(txHash, wallet, "FINAL"); break; }
+        catch (err) { lastErr = err; if (i < MAX - 1) await new Promise(r => setTimeout(r, DELAY)); }
+      }
+      if (!txResult) {
+        return res.status(400).json({ error: `tx verification failed: ${lastErr?.message || "not found"}` });
+      }
+    }
+
+    if (txResult.transaction.signer_id !== wallet) {
+      return res.status(400).json({ error: "signer mismatch" });
+    }
+    if (txResult.transaction.receiver_id !== SKILLS_CONTRACT) {
+      return res.status(400).json({ error: "tx not against skills contract" });
+    }
+
+    // Find skill_installed event in the receipt logs.
+    let evt = null;
+    let blockHeight = null;
+    for (const ro of txResult.receipts_outcome || []) {
+      if (ro.outcome?.block_hash) {
+        // Block height isn't directly on the outcome; pull it via the
+        // block hash if we want it — keep null for v1, the column is
+        // nullable and dashboards don't rely on it.
+      }
+      for (const log of ro.outcome?.logs || []) {
+        if (!log.startsWith("EVENT_JSON:")) continue;
+        try {
+          const parsed = JSON.parse(log.slice("EVENT_JSON:".length));
+          if (parsed?.event === "skill_installed" && Array.isArray(parsed.data)) {
+            evt = parsed.data[0]; break;
+          }
+        } catch { /* non-JSON log, skip */ }
+      }
+      if (evt) break;
+    }
+    if (!evt) return res.status(400).json({ error: "skill_installed event not in tx logs" });
+
+    // Free installs aren't revenue. Tell client we accepted the tx
+    // but don't persist a row — keeps SUM(price_yocto) honest.
+    if (!evt.paid) return res.json({ ok: true, indexed: false, reason: "free install" });
+
+    const skillId = String(evt.skill_id);
+    const priceYocto = String(evt.price_yocto || "0");
+    const owner = String(evt.owner || wallet);
+
+    // Resolve the creator wallet from the on-chain skill metadata. The
+    // event itself doesn't include it — the contract has a get_skill
+    // view that returns the author. If the lookup fails (RPC blip,
+    // skill removed) we fall through to "" so the row still records;
+    // the dashboard surfaces a "creator unknown" state for those.
+    let creator = "";
+    try {
+      const view = await provider.query({
+        request_type: "call_function",
+        finality: "final",
+        account_id: SKILLS_CONTRACT,
+        method_name: "get_skill",
+        args_base64: Buffer.from(JSON.stringify({ skill_id: Number(skillId) })).toString("base64"),
+      });
+      const decoded = JSON.parse(Buffer.from(view.result).toString());
+      if (decoded?.author) creator = String(decoded.author);
+    } catch { /* leave creator blank — see comment above */ }
+
+    // Derive split from PLATFORM_FEE_BPS. NUMERIC math via BigInt to
+    // avoid float drift on yocto-scale numbers.
+    const priceBig = BigInt(priceYocto);
+    const treasuryTake = (priceBig * BigInt(PLATFORM_FEE_BPS)) / 10000n;
+    const creatorTake = priceBig - treasuryTake;
+
+    await db.query(
+      `INSERT INTO skill_sales
+       (tx_hash, block_height, skill_id, buyer_wallet, creator_wallet,
+        price_yocto, creator_take_yocto, treasury_take_yocto)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (tx_hash) DO NOTHING`,
+      [txHash, blockHeight, skillId, owner, creator,
+       priceYocto, creatorTake.toString(), treasuryTake.toString()]
+    );
+    res.json({ ok: true, indexed: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** GET /api/skills/revenue?wallet=<>
+ *  Per-creator revenue dashboard data. Signed-auth required; the
+ *  server enforces req.wallet === query.wallet so a creator can only
+ *  read their own numbers.
+ */
+router.get("/revenue", requireWallet, async (req, res) => {
+  try {
+    const wallet = String(req.query.wallet || "").toLowerCase();
+    if (!wallet) return res.status(400).json({ error: "wallet required" });
+    if (wallet !== req.wallet.toLowerCase()) {
+      return res.status(403).json({ error: "wallet mismatch" });
+    }
+
+    const totalsQ = db.query(
+      `SELECT
+         COUNT(*)::int                                          AS sales_total,
+         COALESCE(SUM(creator_take_yocto), 0)::text             AS earned_total,
+         COALESCE(SUM(creator_take_yocto)
+           FILTER (WHERE sold_at >= NOW() - INTERVAL '24 hours'), 0)::text AS earned_24h,
+         COALESCE(SUM(creator_take_yocto)
+           FILTER (WHERE sold_at >= NOW() - INTERVAL '7 days'), 0)::text  AS earned_7d
+       FROM skill_sales WHERE creator_wallet = $1`,
+      [wallet]
+    );
+    const perSkillQ = db.query(
+      `SELECT skill_id,
+              COUNT(*)::int                              AS sales,
+              SUM(creator_take_yocto)::text              AS earned_yocto
+       FROM skill_sales WHERE creator_wallet = $1
+       GROUP BY skill_id ORDER BY SUM(creator_take_yocto) DESC LIMIT 50`,
+      [wallet]
+    );
+    const recentQ = db.query(
+      `SELECT tx_hash, skill_id, buyer_wallet,
+              creator_take_yocto::text AS creator_take_yocto,
+              price_yocto::text AS price_yocto,
+              sold_at
+       FROM skill_sales WHERE creator_wallet = $1
+       ORDER BY sold_at DESC LIMIT 30`,
+      [wallet]
+    );
+    const [totals, perSkill, recent] = await Promise.all([totalsQ, perSkillQ, recentQ]);
+    res.json({
+      totals: totals.rows[0],
+      perSkill: perSkill.rows,
+      recent: recent.rows,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
