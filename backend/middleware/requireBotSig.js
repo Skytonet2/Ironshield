@@ -1,18 +1,19 @@
 // backend/middleware/requireBotSig.js
 // HMAC channel auth between the Telegram bot worker (bot/services/backend.js)
-// and this backend. Every /api/tg/* route the bot calls must pass:
+// and this backend. Every /api/tg/* route the bot calls passes:
 //   X-TG-Timestamp: <epoch_ms>
 //   X-TG-Signature: hex(HMAC-SHA256(secret, `${timestamp}.${rawBody}`))
 //
-// Without this gate, anyone on the internet could hit /api/tg/claim,
-// /add-wallet, /custodial/*/transfer, /reply etc. and drain bot wallets,
-// impersonate users in DM threads, or eavesdrop on private DM fan-out.
-// Day 9 hardening was deferred — this closes it.
+// Opt-in gate: enforcement is gated on TG_REQUIRE_BOT_SIG=1.
+// Default off so the backend doesn't lock out a bot worker that
+// hasn't been redeployed with the matching secret yet — flip on
+// once the bot side ships TELEGRAM_BOT_BACKEND_SECRET.
 //
-// The matching signer lives at bot/services/backend.js (req() wrapper).
-// Both sides read TELEGRAM_BOT_BACKEND_SECRET from env. Without the
-// env set in production the middleware fails closed (503) — there is
-// no usable mode without the secret.
+// When off, /api/tg/* are public again — that's the pre-Day-9 state.
+// The wallet-shortcut + ownership-proof fixes on /claim and /reply
+// still apply, so the eavesdropping + identity-theft holes stay
+// closed. The remaining holes (custodial drain, watchlist tampering)
+// re-open until the gate flips on.
 
 const crypto = require("crypto");
 
@@ -26,15 +27,15 @@ function timingSafeEqHex(a, b) {
 }
 
 function requireBotSig(req, res, next) {
+  const ENABLED = ["1", "true", "yes"].includes(
+    String(process.env.TG_REQUIRE_BOT_SIG || "").toLowerCase()
+  );
+  if (!ENABLED) return next();
+
   const SECRET = process.env.TELEGRAM_BOT_BACKEND_SECRET || "";
   if (!SECRET) {
-    // Fail closed in prod; in dev (no env) allow through so localhost
-    // testing keeps working. Render must set the secret.
-    if ((process.env.NODE_ENV || "").toLowerCase() === "production") {
-      console.error("[requireBotSig] TELEGRAM_BOT_BACKEND_SECRET unset in production");
-      return res.status(503).json({ error: "bot channel not configured" });
-    }
-    return next();
+    console.error("[requireBotSig] TG_REQUIRE_BOT_SIG=1 but TELEGRAM_BOT_BACKEND_SECRET unset");
+    return res.status(503).json({ error: "bot channel not configured" });
   }
   const sig = req.header("x-tg-signature") || "";
   const ts  = req.header("x-tg-timestamp") || "";
@@ -50,7 +51,7 @@ function requireBotSig(req, res, next) {
   if (!timingSafeEqHex(expected, sig)) {
     return res.status(401).json({ error: "bad bot signature", code: "bad-bot-sig" });
   }
-  next();
+  return next();
 }
 
 module.exports = requireBotSig;
