@@ -5,10 +5,11 @@
 // desktop, stacked on mobile (chart full-width, order panel slides up
 // from bottom as a drawer).
 //
-// Price/OHLCV is mocked from a deterministic ticker-seeded RNG for MVP
-// so the chart renders something coherent before real trades exist. The
-// structure is designed so a live WebSocket trade feed can replace the
-// mock by dropping a `useMemo` with real candles into `candles`.
+// Price/OHLCV is fetched live from /api/newscoin/:coinId/candles, which
+// aggregates feed_newscoin_trades into OHLCV buckets. The deterministic
+// ticker-seeded RNG below is kept as a fallback for brand-new coins
+// that have no trades yet, so the chart still renders something
+// coherent on the first user's first visit.
 //
 // Buy/sell submission re-uses the exact on-chain flow from `CoinModal`
 // so we don't fork the tx logic.
@@ -702,11 +703,26 @@ export default function NewsCoinTerminal({ coins, initialCoinId, score, onBack }
     return () => { cancelled = true; };
   }, [active?.id, refreshKey]);
 
+  // Day 10: fetch real OHLCV from /candles. Falls back to the seeded
+  // mock when the API returns empty (brand-new coin, no trades yet)
+  // so the chart never goes blank.
+  const [liveCandles, setLiveCandles] = useState(null);
+  useEffect(() => {
+    if (!active?.id) { setLiveCandles(null); return; }
+    let cancelled = false;
+    api(`/api/newscoin/${active.id}/candles?interval=1m&count=120`).then((d) => {
+      if (cancelled) return;
+      setLiveCandles(Array.isArray(d?.candles) ? d.candles : []);
+    });
+    return () => { cancelled = true; };
+  }, [active?.id, refreshKey]);
+
   const candles = useMemo(() => {
     if (!active) return [];
+    if (liveCandles && liveCandles.length > 0) return liveCandles;
     const base = Number(active.price_near || 0) || 0.00001;
     return mockCandles(active.ticker || "X", base);
-  }, [active?.ticker, active?.price_near]);
+  }, [active?.ticker, active?.price_near, liveCandles]);
 
   if (!active) {
     return (

@@ -371,6 +371,67 @@ router.get("/:coinId/trades", async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/newscoin/:coinId/candles?interval=1m&count=120
+// Aggregates feed_newscoin_trades into OHLCV buckets for the terminal
+// chart. Day 10 unmocked: previously the frontend ran mockCandles() to
+// render a deterministic ticker-seeded RNG. Now the real trade history
+// drives the chart; the seeded mock stays as a fallback when a coin has
+// no trades yet so brand-new launches still render something coherent.
+// Bucket sizes are clamped to the small set the UI actually uses.
+// idx_newscoin_trades_coin already covers (coin_id, created_at).
+// ---------------------------------------------------------------------------
+const CANDLE_INTERVALS = {
+  "1m": "1 minute",
+  "5m": "5 minutes",
+  "15m": "15 minutes",
+  "1h": "1 hour",
+};
+router.get("/:coinId/candles", async (req, res, next) => {
+  try {
+    if (!ensureDb(res)) return;
+    const interval = CANDLE_INTERVALS[req.query.interval] ? req.query.interval : "1m";
+    const pgInterval = CANDLE_INTERVALS[interval];
+    const count = Math.min(500, Math.max(1, parseInt(req.query.count, 10) || 120));
+
+    // date_bin (pg14+) puts timestamps into fixed-size epoch-anchored
+    // buckets without needing TimescaleDB. array_agg with explicit
+    // ORDER BY pulls first/last by trade time → open/close.
+    const { rows } = await db.query(
+      `WITH bucketed AS (
+         SELECT date_bin($2::interval, created_at, TIMESTAMP 'epoch') AS bucket,
+                price, near_amount, created_at
+           FROM feed_newscoin_trades
+          WHERE coin_id = $1
+       )
+       SELECT EXTRACT(EPOCH FROM bucket)::bigint AS time,
+              (array_agg(price ORDER BY created_at ASC ))[1] AS open,
+              (array_agg(price ORDER BY created_at DESC))[1] AS close,
+              MAX(price) AS high,
+              MIN(price) AS low,
+              SUM(near_amount) AS volume
+         FROM bucketed
+        GROUP BY bucket
+        ORDER BY bucket DESC
+        LIMIT $3`,
+      [req.params.coinId, pgInterval, count]
+    );
+
+    const candles = rows.map((r) => ({
+      time:   Number(r.time),
+      open:   Number(r.open),
+      high:   Number(r.high),
+      low:    Number(r.low),
+      close:  Number(r.close),
+      volume: Number(r.volume),
+    })).reverse(); // chronological for the chart library
+
+    res.json({ candles, interval });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/newscoin/:coinId/curve
 // ---------------------------------------------------------------------------
 router.get("/:coinId/curve", async (req, res, next) => {
