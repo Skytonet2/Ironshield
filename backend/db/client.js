@@ -4,17 +4,39 @@ const { Pool } = require("pg");
 const connectionString = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/ironshield";
 // Render/Supabase/Heroku managed Postgres require SSL. Only skip for localhost.
 const isLocal = /@(localhost|127\.0\.0\.1)/.test(connectionString);
+// max=30: Render Postgres Starter caps at ~97 connections; 30 leaves headroom
+// for the worker services (governance + bot) once they're live and still
+// absorbs a 1k-user spike without exhausting. Day 6.2 — pre-PgBouncer.
 const pool = new Pool({
   connectionString,
   ssl: isLocal ? false : { rejectUnauthorized: false },
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  max: 30,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
 });
 
+// Idle-client errors (e.g. server-side conn drops) shouldn't crash the
+// process — pg already removes the bad client from the pool. Log and move on.
 pool.on("error", (err) => {
-  console.error("[DB] Unexpected pool error:", err.message);
+  console.error("[DB] idle pool client error:", { message: err.message, code: err.code });
 });
+
+// withRetry: wrap a single pool/client.query call in a one-shot retry that
+// only fires for the narrow 'connection terminated unexpectedly' case
+// Render Postgres throws when a managed restart drops mid-flight queries.
+// Anything else (constraint violation, syntax error, pool exhaustion) is
+// surfaced unchanged on the first failure.
+const isTransientConnDrop = (err) =>
+  err && /connection terminated unexpectedly/i.test(String(err.message || ""));
+const withRetry = async (fn) => {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isTransientConnDrop(err)) throw err;
+    console.warn("[DB] retrying after transient connection drop");
+    return await fn();
+  }
+};
 
 // Query helper
 const query = (text, params) => pool.query(text, params);
@@ -71,4 +93,4 @@ const seedAdminAllowlist = async () => {
 // Graceful shutdown
 const close = () => pool.end();
 
-module.exports = { pool, query, transaction, migrate, close };
+module.exports = { pool, query, transaction, migrate, close, withRetry };
