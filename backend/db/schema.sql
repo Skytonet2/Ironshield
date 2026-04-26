@@ -419,6 +419,13 @@ ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS validated         BOOLEAN DEFAUL
 -- Cached staking amount for revenue-share multiplier; refreshed by stakingSync job.
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS staked_amount     NUMERIC(40,18) DEFAULT 0;
 
+-- DM presence (Day 8.x follow-up). Updated by feedHub on every WS
+-- disconnect — represents the wall-clock time the user's last
+-- authed socket closed. NULL for users who've never connected.
+-- Online state is derived live from feedHub.hasAuthedSocket(); this
+-- column only carries the offline "last seen" timestamp.
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_seen_at      TIMESTAMPTZ;
+
 -- Long-form articles. kind = 'post' (default) or 'article'. Articles get a
 -- title and lift the 500-char body limit (handled in posts.route.js).
 ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS kind  TEXT DEFAULT 'post';

@@ -73,6 +73,11 @@ export default function MessagesPage() {
   const [groups, setGroups] = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [active, setActive] = useState(null); // { kind, id, peer | group }
+  // Peer presence for the active DM, kept separate from `active` so a
+  // WS event doesn't have to clone the whole conv object. Merged into
+  // the conv prop at render time. null → unknown (initial fetch
+  // pending or non-DM); { online, lastSeenAt } once resolved.
+  const [peerPresence, setPeerPresence] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [showThread, setShowThread] = useState(false); // mobile single-pane switch
@@ -200,7 +205,36 @@ export default function MessagesPage() {
     return () => { off(); };
   }, [wallet]);
 
-  // Open a conversation by walletOrUsername (from the "New message" sheet).
+  // Peer presence: REST fetch on conversation open + live WS updates.
+  // Only direct DMs have a peer with a wallet; group threads skip the
+  // whole flow. The fetch covers initial state (peer was online before
+  // we opened the page); the WS listener handles 0↔1 transitions
+  // emitted by feedHub on auth/disconnect.
+  useEffect(() => {
+    const peerWallet = active?.kind === "direct" ? active.peer?.wallet : null;
+    if (!peerWallet) { setPeerPresence(null); return; }
+    let cancelled = false;
+    api(`/api/users/presence?wallet=${encodeURIComponent(peerWallet)}`)
+      .then((j) => {
+        if (cancelled) return;
+        setPeerPresence({ online: !!j?.online, lastSeenAt: j?.lastSeenAt || null });
+      })
+      .catch(() => { if (!cancelled) setPeerPresence(null); });
+    return () => { cancelled = true; };
+  }, [active?.kind, active?.peer?.wallet]);
+
+  useEffect(() => {
+    const peerWallet = active?.kind === "direct" ? active.peer?.wallet?.toLowerCase() : null;
+    if (!peerWallet) return;
+    const off = wsClient.addListener("presence:update", (event) => {
+      if (!event?.wallet || event.wallet.toLowerCase() !== peerWallet) return;
+      setPeerPresence({
+        online: !!event.online,
+        lastSeenAt: event.lastSeenAt || (event.online ? null : new Date().toISOString()),
+      });
+    });
+    return () => { off(); };
+  }, [active?.kind, active?.peer?.wallet]);
   const openWith = useCallback(async (peerWallet) => {
     if (!wallet || !peerWallet) return;
     const r = await api("/api/dm/conversation", {
@@ -266,7 +300,11 @@ export default function MessagesPage() {
             t={t}
             wallet={wallet}
             keypair={keypair}
-            conv={active}
+            conv={
+              active && active.peer && peerPresence
+                ? { ...active, peer: { ...active.peer, online: peerPresence.online, lastSeenAt: peerPresence.lastSeenAt } }
+                : active
+            }
             messages={messages}
             loading={messagesLoading}
             onBack={() => setShowThread(false)}
@@ -962,6 +1000,11 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
               <>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", boxShadow: "0 0 6px #10b981" }} />
                 Online
+              </>
+            ) : conv.peer?.lastSeenAt ? (
+              <>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.textDim }} />
+                Active {shortTime(conv.peer.lastSeenAt)} ago
               </>
             ) : conv.kind === "direct" ? (
               <>
