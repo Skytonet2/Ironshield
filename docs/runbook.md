@@ -127,6 +127,13 @@ the schema.sql is purely additive at v0.9.0, so backwards-compatible.
 - `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME`
 - Cloudinary trio (media uploads)
 - LiveKit trio (rooms voice)
+- LiveKit Egress (Day 19 — optional; recording toggle no-ops without these):
+  - `LIVEKIT_EGRESS_S3_BUCKET` (required to enable real capture)
+  - `LIVEKIT_EGRESS_S3_ACCESS_KEY` + `LIVEKIT_EGRESS_S3_SECRET`
+  - `LIVEKIT_EGRESS_S3_REGION`
+  - `LIVEKIT_EGRESS_S3_ENDPOINT` (set for non-AWS S3-compatible — R2, MinIO, etc. — uses path-style addressing)
+  - `LIVEKIT_EGRESS_PUBLIC_BASE` — base URL for the public bucket; the egress webhook joins `<base>/<filename>` to produce the replay URL stored in `feed_rooms.recording_url`
+  - LiveKit Cloud must be configured to POST egress events to `https://ironclaw-backend.onrender.com/api/rooms/egress-webhook` (verified via `WebhookReceiver` against `LIVEKIT_API_SECRET`)
 - VAPID pair (push notifications)
 
 ## Week-2 backlog (open at v0.9.0)
