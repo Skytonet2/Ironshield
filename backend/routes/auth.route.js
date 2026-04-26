@@ -56,7 +56,7 @@ router.post("/login", requireSignedWallet, (req, res) => {
 // requirePro / requireAdmin on every protected route. Falls back to
 // {isPro:false} on RPC errors so a chain blip doesn't blank the
 // badge for everyone.
-router.get("/me", async (req, res) => {
+router.get("/me", rateLimit("read"), async (req, res) => {
   const wallet = String(req.header("x-wallet") || "").toLowerCase().trim();
   if (!wallet) return res.json({ wallet: null, isPro: false, isAdmin: false });
   let isPro = false;

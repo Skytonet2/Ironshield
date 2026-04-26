@@ -26,9 +26,27 @@ function provider() {
 // Per-wallet cache. Pro status changes rarely (you have to call
 // extend_lock or your stake has to drop), so 60s is plenty and saves
 // ~1 RPC roundtrip per request. Wallet -> { isPro, at }.
+//
+// Bounded at MAX_CACHE entries to defend against the /api/auth/me
+// path that accepts an unsigned x-wallet header: an attacker could
+// otherwise hammer the endpoint with millions of distinct wallets
+// and balloon server memory. Map preserves insertion order, so
+// dropping the first key is approximate-FIFO eviction (good enough
+// for this access pattern — there's no LRU promotion). 5000 entries
+// is ~500KB and dwarfs IronShield's expected concurrent-wallet count
+// while still putting a hard ceiling on growth.
 const cache = new Map();
+const MAX_CACHE = 5000;
 const TTL_MS = 60_000;
 const NEGATIVE_TTL_MS = 10_000; // shorter so a freshly-upgraded user sees Pro within ~10s
+
+function setCacheEntry(wallet, value) {
+  if (cache.size >= MAX_CACHE && !cache.has(wallet)) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(wallet, value);
+}
 
 async function readIsPro(wallet) {
   const args = Buffer.from(JSON.stringify({ account_id: wallet })).toString("base64");
@@ -55,10 +73,10 @@ async function isPro(wallet) {
   catch (err) {
     // Fail closed — if we can't read the chain we can't be sure.
     // Cache the negative briefly so the next request retries.
-    cache.set(wallet, { isPro: false, at: now });
+    setCacheEntry(wallet, { isPro: false, at: now });
     throw err;
   }
-  cache.set(wallet, { isPro: result, at: now });
+  setCacheEntry(wallet, { isPro: result, at: now });
   return result;
 }
 

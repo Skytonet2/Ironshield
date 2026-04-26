@@ -59,6 +59,20 @@ impl StakingContract {
         assert!(seconds <= 5 * 365 * 86_400,
             "extend_lock seconds bounded at 5 years");
         let caller = env::predecessor_account_id();
+        // Anti-grief: only callers with a real stake can write to
+        // pro_locks. Without this gate, a Sybil with no skin in the
+        // game can call extend_lock from N fresh accounts and burn
+        // ~72 bytes of contract storage per insert. With this gate
+        // they have to acquire IRONCLAW + stake first — real money
+        // gates the storage write. is_pro still requires
+        // PRO_MIN_STAKE_YOCTO and an active lock; this assert is
+        // strictly weaker than the Pro threshold, which is
+        // intentional: a user who under-staked still gets to extend
+        // their commitment so they can top up next.
+        assert!(
+            self.pro_total_staked(&caller) > 0,
+            "extend_lock requires a nonzero stake"
+        );
         let now = env::block_timestamp();
         let proposed = now.saturating_add(seconds.saturating_mul(1_000_000_000));
         let existing = self.pro_locks.get(&caller).copied().unwrap_or(0);
