@@ -116,6 +116,30 @@ async function remove(id, owner) {
   return rowCount > 0;
 }
 
+/** Day 12.2: enabled event-trigger rules listening on a given channel.
+ *  The trigger JSONB carries `{ type: "event", channel: "<name>", filter? }`;
+ *  each emitted event runs this query then evaluates the filter per-row.
+ *  Day 12.4 quota enforcement uses countByOwner. */
+async function findByEventChannel(channel) {
+  const { rows } = await db.query(
+    `SELECT * FROM agent_automations
+        WHERE enabled = TRUE
+          AND trigger->>'type' = 'event'
+          AND trigger->>'channel' = $1
+        ORDER BY id ASC`,
+    [channel]
+  );
+  return rows.map(publicRow);
+}
+
+async function countByOwner(owner) {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int AS n FROM agent_automations WHERE owner = $1`,
+    [owner]
+  );
+  return rows[0]?.n || 0;
+}
+
 /** Schedule rules whose next_run_at is in the past. Worker batches. */
 async function due(limit = 25) {
   const { rows } = await db.query(
@@ -172,4 +196,5 @@ async function rotateSchedule(automation) {
 module.exports = {
   create, update, findOne, findById, listForAccount, remove,
   due, recordRun, listRuns, rotateSchedule, nextRunAt,
+  findByEventChannel, countByOwner,
 };

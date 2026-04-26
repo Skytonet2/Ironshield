@@ -9,6 +9,7 @@ const { getOrCreateUser } = require("../services/feedHelpers");
 const requireWallet = require("../middleware/requireWallet");
 const agent = require("../services/agentConnector");
 const feedHub = require("../ws/feedHub");
+const eventBus = require("../services/eventBus");
 
 // Group @handle rules: 3–24 chars, lowercase letters/digits/underscore.
 const HANDLE_RE = /^[a-z0-9_]{3,24}$/;
@@ -639,6 +640,15 @@ router.post("/send", requireWallet, async (req, res, next) => {
           fromId: me.id,
           messageId: r.rows[0].id,
         });
+        // Day 12.2: surface to the in-process bus so a recipient's
+        // event-trigger automation ({type:"event", channel:"dm.received",
+        // filter:{ to_wallet: "<their wallet>" }}) can act on inbound
+        // DMs without a server poll. Body stays encrypted — only
+        // routing metadata travels.
+        try { eventBus.emit("dm.received", {
+          conversationId, fromId: me.id, toId,
+          from_wallet: req.wallet, to_wallet: peerWallet, messageId: r.rows[0].id,
+        }); } catch { /* best-effort */ }
         if (feedHub.hasAuthedSocket(peerWallet)) {
           const upd = await db.query(
             "UPDATE feed_dms SET delivered_at=NOW() WHERE id=$1 AND delivered_at IS NULL RETURNING delivered_at",
