@@ -192,7 +192,13 @@ function OrderPanel({ t, coin, wallet, selector, onTraded }) {
   const [side, setSide] = useState("buy");
   const [orderType, setOrderType] = useState("market"); // market | limit | adv
   const [amount, setAmount] = useState("");
-  const [slippage, setSlippage] = useState(20);
+  // NOTE: this slippage value is cosmetic right now. The buy/sell
+  // FunctionCall args below don't pass a min_out — the bonding-curve
+  // contract returns whatever the curve quotes. Fixing this needs a
+  // contract-side `min_tokens_out` / `min_near_out` arg (v1.1).
+  // Default lowered 20→1 to read as a plausible value rather than a
+  // 20% giveaway invite.
+  const [slippage, setSlippage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [success, setSuccess] = useState("");
@@ -205,6 +211,26 @@ function OrderPanel({ t, coin, wallet, selector, onTraded }) {
     if (!n || !priceNear) return 0;
     return side === "buy" ? n / priceNear : n * priceNear;
   })();
+
+  // Price age tracking. Stamp the wall-clock time whenever priceNear
+  // changes value, then tick a "now" state every 1s so the rendered
+  // age stays current. The 10s threshold triggers a "stale" badge —
+  // mirrors the standard "quote is getting old" UX without needing a
+  // server-side quote endpoint (NewsCoin trades execute on-chain
+  // directly so there's no quote to re-mint).
+  const priceStampRef = useRef({ value: priceNear, at: Date.now() });
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (priceNear !== priceStampRef.current.value) {
+      priceStampRef.current = { value: priceNear, at: Date.now() };
+    }
+  }, [priceNear]);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const priceAgeS = priceNear > 0 ? Math.floor((now - priceStampRef.current.at) / 1000) : 0;
+  const priceStale = priceAgeS >= 10;
 
   const handleTrade = useCallback(async () => {
     if (!wallet || !selector) { setErr("Connect your wallet first"); return; }
@@ -315,15 +341,29 @@ function OrderPanel({ t, coin, wallet, selector, onTraded }) {
         <div style={{ fontSize: 11, color: t.textDim }}>Priority fee: 0.001 NEAR</div>
       </div>
 
-      {/* Estimated out */}
+      {/* Estimated out + price freshness indicator */}
       {Number(amount) > 0 && (
         <div style={{
           padding: "8px 10px", borderRadius: 8, background: t.bgSurface,
           fontSize: 12, color: t.textMuted,
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
         }}>
-          Est. output: <strong style={{ color: t.white }}>
-            {side === "buy" ? `${fmtTokens(est)} $${coin?.ticker || ""}` : `${fmtNear(est)} NEAR`}
-          </strong>
+          <span>
+            Est. output: <strong style={{ color: t.white }}>
+              {side === "buy" ? `${fmtTokens(est)} $${coin?.ticker || ""}` : `${fmtNear(est)} NEAR`}
+            </strong>
+          </span>
+          {priceNear > 0 && (
+            <span style={{
+              fontSize: 10, fontWeight: 700,
+              padding: "2px 6px", borderRadius: 4,
+              color: priceStale ? "#fff" : t.textDim,
+              background: priceStale ? `${t.red}` : "transparent",
+              border: priceStale ? "none" : `1px solid ${t.bgSurface}`,
+            }}>
+              {priceStale ? `Stale · ${priceAgeS}s old` : `Price ${priceAgeS}s ago`}
+            </span>
+          )}
         </div>
       )}
 
