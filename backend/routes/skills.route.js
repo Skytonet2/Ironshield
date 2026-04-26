@@ -229,9 +229,12 @@ router.post("/record-install", requireWallet, async (req, res) => {
         if (!log.startsWith("EVENT_JSON:")) continue;
         try {
           const parsed = JSON.parse(log.slice("EVENT_JSON:".length));
-          if (parsed?.event === "skill_installed" && Array.isArray(parsed.data)) {
-            evt = parsed.data[0]; break;
-          }
+          if (parsed?.event !== "skill_installed") continue;
+          // The contract emits `data` as a flat object, not the
+          // NEP-297-canonical array. Accept either shape so a future
+          // contract migration to NEP-297 doesn't break this indexer.
+          if (Array.isArray(parsed.data)) { evt = parsed.data[0]; break; }
+          if (parsed.data && typeof parsed.data === "object") { evt = parsed.data; break; }
         } catch { /* non-JSON log, skip */ }
       }
       if (evt) break;
