@@ -365,6 +365,8 @@ CREATE INDEX IF NOT EXISTS idx_feed_notifs_user ON feed_notifications(user_id, c
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS dm_pubkey TEXT;
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_post_tx TEXT;
 ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS onchain_tx TEXT;
+-- Day 8.2: per-message delivery state. read_at already exists.
+ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 
 -- ============================================================
 -- Monetization: tips, gates, rooms, creator revenue

@@ -34,7 +34,7 @@ function resolveWsUrl() {
 
 // Event types that carry per-wallet private content. These bypass
 // useFeed.push so they don't pollute the public feed UI / unread badge.
-const PRIVATE_TYPES = new Set(["dm:new", "notification:new"]);
+const PRIVATE_TYPES = new Set(["dm:new", "notification:new", "dm:state"]);
 
 let ws = null;
 let reconnectTimer = null;

@@ -899,7 +899,7 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
     wsClient.connect({
       wallet: walletAddress.toLowerCase(),
       ticketProvider: fetchWsTicket,
-      trackers: ["dm:new", "notification:new"],
+      trackers: ["dm:new", "notification:new", "dm:state"],
     });
     const off = wsClient.addListener("notification:new", (event) => {
       if (event?.notification) prependNotification(event.notification);

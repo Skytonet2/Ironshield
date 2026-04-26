@@ -35,6 +35,7 @@ import {
   CHIP_TYPES, classifyAddress,
 } from "@/lib/messageParser";
 import { apiFetch } from "@/lib/apiFetch";
+import * as wsClient from "@/lib/ws/wsClient";
 
 const API = (() => {
   if (typeof window === "undefined") return "";
@@ -166,6 +167,37 @@ export default function MessagesPage() {
     const id = setInterval(() => loadThread(active), 8_000);
     return () => clearInterval(id);
   }, [active, loadThread]);
+
+  // Day 8.2: subscribe to dm:state events. The server emits these to the
+  // sender when their messages flip to delivered (recipient socket got
+  // the dm:new push) or read (recipient called /read). We patch the
+  // local `messages` array in place so the bubble's tick rerenders
+  // without a full thread refetch.
+  useEffect(() => {
+    if (!wallet) return;
+    const off = wsClient.addListener("dm:state", (event) => {
+      const ids = event?.messageIds;
+      if (!Array.isArray(ids) || !ids.length) return;
+      const stamp = event.at || new Date().toISOString();
+      const field = event.state === "read" ? "read_at" : "delivered_at";
+      setMessages((prev) => {
+        let changed = false;
+        const next = prev.map((m) => {
+          if (!ids.includes(m.id)) return m;
+          if (m[field]) return m;
+          changed = true;
+          // Read implies delivered — backfill the lower state for free
+          // so a bubble that goes straight from sent to read still has
+          // a coherent timeline.
+          return event.state === "read" && !m.delivered_at
+            ? { ...m, read_at: stamp, delivered_at: m.delivered_at || stamp }
+            : { ...m, [field]: stamp };
+        });
+        return changed ? next : prev;
+      });
+    });
+    return () => { off(); };
+  }, [wallet]);
 
   // Open a conversation by walletOrUsername (from the "New message" sheet).
   const openWith = useCallback(async (peerWallet) => {
@@ -1478,7 +1510,16 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
             display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 3,
           }}>
             {formatTime(m.created_at)}
-            {isMine && m.read_at && <CheckCheck size={10} />}
+            {/* Day 8.2 ticks (1:1 DMs only — group messages don't have
+                per-recipient state). Single-tick = sent, double-tick
+                = delivered, filled double-tick = read. */}
+            {isMine && conv.kind === "direct" && (
+              m.read_at
+                ? <CheckCheck size={10} style={{ color: "#22d3ee", opacity: 1 }} />
+                : m.delivered_at
+                  ? <CheckCheck size={10} />
+                  : <Check size={10} />
+            )}
           </div>
         )}
       </div>
