@@ -371,6 +371,19 @@ function RoomViewInner() {
             boxShadow: "0 0 8px #ef4444", animation: "ixPulse 1.2s ease-in-out infinite",
           }} /> LIVE
         </span>
+        {room.recording?.live && (
+          <span title="This room is being recorded" style={{
+            display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800,
+            color: "#fbbf24", padding: "4px 10px", borderRadius: 999,
+            background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.36)",
+            letterSpacing: 0.6,
+          }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: "50%", background: "#fbbf24",
+              boxShadow: "0 0 8px #fbbf24", animation: "ixPulse 1.2s ease-in-out infinite",
+            }} /> REC
+          </span>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="ix-room-title" style={{
             color: t.white, fontSize: 15, fontWeight: 800, lineHeight: 1.2,
@@ -933,6 +946,41 @@ function ClosedSummaryModal({ t, summary, room, onClose }) {
             color: "#fff", fontWeight: 800, fontSize: 14,
           }}>N</span>
         </div>
+
+        {/* Recording replay (Day 19). The egress webhook lands the URL
+            asynchronously, so on first render after /close it's typically
+            still null — we show "processing" until the host reloads. */}
+        {(room?.recording?.enabled || room?.recording?.startedAt) && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 14px", borderRadius: 12,
+            background: "rgba(168,85,247,0.10)",
+            border: "1px solid rgba(168,85,247,0.34)",
+            marginBottom: 14, position: "relative", zIndex: 1,
+            textAlign: "left",
+          }}>
+            <Radio size={16} color="#c084fc" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: t.white, fontSize: 13, fontWeight: 700 }}>
+                {room?.recording?.url ? "Replay ready" : "Replay processing"}
+              </div>
+              <div style={{ color: t.textMuted, fontSize: 11, marginTop: 1 }}>
+                {room?.recording?.url
+                  ? "Audio recording stored — link below."
+                  : "Egress finalizing; refresh in a minute."}
+              </div>
+            </div>
+            {room?.recording?.url && (
+              <a href={room.recording.url} target="_blank" rel="noreferrer" style={{
+                fontSize: 12, fontWeight: 800,
+                padding: "6px 10px", borderRadius: 999,
+                background: "rgba(168,85,247,0.20)",
+                border: "1px solid rgba(168,85,247,0.45)",
+                color: "#e9d5ff", textDecoration: "none",
+              }}>Listen</a>
+            )}
+          </div>
+        )}
 
         {/* Back to rooms */}
         <button onClick={onClose} style={{

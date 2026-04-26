@@ -461,6 +461,13 @@ CREATE TABLE IF NOT EXISTS feed_rooms (
 CREATE INDEX IF NOT EXISTS idx_feed_rooms_status ON feed_rooms(status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feed_rooms_host   ON feed_rooms(host_id);
 ALTER TABLE feed_rooms ADD COLUMN IF NOT EXISTS recording_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+-- Day 19 — LiveKit Egress wiring. egress_id is opaque to us; recording_url
+-- is the final S3 object URL once egress reports EGRESS_COMPLETE. Both
+-- stay null until the host first toggles recording on with creds set.
+ALTER TABLE feed_rooms ADD COLUMN IF NOT EXISTS recording_egress_id  TEXT;
+ALTER TABLE feed_rooms ADD COLUMN IF NOT EXISTS recording_started_at TIMESTAMPTZ;
+ALTER TABLE feed_rooms ADD COLUMN IF NOT EXISTS recording_ended_at   TIMESTAMPTZ;
+ALTER TABLE feed_rooms ADD COLUMN IF NOT EXISTS recording_url        TEXT;
 
 CREATE TABLE IF NOT EXISTS feed_room_participants (
   id               BIGSERIAL PRIMARY KEY,

@@ -11,14 +11,60 @@ const feedHub = require("../ws/feedHub");
 // (preview deploys, local dev) we surface 503 from mute/kick so the
 // caller knows the action didn't actually land in voice. The DB-side
 // effects (left_at) still apply.
-let RoomServiceClient;
-try { ({ RoomServiceClient } = require("livekit-server-sdk")); } catch { RoomServiceClient = null; }
+let RoomServiceClient, EgressClient, EncodedFileOutput, EncodedFileType, S3Upload, WebhookReceiver;
+try {
+  ({ RoomServiceClient, EgressClient, EncodedFileOutput, EncodedFileType, S3Upload, WebhookReceiver } =
+    require("livekit-server-sdk"));
+} catch {
+  RoomServiceClient = null; EgressClient = null; WebhookReceiver = null;
+}
 function livekitClient() {
   const url = process.env.LIVEKIT_URL || "";
   const apiKey = process.env.LIVEKIT_API_KEY || "";
   const apiSecret = process.env.LIVEKIT_API_SECRET || "";
   if (!url || !apiKey || !apiSecret || !RoomServiceClient) return null;
   return new RoomServiceClient(url, apiKey, apiSecret);
+}
+
+// Day 19 — LiveKit Egress. Returns an EgressClient when the room creds
+// AND the S3 destination creds are all set. Without an S3 bucket the
+// egress server has nowhere to upload, so we no-op rather than start an
+// egress that will fail mid-room.
+function egressClient() {
+  const url = process.env.LIVEKIT_URL || "";
+  const apiKey = process.env.LIVEKIT_API_KEY || "";
+  const apiSecret = process.env.LIVEKIT_API_SECRET || "";
+  if (!url || !apiKey || !apiSecret || !EgressClient) return null;
+  if (!process.env.LIVEKIT_EGRESS_S3_BUCKET) return null;
+  return new EgressClient(url, apiKey, apiSecret);
+}
+
+function buildEgressFileOutput(roomName) {
+  const bucket = process.env.LIVEKIT_EGRESS_S3_BUCKET;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  // Audio-only rooms → .ogg keeps files small. Frontend treats either
+  // extension uniformly via <audio src=…> on the replay page.
+  const filepath = `rooms/${roomName}/${stamp}.ogg`;
+  return new EncodedFileOutput({
+    fileType: EncodedFileType.OGG,
+    filepath,
+    output: {
+      case: "s3",
+      value: new S3Upload({
+        accessKey: process.env.LIVEKIT_EGRESS_S3_ACCESS_KEY || "",
+        secret:    process.env.LIVEKIT_EGRESS_S3_SECRET     || "",
+        region:    process.env.LIVEKIT_EGRESS_S3_REGION     || "",
+        bucket,
+        endpoint:  process.env.LIVEKIT_EGRESS_S3_ENDPOINT   || undefined,
+        forcePathStyle: !!process.env.LIVEKIT_EGRESS_S3_ENDPOINT,
+      }),
+    },
+  });
+}
+
+function publicEgressUrl(filepath) {
+  const base = (process.env.LIVEKIT_EGRESS_PUBLIC_BASE || "").replace(/\/+$/, "");
+  return base ? `${base}/${filepath}` : null;
 }
 
 const MIN_STAKE_USD = 50; // spec: min 50 $IRONCLAW ≈ $50-equiv for MVP
@@ -60,6 +106,13 @@ function hydrateRoom(room, counts, host) {
     accessType: room.access_type,
     voiceEnabled: room.voice_enabled,
     recordingEnabled: !!room.recording_enabled,
+    recording: {
+      enabled:   !!room.recording_enabled,
+      live:      !!room.recording_egress_id && !room.recording_ended_at,
+      startedAt: room.recording_started_at || null,
+      endedAt:   room.recording_ended_at   || null,
+      url:       room.recording_url || null,
+    },
     stake: {
       tokenContract: room.stake_token_contract,
       tokenSymbol:   room.stake_token_symbol,
@@ -347,6 +400,23 @@ router.post("/:id/close", requireWallet, async (req, res, next) => {
     const refundOk = (room.rows[0].flagged_violations || 0) === 0;
     const refundStatus = refundOk ? "pending" : "forfeited";
 
+    // Day 19 — stop any in-flight egress before flipping status. Best
+    // effort: a stuck egress shouldn't block the host from closing.
+    if (room.rows[0].recording_egress_id) {
+      const ec = egressClient();
+      if (ec) {
+        try { await ec.stopEgress(room.rows[0].recording_egress_id); }
+        catch { /* webhook will reconcile, or egress already exited */ }
+      }
+      await db.query(
+        `UPDATE feed_rooms
+            SET recording_enabled=FALSE,
+                recording_ended_at=COALESCE(recording_ended_at, NOW())
+          WHERE id=$1`,
+        [room.rows[0].id]
+      );
+    }
+
     await db.query(
       `UPDATE feed_rooms
           SET status='closed', closed_at=NOW(), refund_tx_hash=NULL
@@ -624,30 +694,150 @@ router.post("/:id/mute", requireWallet, async (req, res, next) => {
 });
 
 // POST /api/rooms/:id/recording  body: { on }
-// Owner-only. Toggles `feed_rooms.recording_enabled`. We don't start an
-// actual recording here — that's Day 19 LiveKit Egress work. The flag
-// is the metadata signal Day 19 reads to know which rooms to capture.
+// Owner-only. Toggles `feed_rooms.recording_enabled`. Day 19: when the
+// LiveKit Egress + S3 envs are set we also start (or stop) a real
+// room-composite audio egress. Without S3 creds we still flip the flag
+// so the toggle remains usable in preview/dev — `egressed: false` in
+// the response tells the caller no actual capture happened.
 router.post("/:id/recording", requireWallet, async (req, res, next) => {
   try {
     const guard = await assertHost(req.params.id, req.wallet);
     if (!guard.ok) return res.status(guard.code).json({ error: guard.msg });
     const on = !!req.body?.on;
-    const r = await db.query(
-      "UPDATE feed_rooms SET recording_enabled=$1 WHERE id=$2 RETURNING recording_enabled",
-      [on, req.params.id]
+
+    const cur = await db.query(
+      `SELECT id, livekit_room_name, recording_enabled, recording_egress_id
+         FROM feed_rooms WHERE id=$1`,
+      [req.params.id]
     );
-    if (!r.rows.length) return res.status(404).json({ error: "room not found" });
+    if (!cur.rows.length) return res.status(404).json({ error: "room not found" });
+    const room = cur.rows[0];
+
+    let egressed = false;
+    let egressError = null;
+    const ec = egressClient();
+
+    if (on && ec && !room.recording_egress_id) {
+      try {
+        const fileOutput = buildEgressFileOutput(room.livekit_room_name);
+        const info = await ec.startRoomCompositeEgress(
+          room.livekit_room_name,
+          { file: fileOutput },
+          { audioOnly: true }
+        );
+        await db.query(
+          `UPDATE feed_rooms
+             SET recording_enabled=TRUE,
+                 recording_egress_id=$1,
+                 recording_started_at=NOW(),
+                 recording_ended_at=NULL,
+                 recording_url=NULL
+           WHERE id=$2`,
+          [info.egressId, room.id]
+        );
+        egressed = true;
+      } catch (e) {
+        egressError = String(e?.message || e);
+        // Egress failed — leave the flag off so the host sees an honest
+        // failure instead of a green "recording" state with no file.
+        await db.query(
+          `UPDATE feed_rooms SET recording_enabled=FALSE WHERE id=$1`,
+          [room.id]
+        );
+      }
+    } else if (!on && ec && room.recording_egress_id) {
+      try {
+        await ec.stopEgress(room.recording_egress_id);
+      } catch (e) {
+        egressError = String(e?.message || e);
+        // We still flip the flag off — egress may have already exited.
+      }
+      // recording_url is filled in by the egress webhook (EGRESS_COMPLETE);
+      // here we just mark it ended.
+      await db.query(
+        `UPDATE feed_rooms
+           SET recording_enabled=FALSE,
+               recording_ended_at=NOW()
+         WHERE id=$1`,
+        [room.id]
+      );
+      egressed = true;
+    } else {
+      // No egress creds, or already in the requested state. Just flip
+      // the flag — the metadata signal still has value (UI hint, post-
+      // close summary).
+      await db.query(
+        `UPDATE feed_rooms SET recording_enabled=$1 WHERE id=$2`,
+        [on, room.id]
+      );
+    }
 
     try {
       feedHub.broadcast({
         type: "room:recording",
         roomId: Number(req.params.id),
-        on: r.rows[0].recording_enabled,
+        on,
       });
     } catch { /* best-effort */ }
 
-    res.json({ ok: true, recording_enabled: r.rows[0].recording_enabled });
+    res.json({
+      ok: true,
+      recording_enabled: on,
+      egressed,
+      ...(egressError ? { egressError } : {}),
+    });
   } catch (e) { next(e); }
+});
+
+// POST /api/rooms/egress-webhook
+// LiveKit Egress fires this on EGRESS_COMPLETE / EGRESS_FAILED. The
+// upstream signs the body as a JWT in the Authorization header; we
+// verify with WebhookReceiver before trusting the egress_id → URL
+// mapping. The global express.json parser stashes the raw bytes on
+// req.rawBody for us (see backend/server.js), which is what
+// WebhookReceiver.receive needs to recompute the signature.
+router.post("/egress-webhook", async (req, res) => {
+  try {
+    const apiKey = process.env.LIVEKIT_API_KEY || "";
+    const apiSecret = process.env.LIVEKIT_API_SECRET || "";
+    if (!WebhookReceiver || !apiKey || !apiSecret) {
+      return res.status(503).json({ error: "egress webhook not configured" });
+    }
+    const auth = req.get("Authorization") || "";
+    const raw = req.rawBody ? req.rawBody.toString("utf8") : JSON.stringify(req.body || {});
+
+    let ev;
+    try {
+      const receiver = new WebhookReceiver(apiKey, apiSecret);
+      ev = await receiver.receive(raw, auth);
+    } catch {
+      return res.status(401).json({ error: "invalid webhook signature" });
+    }
+
+    if (ev.event !== "egress_ended" && ev.event !== "egress_updated") {
+      return res.json({ ok: true, ignored: true });
+    }
+    const info = ev.egressInfo || {};
+    const egressId = info.egressId;
+    if (!egressId) return res.json({ ok: true, ignored: true });
+
+    const fileResults = info.fileResults || [];
+    const first = fileResults[0] || {};
+    const filename = first.filename || "";
+    const url = publicEgressUrl(filename) || first.location || null;
+
+    await db.query(
+      `UPDATE feed_rooms
+         SET recording_url = COALESCE($1, recording_url),
+             recording_ended_at = COALESCE(recording_ended_at, NOW()),
+             recording_enabled = FALSE
+       WHERE recording_egress_id = $2`,
+      [url, egressId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
 });
 
 module.exports = router;
