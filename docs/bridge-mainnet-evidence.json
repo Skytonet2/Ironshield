@@ -1,0 +1,148 @@
+{
+  "timestamp_start": "2026-04-26T16:23:42.289Z",
+  "timestamp_end": "2026-04-26T16:24:20.908Z",
+  "elapsed_seconds": 27.7,
+  "sender": "ironshield.near",
+  "recipient_solana": "6UP6LumJUY6Hy2TQzfhsuKhVtxzPriq99LS7qdeP2ruJ",
+  "bridge_amount_near": "0.1",
+  "deposit_address": "5fdc8e4e67234772f35275b897fb90afa0a09a3c5bf845e9dda2a443200c350c",
+  "deposit_tx_hash": "59WMKwnFzpHnTbhWE6kCyuEvCU6oHfB7CzH1JDiA3SY6",
+  "nearblocks_url": "https://nearblocks.io/txns/59WMKwnFzpHnTbhWE6kCyuEvCU6oHfB7CzH1JDiA3SY6",
+  "quote_response": {
+    "quote": {
+      "amountIn": "100000000000000000000000",
+      "amountInFormatted": "0.1",
+      "amountInUsd": "0.1390",
+      "minAmountIn": "100000000000000000000000",
+      "amountOut": "1580885",
+      "amountOutFormatted": "0.001580885",
+      "amountOutUsd": "0.1368",
+      "minAmountOut": "1565076",
+      "timeEstimate": 17,
+      "deadline": "2026-04-27T16:23:48.016Z",
+      "timeWhenInactive": "2026-04-27T16:23:48.016Z",
+      "depositAddress": "5fdc8e4e67234772f35275b897fb90afa0a09a3c5bf845e9dda2a443200c350c"
+    },
+    "quoteRequest": {
+      "dry": false,
+      "depositMode": "SIMPLE",
+      "swapType": "EXACT_INPUT",
+      "slippageTolerance": 100,
+      "originAsset": "nep141:wrap.near",
+      "depositType": "ORIGIN_CHAIN",
+      "destinationAsset": "nep141:sol.omft.near",
+      "amount": "100000000000000000000000",
+      "refundTo": "ironshield.near",
+      "refundType": "ORIGIN_CHAIN",
+      "recipient": "6UP6LumJUY6Hy2TQzfhsuKhVtxzPriq99LS7qdeP2ruJ",
+      "recipientType": "DESTINATION_CHAIN",
+      "deadline": "2026-04-26T16:33:44.447Z",
+      "quoteWaitingTimeMs": 3000,
+      "appFees": [
+        {
+          "recipient": "fees.ironshield.near",
+          "fee": 10
+        },
+        {
+          "recipient": "5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd",
+          "fee": 30
+        }
+      ]
+    },
+    "signature": "ed25519:4xnDgaM99VQCn5Z1xqvg7tqB8ddFGKA1EQCFvzkfrcML67bpcnEJ6Q7DFaZUefZsjAG8n7E15otAxQkCyNmsyqjk",
+    "timestamp": "2026-04-26T16:23:44.921Z",
+    "correlationId": "3c39fb21-84f7-4a9b-9478-c6413e78aae0"
+  },
+  "final_status": {
+    "status": "SUCCESS",
+    "updatedAt": "2026-04-26T16:24:13.000Z",
+    "correlationId": "f8d58297-80cd-48c5-b03b-f6b713817417",
+    "swapDetails": {
+      "depositedAmount": "100000000000000000000000",
+      "depositedAmountUsd": "0.1390",
+      "depositedAmountFormatted": "0.1",
+      "intentHashes": [
+        "FUk26F9ea9s2Ns3Gx3QZfnuc5SDGczHony7NtnpHSCX2"
+      ],
+      "nearTxHashes": [
+        "FS9AgwqPegj7qjyTkHEgqKXwpX6iZVWnpxwMq6W7qCJM",
+        "A9EgXahKQ7MLnRT6GCBTMSiywkwfmL8rah6renaUJHz7"
+      ],
+      "amountIn": "100000000000000000000000",
+      "amountInFormatted": "0.1",
+      "amountInUsd": "0.1390",
+      "amountOut": "1580620",
+      "amountOutFormatted": "0.00158062",
+      "amountOutUsd": "0.1367",
+      "slippage": 2,
+      "refundedAmount": "0",
+      "refundedAmountFormatted": "0",
+      "refundedAmountUsd": "0",
+      "refundReason": null,
+      "refundFee": "0",
+      "originChainTxHashes": [
+        {
+          "hash": "59WMKwnFzpHnTbhWE6kCyuEvCU6oHfB7CzH1JDiA3SY6",
+          "explorerUrl": ""
+        }
+      ],
+      "destinationChainTxHashes": [
+        {
+          "hash": "56WtbVta3XBD4wBjxUvhQQcnpxotUH1ur2MEBXoEz2mLdfYBhbx1GWrRJhyJbDq6zh6oMmLg6WbbbvdgB6aYXes1",
+          "explorerUrl": ""
+        }
+      ]
+    },
+    "quoteResponse": {
+      "timestamp": "2026-04-26T16:23:44.921Z",
+      "signature": "ed25519:4xnDgaM99VQCn5Z1xqvg7tqB8ddFGKA1EQCFvzkfrcML67bpcnEJ6Q7DFaZUefZsjAG8n7E15otAxQkCyNmsyqjk",
+      "quoteRequest": {
+        "dry": false,
+        "swapType": "EXACT_INPUT",
+        "depositMode": "SIMPLE",
+        "slippageTolerance": 100,
+        "originAsset": "nep141:wrap.near",
+        "depositType": "ORIGIN_CHAIN",
+        "destinationAsset": "nep141:sol.omft.near",
+        "amount": "100000000000000000000000",
+        "refundTo": "ironshield.near",
+        "refundType": "ORIGIN_CHAIN",
+        "recipient": "6UP6LumJUY6Hy2TQzfhsuKhVtxzPriq99LS7qdeP2ruJ",
+        "recipientType": "DESTINATION_CHAIN",
+        "deadline": "2026-04-26T16:33:44.447Z",
+        "appFees": [
+          {
+            "recipient": "5880ad2b362620fadf759cbceb1cd5737ce8c6ed7fb8e9942881e6731f9247dd",
+            "fee": 30
+          },
+          {
+            "recipient": "fees.ironshield.near",
+            "fee": 10
+          }
+        ],
+        "virtualChainRecipient": null,
+        "virtualChainRefundRecipient": null,
+        "referral": null
+      },
+      "quote": {
+        "amountIn": "100000000000000000000000",
+        "amountInFormatted": "0.1",
+        "amountInUsd": "0.1390",
+        "minAmountIn": "100000000000000000000000",
+        "amountOut": "1580885",
+        "amountOutFormatted": "0.001580885",
+        "amountOutUsd": "0.1368",
+        "minAmountOut": "1565076",
+        "timeWhenInactive": "2026-04-27T16:23:48.016Z",
+        "depositAddress": "5fdc8e4e67234772f35275b897fb90afa0a09a3c5bf845e9dda2a443200c350c",
+        "deadline": "2026-04-27T16:23:48.016Z",
+        "timeEstimate": 17
+      }
+    }
+  },
+  "near_balance_pre_yocto": "7188780082554775711882365",
+  "near_balance_post_yocto": "7085584312892543611882364",
+  "sol_lamports_pre": 5672317,
+  "sol_lamports_post": 5672317,
+  "sol_lamports_delta": 0
+}
