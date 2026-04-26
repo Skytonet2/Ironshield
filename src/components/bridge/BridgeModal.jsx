@@ -92,6 +92,10 @@ export default function BridgeModal({ onClose }) {
   const [fromId, setFromId] = useState("nep141:wrap.near");
   const [toId, setToId]     = useState("nep141:sol.omft.near");
   const [amount, setAmount] = useState("");
+  // For non-NEAR destinations the user must paste a real recipient
+  // address (we previously fell back to PLACEHOLDER_RECIPIENT — that
+  // sent live funds to wallets we don't control; see Day 14 evidence).
+  const [destRecipient, setDestRecipient] = useState("");
   const [quote, setQuote]   = useState(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [err, setErr]       = useState(null);
@@ -206,9 +210,21 @@ export default function BridgeModal({ onClose }) {
       setErr("Connect a NEAR wallet to bridge.");
       return;
     }
-    const recipient = toToken.blockchain === "near"
-      ? nearCtx.address
-      : (PLACEHOLDER_RECIPIENT[toToken.blockchain] || nearCtx.address);
+    // For non-NEAR destinations, require a real recipient. The dry
+    // quote can use a chain-format-valid placeholder (so previews
+    // show before the user pastes), but the live bridge MUST send to
+    // a wallet the user actually controls.
+    let recipient;
+    if (toToken.blockchain === "near") {
+      recipient = nearCtx.address;
+    } else {
+      const trimmed = (destRecipient || "").trim();
+      if (!trimmed) {
+        setErr(`Paste a ${CHAIN_LABELS[toToken.blockchain] || toToken.blockchain} address to receive the bridged ${toToken.symbol}.`);
+        return;
+      }
+      recipient = trimmed;
+    }
 
     setErr(null);
     setExec({ stage: "submitting" });
@@ -240,22 +256,37 @@ export default function BridgeModal({ onClose }) {
       if (!ftContract) throw new Error(`Can't resolve NEP-141 contract for ${fromToken.symbol}`);
 
       const wallet = await nearCtx.selector.wallet();
+      // 1click issues a fresh NEAR implicit account per quote and
+      // does not pre-register it on the NEP-141. Without an explicit
+      // storage_deposit, ft_transfer panics ("not registered") and
+      // the whole tx rolls back. Cost ~0.00125 NEAR per bridge.
       const result = await wallet.signAndSendTransaction({
         signerId: nearCtx.address,
         receiverId: ftContract,
-        actions: [{
-          type: "FunctionCall",
-          params: {
-            methodName: "ft_transfer",
-            args: {
-              receiver_id: depositAddress,
-              amount: amountBase,
-              memo: `ironshield bridge ${fromToken.symbol}→${toToken.symbol}`,
+        actions: [
+          {
+            type: "FunctionCall",
+            params: {
+              methodName: "storage_deposit",
+              args: { account_id: depositAddress, registration_only: true },
+              gas: "30000000000000",
+              deposit: "1250000000000000000000", // 0.00125 NEAR
             },
-            gas: "30000000000000",
-            deposit: "1", // NEP-141 requires 1 yocto attached.
           },
-        }],
+          {
+            type: "FunctionCall",
+            params: {
+              methodName: "ft_transfer",
+              args: {
+                receiver_id: depositAddress,
+                amount: amountBase,
+                memo: `ironshield bridge ${fromToken.symbol}→${toToken.symbol}`,
+              },
+              gas: "30000000000000",
+              deposit: "1", // NEP-141 requires 1 yocto attached.
+            },
+          },
+        ],
       });
       const depositTx = result?.transaction?.hash
         || result?.transaction_outcome?.id
@@ -391,6 +422,29 @@ export default function BridgeModal({ onClose }) {
           amount={quote ? fmtAmount(quote.amountOut, toToken?.decimals) : ""}
           t={t}
         />
+
+        {/* Recipient input for non-NEAR destinations. NEAR-destination
+            bridges land in the connected NEAR wallet. */}
+        {toToken && toToken.blockchain !== "near" && (
+          <div style={{ marginTop: 8 }}>
+            <input
+              value={destRecipient}
+              onChange={(e) => setDestRecipient(e.target.value)}
+              placeholder={`${CHAIN_LABELS[toToken.blockchain] || toToken.blockchain} address to receive ${toToken.symbol}`}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: `1px solid ${t.border}`,
+                background: "var(--bg-input)",
+                color: t.text,
+                fontSize: 12,
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+                outline: "none",
+              }}
+            />
+          </div>
+        )}
 
         {/* Quote summary */}
         <div style={{
