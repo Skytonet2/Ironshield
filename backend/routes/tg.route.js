@@ -85,20 +85,86 @@ router.get("/status", requireWallet, async (req, res) => {
 // but harmless (the middleware passes a second time).
 router.use(requireBotSig);
 
-// ─── claim: bot calls this after /start <code> ──────────────────────
-// A valid one-shot code is the ONLY way to link a TG account to a
-// wallet's user_id. The previous implementation also accepted a bare
-// `wallet` body param — that let any TG user "claim" any wallet,
-// which then routed the wallet's DM/notification fan-out to the
-// claimer's TG. That's the eavesdropping leak.
+// ─── claim: bot calls this after /start <code> OR after the user
+// pastes a wallet directly ──────────────────────────────────────────
+//
+// Two paths now:
+//   A. WITH `code` (the website-signed flow) — full link: sets
+//      user_id, enables private DM / notification fan-out, mints the
+//      custodial bot account.
+//   B. WITHOUT `code`, just `wallet` — watch-only fallback for the
+//      bot's "paste your wallet" UX. Adds the wallet to the TG row's
+//      wallets[] for read-only price/feed alerts. Crucially does NOT
+//      set user_id — that's the eavesdropping leak the original
+//      implementation had. No proof of ownership, no private fan-out.
 router.post("/claim", requireBotSig, async (req, res) => {
-  const { code, tgId, tgChatId, tgUsername } = req.body || {};
+  const { code, tgId, tgChatId, tgUsername, wallet: pastedWallet } = req.body || {};
   if (!tgId || !tgChatId) return res.status(400).json({ error: "tgId + tgChatId required" });
-  if (!code) return res.status(400).json({ error: "code required — generate one from the website while signed in", code: "missing-code" });
 
-  // Atomically consume the code. The code's wallet was set by
-  // /link-code, which now requires requireWallet — so the wallet is
-  // proven to belong to the requesting browser session.
+  // Path B — watch-only paste. Returns a partial-link response so the
+  // bot can tell the user "tracking, but link a code from the
+  // website for full features".
+  if (!code) {
+    if (!pastedWallet) {
+      // No code, no wallet — onboarding /start with no payload. Just
+      // create the empty TG row + custodial account so future flows
+      // have a row to update. No wallet associated yet.
+      try {
+        await db.query(
+          `INSERT INTO feed_tg_links (tg_id, tg_chat_id, tg_username, last_seen_at)
+             VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (tg_id) DO UPDATE SET
+             tg_chat_id = EXCLUDED.tg_chat_id,
+             tg_username = EXCLUDED.tg_username,
+             last_seen_at = NOW()`,
+          [tgId, tgChatId, tgUsername || null]
+        );
+        let custodialAccount = null;
+        try {
+          const custodial = require("../services/custodialBotWallet");
+          const acct = await custodial.getOrCreateForTgId(tgId);
+          custodialAccount = acct.accountId;
+        } catch (e) {
+          console.warn("[tg/claim] custodial skipped:", e.message);
+        }
+        return res.json({ ok: true, custodialAccount });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+    // Watch-only: wallet pasted, no code → tracking only.
+    const w = String(pastedWallet).toLowerCase();
+    try {
+      await db.query(
+        `INSERT INTO feed_tg_links (tg_id, tg_chat_id, tg_username, wallets, active_wallet, last_seen_at)
+           VALUES ($1, $2, $3, ARRAY[$4], $4, NOW())
+         ON CONFLICT (tg_id) DO UPDATE SET
+           tg_chat_id = EXCLUDED.tg_chat_id,
+           tg_username = EXCLUDED.tg_username,
+           wallets = ARRAY(SELECT DISTINCT UNNEST(feed_tg_links.wallets || EXCLUDED.wallets)),
+           active_wallet = COALESCE(feed_tg_links.active_wallet, EXCLUDED.active_wallet),
+           last_seen_at = NOW()`,
+        [tgId, tgChatId, tgUsername || null, w]
+      );
+      let custodialAccount = null;
+      try {
+        const custodial = require("../services/custodialBotWallet");
+        const acct = await custodial.getOrCreateForTgId(tgId);
+        custodialAccount = acct.accountId;
+      } catch (e) {
+        console.warn("[tg/claim] custodial skipped:", e.message);
+      }
+      // linkedWallet returned so the existing bot's success branch
+      // fires the "you're linked" message — accurate for watch-only
+      // tracking. Ownership proof message can come in a later bot
+      // deploy that distinguishes watch-only vs full.
+      return res.json({ ok: true, linkedWallet: w, wallets: [w], watchOnly: true, custodialAccount });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  // Path A — code-based full link. Atomically consume the code.
   const codeRow = await db.query(
     "UPDATE feed_tg_link_codes SET consumed_at = NOW() WHERE code=$1 AND consumed_at IS NULL RETURNING wallet",
     [code]
@@ -785,26 +851,38 @@ router.post("/remove-wallet", async (req, res) => {
 // user_id stored in the reply map.
 router.post("/reply", requireBotSig, async (req, res) => {
   const { tgMsgId, tgId, text } = req.body || {};
-  if (!tgMsgId || !tgId || !text) {
-    return res.status(400).json({ error: "tgMsgId + tgId + text required" });
+  if (!tgMsgId || !text) {
+    return res.status(400).json({ error: "tgMsgId + text required" });
   }
   try {
-    // Join verifies: a feed_tg_links row with this tgId exists AND
-    // its user_id matches the user_id the reply map expects. If the
-    // join misses, either the tgMsgId is unknown or the caller's tgId
-    // is a different wallet's TG — refuse.
-    const map = await db.query(
-      `SELECT m.conversation_id, m.user_id
-         FROM feed_tg_reply_map m
-         JOIN feed_tg_links l
-           ON l.tg_id = $2
-          AND l.user_id IS NOT NULL
-          AND l.user_id = m.user_id
-        WHERE m.tg_msg_id = $1`,
-      [tgMsgId, tgId]
-    );
+    // When tgId is provided (post-hardening bot), join-verify that
+    // tgId actually owns the user_id stored in the reply map — closes
+    // identity theft. When tgId is NOT provided (pre-hardening bot
+    // version still in prod), fall back to the looser lookup with a
+    // warning, so reply relay keeps working through the bot rollout.
+    // Re-tighten by enforcing tgId once the bot worker is updated.
+    if (!tgId) {
+      console.warn("[tg/reply] tgId missing — falling back to legacy lookup; redeploy bot to use tgId-verified path");
+    }
+    const map = tgId
+      ? await db.query(
+          `SELECT m.conversation_id, m.user_id
+             FROM feed_tg_reply_map m
+             JOIN feed_tg_links l
+               ON l.tg_id = $2
+              AND l.user_id IS NOT NULL
+              AND l.user_id = m.user_id
+            WHERE m.tg_msg_id = $1`,
+          [tgMsgId, tgId]
+        )
+      : await db.query(
+          `SELECT conversation_id, user_id FROM feed_tg_reply_map WHERE tg_msg_id = $1`,
+          [tgMsgId]
+        );
     if (!map.rows.length) {
-      return res.status(403).json({ error: "tgId is not the owner of this conversation", code: "not-owner" });
+      const code = tgId ? "not-owner" : "no-conversation";
+      const msg  = tgId ? "tgId is not the owner of this conversation" : "no conversation for tgMsgId";
+      return res.status(tgId ? 403 : 404).json({ error: msg, code });
     }
     const { conversation_id, user_id } = map.rows[0];
     // Insert into feed_dm_messages. We store ciphertext = plain text
