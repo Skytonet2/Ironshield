@@ -26,6 +26,129 @@ use near_sdk::store::{
     UnorderedMap as OldUnorderedMap, Vector as OldVector,
 };
 
+// ─── Day 18 (Phase 9 → Phase 10): Pro membership ────────────────────
+//
+// Phase 9 was code-only (vote() pretoken bugfix), so on-chain storage
+// shape is byte-for-byte the post-Phase-8 layout. This mirror captures
+// that shape so we can read it during the upgrade and write the new
+// shape with the additional `pro_locks` map under prefix b"R". Do NOT
+// edit once the Phase 10 upgrade has run on mainnet — add a Phase10
+// mirror instead if a future migration is needed.
+#[near(serializers=[borsh])]
+struct Phase8StakingContract {
+    owner_id:               AccountId,
+    ironclaw_token_id:      AccountId,
+    pools:                  OldVector<PoolInfo>,
+    user_info:              OldLookupMap<String, UserInfo>,
+    reward_per_ns:          Balance,
+    last_reward_time:       u64,
+    total_alloc_point:      u32,
+    paused:                 bool,
+    proposals:              OldVector<Proposal>,
+    votes:                  OldLookupMap<String, String>,
+    mission_results:        OldLookupMap<u32, MissionResult>,
+    orchestrator_id:        AccountId,
+    total_revenue:          Balance,
+    distributed_revenue:    Balance,
+    staker_share_bps:       u32,
+    contributor_share_bps:  u32,
+    reserve_share_bps:      u32,
+    proposer_share_bps:     u32,
+    contributor_wallet:     AccountId,
+    reserve_wallet:         AccountId,
+    proposer_wallet:        AccountId,
+    pretoken_mode:          bool,
+    contributors:           OldUnorderedMap<AccountId, ContributorInfo>,
+    pending_applications:   OldUnorderedMap<AccountId, ContributorApplication>,
+    vanguard_nft_contracts: OldVector<AccountId>,
+    vanguard_verified:      OldLookupSet<AccountId>,
+    vanguard_token_id_max:  u64,
+    agent_profiles:         OldUnorderedMap<AccountId, AgentProfile>,
+    agent_handles:          OldUnorderedMap<String, AccountId>,
+    total_points_issued:    Balance,
+    agent_stats:            OldUnorderedMap<AccountId, AgentStats>,
+    agent_tasks:            OldUnorderedMap<AccountId, Vec<AgentTask>>,
+    next_task_id:           u64,
+    skills:                 OldUnorderedMap<u64, Skill>,
+    next_skill_id:          u64,
+    installed_skills:       OldUnorderedMap<AccountId, Vec<u64>>,
+    agent_flags:            OldUnorderedMap<AccountId, AgentFlags>,
+    ironclaw_sources:       OldUnorderedMap<AccountId, String>,
+    skill_metadata:         OldUnorderedMap<u64, SkillMetadata>,
+    agent_permissions:      OldUnorderedMap<AccountId, AgentPermissions>,
+    owner_agents:           OldUnorderedMap<AccountId, Vec<SubAgent>>,
+    sub_agent_handles:      OldUnorderedMap<String, AccountId>,
+    agent_connections:      OldUnorderedMap<AccountId, Vec<AgentConnection>>,
+}
+
+#[near]
+impl StakingContract {
+    /// Phase 8/9 → Phase 10: adds an empty `pro_locks` map under prefix
+    /// b"R". O(1) runtime — no per-row rewrite. Existing stakers start
+    /// with no Pro lock (lock_until=0), so nobody is silently flipped
+    /// to Pro by the migration; they have to call `extend_lock`
+    /// explicitly to opt in.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate_v10_pro_membership() -> Self {
+        let old: Phase8StakingContract = env::state_read()
+            .expect("No state to migrate — was the contract ever initialized?");
+
+        env::log_str("EVENT_JSON:{\"standard\":\"ironshield\",\"version\":\"1.0\",\"event\":\"state_migrated\",\"data\":{\"to\":\"phase10_pro_membership\"}}");
+
+        Self {
+            owner_id:               old.owner_id,
+            ironclaw_token_id:      old.ironclaw_token_id,
+            pools:                  old.pools,
+            user_info:              old.user_info,
+            reward_per_ns:          old.reward_per_ns,
+            last_reward_time:       old.last_reward_time,
+            total_alloc_point:      old.total_alloc_point,
+            paused:                 old.paused,
+            proposals:              old.proposals,
+            votes:                  old.votes,
+            mission_results:        old.mission_results,
+            orchestrator_id:        old.orchestrator_id,
+            total_revenue:          old.total_revenue,
+            distributed_revenue:    old.distributed_revenue,
+            staker_share_bps:       old.staker_share_bps,
+            contributor_share_bps:  old.contributor_share_bps,
+            reserve_share_bps:      old.reserve_share_bps,
+            proposer_share_bps:     old.proposer_share_bps,
+            contributor_wallet:     old.contributor_wallet,
+            reserve_wallet:         old.reserve_wallet,
+            proposer_wallet:        old.proposer_wallet,
+            pretoken_mode:          old.pretoken_mode,
+            contributors:           old.contributors,
+            pending_applications:   old.pending_applications,
+            vanguard_nft_contracts: old.vanguard_nft_contracts,
+            vanguard_verified:      old.vanguard_verified,
+            vanguard_token_id_max:  old.vanguard_token_id_max,
+            agent_profiles:         old.agent_profiles,
+            agent_handles:          old.agent_handles,
+            total_points_issued:    old.total_points_issued,
+            agent_stats:            old.agent_stats,
+            agent_tasks:            old.agent_tasks,
+            next_task_id:           old.next_task_id,
+            skills:                 old.skills,
+            next_skill_id:          old.next_skill_id,
+            installed_skills:       old.installed_skills,
+            agent_flags:            old.agent_flags,
+            ironclaw_sources:       old.ironclaw_sources,
+            skill_metadata:         old.skill_metadata,
+            agent_permissions:      old.agent_permissions,
+            owner_agents:           old.owner_agents,
+            sub_agent_handles:      old.sub_agent_handles,
+            agent_connections:      old.agent_connections,
+
+            // Day 18 — empty on every upgrade path. Prefix b"R"
+            // (previously unused — see prefix inventory at the head
+            // of migrate.rs).
+            pro_locks:              LookupMap::new(b"R"),
+        }
+    }
+}
+
 /// Byte-for-byte mirror of the deployed `StakingContract` state.
 /// DO NOT change this struct after the upgrade has run on mainnet — its only
 /// purpose is to read the pre-Phase-2 storage. If we ever need a Phase-3
@@ -133,6 +256,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -294,6 +419,8 @@ impl StakingContract {
             // (previously unused; see prefix inventory at the head of
             // migrate.rs).
             agent_connections:      UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:              LookupMap::new(b"R"),
         }
     }
 }
@@ -411,6 +538,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -527,6 +656,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -646,6 +777,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -714,6 +847,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -822,6 +957,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -932,6 +1069,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -1039,6 +1178,8 @@ impl StakingContract {
             sub_agent_handles:   UnorderedMap::new(b"Q"),
             // Phase 8 — empty on every upgrade path. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }

@@ -12,14 +12,16 @@
 // /api/rewards/me endpoint.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTheme, useWallet } from "@/lib/contexts";
+import { useTheme, useWallet, getReadAccount } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import { API_BASE as API } from "@/lib/apiBase";
 import { apiFetch } from "@/lib/apiFetch";
+import { STAKING_CONTRACT } from "@/lib/nearConfig";
+import { sendTx, functionCallAction } from "@/lib/walletActions";
 import {
   Award, Rocket, Activity, Crosshair, Users, Store, Trophy, Flame,
   Medal, ChevronDown, Info, Copy as CopyIcon, Check, Pencil, Share2,
-  BarChart3, Link2,
+  BarChart3, Link2, Lock, Loader2, Crown,
 } from "lucide-react";
 
 const CHAINS = [
@@ -797,23 +799,191 @@ function ReferralsTab({ t, address, stats, onCode }) {
         governance and will be surfaced here when it's live.
       </div>
 
-      {/* IronShield Pro stub — Day 6.4. Day 18 lands the real flow.
-          Until then the AppShell upgrade card scrolls here so the link
-          doesn't 404 and users see expected timing. */}
-      <section id="pro" style={{
-        padding: 16, borderRadius: 14,
-        border: `1px solid rgba(168,85,247,0.35)`,
-        background: "linear-gradient(135deg, rgba(168,85,247,0.10), rgba(59,130,246,0.06))",
+      <ProUpgradeSection t={t} />
+    </div>
+  );
+}
+
+// ── Pro upgrade section (Day 18.4) ──────────────────────────────────
+// Replaces the Day 6.4 stub. Reads on-chain state via the staking
+// contract's view methods, surfaces the wallet's stake + lock, and
+// exposes a one-click "extend 30 days" action that fires extend_lock.
+// `is_pro` itself is the source of truth — frontend just relays.
+function ProUpgradeSection({ t }) {
+  const { address, selector } = useWallet();
+  const [status, setStatus] = useState({ loading: true });
+  const [tx, setTx] = useState({ pending: false, error: null });
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  useEffect(() => {
+    if (!address) {
+      setStatus({ loading: false, isPro: false, totalStakedYocto: "0", lockUntilNs: 0,
+                  minStakeYocto: "0", minLockSec: 30 * 86_400 });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setStatus((s) => ({ ...s, loading: true }));
+      try {
+        const account = await getReadAccount();
+        const [isPro, lockUntil, votingPower, minStake, minLockSec] = await Promise.all([
+          account.viewFunction({ contractId: STAKING_CONTRACT, methodName: "is_pro",
+                                 args: { account_id: address } }),
+          account.viewFunction({ contractId: STAKING_CONTRACT, methodName: "get_pro_lock_until",
+                                 args: { account_id: address } }),
+          account.viewFunction({ contractId: STAKING_CONTRACT, methodName: "get_voting_power",
+                                 args: { account_id: address } }),
+          account.viewFunction({ contractId: STAKING_CONTRACT, methodName: "get_pro_min_stake", args: {} }),
+          account.viewFunction({ contractId: STAKING_CONTRACT, methodName: "get_pro_min_lock_seconds", args: {} }),
+        ]);
+        if (cancelled) return;
+        setStatus({
+          loading: false,
+          isPro: Boolean(isPro),
+          totalStakedYocto: String(votingPower),
+          lockUntilNs: Number(lockUntil) || 0,
+          minStakeYocto: String(minStake),
+          minLockSec: Number(minLockSec) || 30 * 86_400,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("[ProUpgradeSection] read failed:", err.message);
+        setStatus({ loading: false, error: err.message, isPro: false,
+                    totalStakedYocto: "0", lockUntilNs: 0,
+                    minStakeYocto: "0", minLockSec: 30 * 86_400 });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [address, refreshKey]);
+
+  const onExtend = useCallback(async () => {
+    if (!address || !selector || tx.pending) return;
+    setTx({ pending: true, error: null });
+    try {
+      const w = await selector.wallet();
+      const action = functionCallAction({
+        methodName: "extend_lock",
+        args: { seconds: status.minLockSec || 30 * 86_400 },
+        gas: "30000000000000",
+        deposit: "0",
+      });
+      await sendTx(w, address, STAKING_CONTRACT, [action]);
+      setTx({ pending: false, error: null });
+      // Wallet redirects on most browsers; the in-page refresh covers
+      // self-custody flows where the tx resolves without redirect.
+      setTimeout(refresh, 1500);
+    } catch (err) {
+      setTx({ pending: false, error: err?.message || "extend_lock failed" });
+    }
+  }, [address, selector, status.minLockSec, tx.pending, refresh]);
+
+  const yoctoToIronclawWhole = (yocto) => {
+    try {
+      const n = BigInt(yocto || "0");
+      const denom = 1_000_000_000_000_000_000_000_000n; // 10^24
+      return (n / denom).toString();
+    } catch { return "0"; }
+  };
+  const fmtDate = (ns) => {
+    if (!ns) return "—";
+    const d = new Date(Number(ns) / 1_000_000);
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  };
+
+  const stakeWhole = yoctoToIronclawWhole(status.totalStakedYocto);
+  const minStakeWhole = yoctoToIronclawWhole(status.minStakeYocto);
+  const minLockDays = Math.round((status.minLockSec || 0) / 86_400);
+
+  return (
+    <section id="pro" style={{
+      padding: 18, borderRadius: 14,
+      border: `1px solid rgba(168,85,247,0.35)`,
+      background: "linear-gradient(135deg, rgba(168,85,247,0.10), rgba(59,130,246,0.06))",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.text, letterSpacing: -0.2, marginBottom: 6 }}>
+        <Crown size={16} style={{ color: t.accent }} />
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.text, letterSpacing: -0.2 }}>
           IronShield Pro
         </div>
+        {status.isPro && (
+          <span style={{
+            marginLeft: "auto",
+            padding: "2px 8px", borderRadius: 999,
+            background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+            color: "#fff", fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
+          }}>ACTIVE</span>
+        )}
+      </div>
+
+      {!address ? (
         <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.55 }}>
-          Pro tier launches with v1.0.0 — stake-locked membership with priority AI budget,
-          bonus uPoint multipliers, and early access to new feed surfaces. Sit tight; the
-          Day-18 release fills this section in with the real flow.
+          Connect a NEAR wallet to view your Pro status.
         </div>
-      </section>
+      ) : status.loading ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: t.textDim, fontSize: 12 }}>
+          <Loader2 size={12} className="animate-spin" /> Loading status…
+        </div>
+      ) : status.error ? (
+        <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.55 }}>
+          Couldn't read on-chain Pro state right now ({status.error}). Refresh to retry.
+        </div>
+      ) : (
+        <>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 12, marginBottom: 14,
+          }}>
+            <Stat label="Stake" value={`${stakeWhole} IRONCLAW`} dim={t.textDim} text={t.text} />
+            <Stat label="Min for Pro" value={`${minStakeWhole} IRONCLAW`} dim={t.textDim} text={t.text} />
+            <Stat label={status.lockUntilNs ? "Locked until" : "Lock"} value={status.lockUntilNs ? fmtDate(status.lockUntilNs) : "Not set"} dim={t.textDim} text={t.text} />
+          </div>
+
+          {status.isPro ? (
+            <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.55, marginBottom: 12 }}>
+              You're Pro. Perks active: 4× AI budget, PRO badge across the app.
+              Re-extend before the lock window drops below {minLockDays} days
+              to stay Pro.
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.55, marginBottom: 12 }}>
+              Lock at least {minStakeWhole} IRONCLAW for {minLockDays} days to unlock Pro:
+              4× AI budget, PRO badge, and early access to new surfaces. The
+              lock is non-destructive — you keep earning rewards on the stake;
+              it just commits you to the pool's existing early-exit penalty
+              window for the duration.
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={onExtend}
+              disabled={tx.pending}
+              style={pillBtn(t, true)}
+            >
+              {tx.pending ? <><Loader2 size={12} className="animate-spin" /> Submitting…</>
+                          : <><Lock size={12} /> {status.isPro ? `Extend ${minLockDays}d` : `Lock ${minLockDays}d to unlock Pro`}</>}
+            </button>
+            {tx.error && (
+              <span style={{ fontSize: 11, color: "#ef4444" }}>{tx.error}</span>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Stat({ label, value, dim, text }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: dim, letterSpacing: 0.6, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontSize: 13, color: text, fontWeight: 700, marginTop: 2 }}>{value}</div>
     </div>
   );
 }
