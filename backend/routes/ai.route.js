@@ -7,6 +7,8 @@
 const express = require("express");
 const router = express.Router();
 const agent = require("../services/agentConnector");
+const requireWallet = require("../middleware/requireWallet");
+const { rateLimit } = require("../services/rateLimiter");
 
 // POST /api/ai/compose  body: { prompt, maxChars? }
 //
@@ -15,7 +17,7 @@ const agent = require("../services/agentConnector");
 // Generator card. When no AI path is configured (no NEAR_AI_KEY
 // and IronClaw-agent mode off), returns 503 so the UI can surface
 // a "coming soon" message rather than a 500.
-router.post("/compose", async (req, res, next) => {
+router.post("/compose", requireWallet, rateLimit("ai"), async (req, res, next) => {
   try {
     const prompt = String(req.body?.prompt || "").trim();
     if (!prompt) return res.status(400).json({ error: "prompt required" });
@@ -35,7 +37,14 @@ router.post("/compose", async (req, res, next) => {
       });
     }
 
-    const result = await agent.composePost({ prompt, maxChars });
+    let result;
+    try { result = await agent.composePost({ prompt, maxChars, wallet: req.wallet }); }
+    catch (err) {
+      if (err.code === "ai-budget-exceeded") {
+        return res.status(402).json({ error: err.code, used: err.used, cap: err.cap });
+      }
+      throw err;
+    }
     if (!result?.text) {
       return res.status(502).json({ error: "ai_empty_reply" });
     }

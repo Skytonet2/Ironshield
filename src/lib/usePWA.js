@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 // ─── Service Worker registration ──────────────────────────────────
 // We register /sw.js purely so web push works — the v4 worker
@@ -50,9 +51,9 @@ async function subscribePush(wallet) {
     });
 
     // Send to backend
-    await fetch(`${API}/api/push/subscribe`, {
+    await apiFetch(`/api/push/subscribe`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ subscription: sub.toJSON() }),
     });
 
@@ -68,9 +69,9 @@ async function unsubscribePush(wallet) {
   try {
     const sub = await swRegistration.pushManager.getSubscription();
     if (sub) {
-      await fetch(`${API}/api/push/unsubscribe`, {
+      await apiFetch(`/api/push/unsubscribe`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint: sub.endpoint }),
       });
       await sub.unsubscribe();
@@ -102,9 +103,9 @@ export function usePWA(wallet) {
         if (cancelled) return;
         setPushEnabled(!!sub);
         if (sub && wallet) {
-          await fetch(`${API}/api/push/subscribe`, {
+          await apiFetch(`/api/push/subscribe`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "x-wallet": wallet },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subscription: sub.toJSON() }),
           }).catch(() => { /* best-effort re-sync */ });
         }

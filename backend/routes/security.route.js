@@ -2,9 +2,12 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
 
 const KNOWN_SCAM_DOMAINS = ["drainer.xyz", "freecoins.io", "claimreward.net", "free-airdrop.com", "walletconnect-dapp.com"];
 
+// public: read-shaped DB lookup (could be GET) — useful safety check for any
+// visitor before they click a link, no state change.
 router.post("/check-link", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ success: false, error: "url required" });
@@ -33,6 +36,7 @@ router.post("/check-link", async (req, res) => {
   }
 });
 
+// public: same shape as /check-link — read-only flagged-wallets lookup.
 router.post("/check-wallet", async (req, res) => {
   const { address } = req.body;
   if (!address) return res.status(400).json({ success: false, error: "address required" });
@@ -55,8 +59,9 @@ router.post("/check-wallet", async (req, res) => {
 });
 
 // POST /api/security/report — report a scam URL or wallet
-router.post("/report", async (req, res) => {
-  const { type, value, reason, reported_by } = req.body;
+router.post("/report", requireWallet, async (req, res) => {
+  const { type, value, reason } = req.body;
+  const reported_by = req.wallet;
   if (!type || !value) return res.status(400).json({ success: false, error: "type and value required" });
 
   try {

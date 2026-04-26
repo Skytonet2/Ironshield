@@ -2,7 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 const { notifyUser } = require("../services/pushNotify");
 
 // GET /api/push/vapid-key — public VAPID key for the frontend

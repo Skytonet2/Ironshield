@@ -16,6 +16,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import LiveStage from "@/components/LiveStage";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 function shortWallet(w = "") { return w?.length > 18 ? `${w.slice(0, 8)}…${w.slice(-6)}` : (w || ""); }
 function timeLeft(endsAt) {
@@ -135,9 +136,9 @@ function RoomViewInner() {
   const join = async (role = "listener") => {
     if (!wallet) { openWallet(); return; }
     try {
-      const r = await fetch(`${API}/api/rooms/${roomId}/join`, {
+      const r = await apiFetch(`/api/rooms/${roomId}/join`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role }),
       });
       const j = await r.json();
@@ -156,9 +157,9 @@ function RoomViewInner() {
     const isOpen = room?.accessType === "open";
     if (isOpen) {
       try {
-        const r = await fetch(`${API}/api/rooms/${roomId}/join`, {
+        const r = await apiFetch(`/api/rooms/${roomId}/join`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-wallet": wallet },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ role: "speaker" }),
         });
         const j = await r.json();
@@ -175,8 +176,8 @@ function RoomViewInner() {
   const leave = async () => {
     if (!wallet) return;
     try {
-      await fetch(`${API}/api/rooms/${roomId}/leave`, {
-        method: "POST", headers: { "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/leave`, {
+        method: "POST",
       });
     } catch {}
     if (typeof window !== "undefined") window.location.href = "/rooms/";
@@ -187,8 +188,8 @@ function RoomViewInner() {
     const next = !handRaised;
     setHandRaised(next);
     try {
-      await fetch(`${API}/api/rooms/${roomId}/raise`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/raise`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raised: next }),
       });
     } catch {}
@@ -198,8 +199,8 @@ function RoomViewInner() {
     if (!wallet || !joined || !draftMsg.trim() || sending) return;
     setSending(true);
     try {
-      const r = await fetch(`${API}/api/rooms/${roomId}/messages`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      const r = await apiFetch(`/api/rooms/${roomId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: draftMsg.trim(), isAlphaCall }),
       });
       if (!r.ok) {
@@ -215,8 +216,8 @@ function RoomViewInner() {
   const voteAlpha = async (msgId, dir) => {
     if (!wallet) { openWallet(); return; }
     try {
-      await fetch(`${API}/api/rooms/${roomId}/messages/${msgId}/vote`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/messages/${msgId}/vote`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dir }),
       });
       // Optimistic bump
@@ -229,8 +230,8 @@ function RoomViewInner() {
   const promote = async (userId, role) => {
     if (!wallet || !isHost) return;
     try {
-      await fetch(`${API}/api/rooms/${roomId}/promote`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/promote`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, role }),
       });
       loadRoom();
@@ -241,8 +242,8 @@ function RoomViewInner() {
     if (!wallet || !isHost) return;
     if (!confirm("Remove this participant?")) return;
     try {
-      await fetch(`${API}/api/rooms/${roomId}/kick`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-wallet": wallet },
+      await apiFetch(`/api/rooms/${roomId}/kick`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
       loadRoom();
@@ -254,12 +255,16 @@ function RoomViewInner() {
     if (!confirm("End the room? Stake refunds if no rules were broken.")) return;
     setClosing(true);
     try {
-      const r = await fetch(`${API}/api/rooms/${roomId}/close`, {
-        method: "POST", headers: { "x-wallet": wallet },
+      const r = await apiFetch(`/api/rooms/${roomId}/close`, {
+        method: "POST",
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "close failed");
-      setClosedSummary({ ...j.summary, refundTx: j.refundTx });
+      // Day 5.2 backend swap: response now carries refundStatus
+      // ("pending" | "forfeited") + refundTx (null until Day 13 wires
+      // the on-chain refund). Forward both so the modal can render an
+      // honest state — "Refund pending" beats faking a tx hash.
+      setClosedSummary({ ...j.summary, refundTx: j.refundTx, refundStatus: j.refundStatus });
     } catch (e) { alert(e?.message || "Couldn't close"); }
     finally { setClosing(false); }
   };
@@ -770,7 +775,16 @@ function Section({ t, title, count, children }) {
 }
 
 function ClosedSummaryModal({ t, summary, room, onClose }) {
-  const refunded = !!summary.refundTx;
+  // Three states post Day 5.2:
+  //   - refundStatus="pending"  + refundTx=null → "Refund pending" (Day 13
+  //                                                wires the chain call)
+  //   - refundStatus="pending"  + refundTx=<hash> → "Stake refunded"
+  //   - refundStatus="forfeited"                  → "Stake withheld"
+  // Older builds may still return only refundTx; treat truthy as success.
+  const refundStatus = summary.refundStatus
+    || (summary.refundTx ? "pending" : "forfeited");
+  const refunded = refundStatus !== "forfeited";
+  const refundOnChain = !!summary.refundTx;
   const stakeAmt = room?.stake?.amountHuman ?? room?.stake?.amount ?? "";
   const stakeUsd = room?.stake?.amountUsd ?? 0;
 
@@ -857,14 +871,20 @@ function ClosedSummaryModal({ t, summary, room, onClose }) {
           </span>
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <div style={{ color: t.white, fontSize: 14, fontWeight: 800 }}>
-              {refunded ? "Stake refunded" : "Stake withheld"}
+              {refunded
+                ? (refundOnChain ? "Stake refunded" : "Refund pending")
+                : "Stake withheld"}
             </div>
             <div style={{
               fontSize: 11, color: t.textMuted, marginTop: 2,
               fontFamily: "var(--font-jetbrains-mono), monospace",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>
-              {refunded ? `${summary.refundTx.slice(0, 14)}…` : "Room flagged for violations"}
+              {refunded
+                ? (refundOnChain
+                    ? `${summary.refundTx.slice(0, 14)}…`
+                    : "Settling on-chain shortly")
+                : "Room flagged for violations"}
             </div>
           </div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>

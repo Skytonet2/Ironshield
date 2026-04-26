@@ -4,6 +4,7 @@
 // Silently removes stale/expired subscriptions on 410 Gone or invalid errors.
 
 const db = require("../db/client");
+const feedHub = require("../ws/feedHub");
 
 let webpush;
 try {
@@ -87,11 +88,34 @@ async function notifyUser(userId, payload) {
 async function createAndPush({ userId, actorId = null, postId = null, type, body, url }) {
   try {
     // 1. Insert notification row
-    await db.query(
+    const inserted = await db.query(
       `INSERT INTO feed_notifications (user_id, type, actor_id, post_id)
-       VALUES ($1, $2, $3, $4)`,
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, created_at`,
       [userId, type, actorId, postId]
     );
+
+    // Live WS push to the recipient's authed sockets. Replaces the 30s
+    // poll on /api/notifications. Carries the same field names the
+    // /api/notifications response uses so the client store can prepend
+    // without an extra fetch.
+    try {
+      const u = await db.query("SELECT wallet_address FROM feed_users WHERE id=$1", [userId]);
+      const wallet = u.rows[0]?.wallet_address;
+      if (wallet) {
+        feedHub.publish(wallet, {
+          type: "notification:new",
+          notification: {
+            id: inserted.rows[0]?.id,
+            type,
+            actor_id: actorId,
+            post_id: postId,
+            created_at: inserted.rows[0]?.created_at,
+            read_at: null,
+          },
+        });
+      }
+    } catch { /* best-effort */ }
 
     // 2. Look up actor name for the push body
     let actorName = "Someone";

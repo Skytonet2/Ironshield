@@ -4,6 +4,8 @@ const router        = express.Router();
 const agent         = require("../services/agentConnector");
 const tokenLookup   = require("../services/tokenLookup");
 const socialMonitor = require("../services/socialMonitor");
+const requireWallet = require("../middleware/requireWallet");
+const { rateLimit } = require("../services/rateLimiter");
 
 /**
  * Detect if the user message is asking about a specific token/crypto.
@@ -44,9 +46,9 @@ function extractTokenQuery(message) {
   return null;
 }
 
-router.post("/", async (req, res) => {
+router.post("/", requireWallet, rateLimit("ai"), async (req, res) => {
   try {
-    const { message, userId } = req.body;
+    const { message } = req.body;
     if (!message) return res.status(400).json({ success: false, error: "No message provided" });
 
     // Check if the user is asking about a specific token — fetch real data first
@@ -75,9 +77,12 @@ router.post("/", async (req, res) => {
 
     const enrichedMessage = `${message}${realDataContext}${socialContext}`;
 
-    const response = await agent.chat({ message: enrichedMessage, userId });
+    const response = await agent.chat({ message: enrichedMessage, wallet: req.wallet });
     res.json({ success: true, data: { reply: response } });
   } catch (err) {
+    if (err.code === "ai-budget-exceeded") {
+      return res.status(402).json({ success: false, error: err.code, used: err.used, cap: err.cap });
+    }
     console.error("[Chat] Error:", err.message);
     res.json({ success: false, error: err.message });
   }

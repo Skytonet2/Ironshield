@@ -1,7 +1,15 @@
 use crate::*;
 use near_sdk::json_types::U128;
 
-const VOTING_PERIOD_NS: u64 = 72 * 60 * 60 * 1_000_000_000; // 72 hours in nanoseconds
+// Voting period gated by the `testnet-fast` Cargo feature. Default
+// (mainnet builds) is 72 hours. Testnet sandbox builds compile a 60-
+// second window so the Day-4.3 dry run completes in a single sitting
+// instead of waiting three days. NEVER enable testnet-fast on mainnet.
+#[cfg(feature = "testnet-fast")]
+const VOTING_PERIOD_NS: u64 = 60 * 1_000_000_000; // 60 seconds (testnet only)
+
+#[cfg(not(feature = "testnet-fast"))]
+const VOTING_PERIOD_NS: u64 = 72 * 60 * 60 * 1_000_000_000; // 72 hours
 
 #[near]
 impl StakingContract {
@@ -76,14 +84,24 @@ impl StakingContract {
         assert!(proposal.status == "active", "Proposal is not active");
         assert!(env::block_timestamp() <= proposal.expires_at, "Voting period has ended");
 
-        // Calculate voting power = sum of staked tokens across all pools
-        let power: u128 = (0..self.pools.len())
-            .map(|pid| {
-                let key = get_user_key(&voter, pid);
-                self.user_info.get(&key).map_or(0, |u| u.amount)
-            })
-            .sum();
-        assert!(power > 0, "Must have staked tokens to vote");
+        // Voting power source depends on pretoken_mode:
+        //   on  → vanguard = 2, contributor = 1, otherwise 0 (NFT/contributor governance)
+        //   off → sum of staked tokens across all pools (token governance)
+        // Bug fix: the `vote()` body previously hardcoded the stake path even
+        // when pretoken_mode was true, despite pretoken.rs's get_pretoken_power
+        // being documented as "used by vote() when pretoken_mode == true".
+        // That mismatch is why no PromptUpdate has ever passed on mainnet.
+        let power: u128 = if self.pretoken_mode {
+            self.get_pretoken_power(voter.clone()) as u128
+        } else {
+            (0..self.pools.len())
+                .map(|pid| {
+                    let key = get_user_key(&voter, pid);
+                    self.user_info.get(&key).map_or(0, |u| u.amount)
+                })
+                .sum()
+        };
+        assert!(power > 0, "No voting power (need stake or contributor/vanguard status)");
 
         if vote == "for" {
             proposal.votes_for += power;

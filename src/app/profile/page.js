@@ -15,6 +15,7 @@ import { Coins, Camera, X as XIcon, Loader2 } from "lucide-react";
 import { primeViewerProfile } from "@/lib/hooks/useViewerProfile";
 import FollowButton from "@/components/profile/FollowButton";
 import ReferralCard from "@/components/profile/ReferralCard";
+import { apiFetch } from "@/lib/apiFetch";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -423,9 +424,8 @@ function ProfileEditor({ initial, wallet, onClose, onSaved }) {
       if (file.size > 25 * 1024 * 1024) throw new Error("File is over 25 MB");
       const fd = new FormData();
       fd.append("file", file);
-      const up = await fetch(`${BACKEND_BASE}/api/media/upload`, {
+      const up = await apiFetch(`/api/media/upload`, {
         method: "POST",
-        headers: wallet ? { "x-wallet": wallet } : {},
         body: fd,
       });
       if (!up.ok) {
@@ -446,9 +446,9 @@ function ProfileEditor({ initial, wallet, onClose, onSaved }) {
     setSaving(true);
     setErr(null);
     try {
-      const r = await fetch(`${BACKEND_BASE}/api/profile`, {
+      const r = await apiFetch(`/api/profile`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-wallet": wallet },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       if (!r.ok) {

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import { useWallet } from "@/lib/contexts";
 import useNear, { STAKING_CONTRACT } from "@/hooks/useNear";
 
@@ -115,23 +116,24 @@ export default function useAgentConnections({ agentAccount } = {}) {
 
   /** Test credentials without persisting (wizard's "Test connection"). */
   const validate = useCallback(async ({ framework, external_id, endpoint, auth }) => {
-    if (!API) throw new Error("Backend not reachable");
-    const r = await fetch(`${API}/api/agents/validate`, {
+    if (!API)     throw new Error("Backend not reachable");
+    if (!address) throw new Error("Connect a wallet first");
+    const r = await apiFetch(`/api/agents/validate`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ framework, external_id, endpoint, auth }),
     });
     return r.json();
-  }, []);
+  }, [address]);
 
   const connect = useCallback(async ({
     agent_account, framework, external_id, endpoint, auth, meta,
   }) => {
     if (!API)     throw new Error("Backend not reachable");
     if (!address) throw new Error("Connect a wallet first");
-    const r = await fetch(`${API}/api/agents/connect`, {
+    const r = await apiFetch(`/api/agents/connect`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", "x-wallet": address },
+      headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({
         owner: address, agent_account, framework, external_id, endpoint, auth, meta,
       }),
@@ -145,9 +147,9 @@ export default function useAgentConnections({ agentAccount } = {}) {
   const disconnect = useCallback(async ({ agent_account, framework }) => {
     if (!API) throw new Error("Backend not reachable");
     if (!address) throw new Error("Connect a wallet first");
-    const r = await fetch(`${API}/api/agents/connect`, {
+    const r = await apiFetch(`/api/agents/connect`, {
       method:  "DELETE",
-      headers: { "Content-Type": "application/json", "x-wallet": address },
+      headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ owner: address, agent_account, framework }),
     });
     if (!r.ok) {
@@ -163,9 +165,9 @@ export default function useAgentConnections({ agentAccount } = {}) {
   }) => {
     if (!API) throw new Error("Backend not reachable");
     if (!address) throw new Error("Connect a wallet first");
-    const r = await fetch(`${API}/api/agents/sandbox`, {
+    const r = await apiFetch(`/api/agents/sandbox`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", "x-wallet": address },
+      headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({
         owner: address, agent_account, framework, message, systemPrompt, meta,
       }),

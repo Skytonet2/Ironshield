@@ -2,7 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 
 // POST /api/ads/create  body: { postId, paymentTxHash }
 router.post("/create", requireWallet, async (req, res, next) => {
@@ -30,7 +31,8 @@ router.get("/active", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/ads/impression  body: { campaignId }
+// public: anonymous click-through counter — increments a single column,
+// no per-user state. Day 5 may add IP-based rate limiting if abuse appears.
 router.post("/impression", async (req, res, next) => {
   try {
     const { campaignId } = req.body || {};
@@ -40,10 +42,14 @@ router.post("/impression", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/ads/mine — user's own boosted posts (with impression counts)
-router.get("/mine", requireWallet, async (req, res, next) => {
+// GET /api/ads/mine — user's own boosted posts (with impression counts).
+// Unsigned read: x-wallet header carries identity (no replay protection
+// on a read-only call returning the caller's own rows).
+router.get("/mine", async (req, res, next) => {
   try {
-    const user = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ campaigns: [] });
+    const user = await getOrCreateUser(wallet);
     const r = await db.query(
       "SELECT * FROM feed_ad_campaigns WHERE user_id=$1 ORDER BY start_date DESC LIMIT 50", [user.id]);
     res.json({ campaigns: r.rows });

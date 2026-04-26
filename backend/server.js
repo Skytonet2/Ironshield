@@ -11,10 +11,47 @@ const feedHub = require("./ws/feedHub");
 // `verify` stashes the raw body on req.rawBody so HMAC-verifying
 // webhooks (e.g. /api/ironclaw/bridge/inbound) can hash the exact
 // bytes the upstream signed. Other routes ignore it.
+//
+// 256KB JSON cap + 64KB urlencoded cap defend against payload-bomb
+// DoS. Multipart uploads (media.route /upload) are handled by busboy
+// with its own 25MB limit and don't pass through express.json.
 app.use(express.json({
+  limit: "256kb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
-app.use(require("cors")());
+app.use(express.urlencoded({ extended: false, limit: "64kb" }));
+
+// helmet sets sensible default security headers (X-DNS-Prefetch-Control,
+// X-Frame-Options: SAMEORIGIN, Strict-Transport-Security, etc.). CSP is
+// off because this process serves no HTML — every consumer is a JSON
+// client whose own page sets its own policy.
+app.use(require("helmet")({ contentSecurityPolicy: false }));
+
+// CORS allowlist. Comma-separated CORS_ALLOWED_ORIGINS env, plus
+// http://localhost:3000 in dev for `next dev`. Anything not on the list
+// gets no Access-Control-Allow-Origin header → browsers reject. The
+// previous bare cors() echoed every Origin, which is wide open.
+const corsAllowed = new Set(
+  (process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",").map((s) => s.trim()).filter(Boolean)
+);
+if (process.env.NODE_ENV !== "production") {
+  corsAllowed.add("http://localhost:3000");
+}
+app.use(require("cors")({
+  origin: (origin, cb) => {
+    // Same-origin (curl, server-to-server, native fetch with no Origin
+    // header) gets through. Browser-issued cross-origin must be on the
+    // allowlist.
+    if (!origin) return cb(null, true);
+    cb(null, corsAllowed.has(origin));
+  },
+  credentials: true,
+}));
+
+// Routes — Auth (nonce issuance for signed-message middleware; public)
+app.use("/api/auth",      require("./routes/auth.route"));
+app.use("/api/admin",     require("./routes/admin.route"));
 
 // Routes — AI-powered
 app.use("/api/summary",   require("./routes/summary.route"));
@@ -80,11 +117,22 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Error handler — surface DB-offline state clearly instead of a generic 500
+// Error handler — surface known categories clearly instead of a generic 500.
 app.use((err, req, res, next) => {
   console.error("IronClaw API error:", err);
   const msg = String(err?.message || "");
   const code = err?.code || "";
+
+  // Body-parser size cap: keep its 413 status (Day 2.4 sets the limits).
+  // The generic 500 fallthrough below would otherwise mask the real cause.
+  if (err.type === "entity.too.large" || err.statusCode === 413) {
+    return res.status(413).json({
+      success: false,
+      error: "request entity too large",
+      limit: err.limit,
+    });
+  }
+
   const dbDown = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ENETUNREACH/i.test(msg)
     || /relation .* does not exist/i.test(msg)
     || code === "ECONNREFUSED" || code === "57P03";

@@ -10,6 +10,7 @@ import { Bell, Mail, MessageSquare, Phone, Zap, Target, DollarSign, Shield, User
 import { useTheme, useWallet } from "@/lib/contexts";
 import { usePWA } from "@/lib/usePWA";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import { tabCard, tabTitle, row, rowSub, toggle } from "./_shared";
 
 const CHANNELS = [
@@ -95,9 +96,9 @@ export default function NotificationsTab() {
       const next = { ...prev, [section]: { ...prev[section], [key]: value } };
       savePrefs(next);
       if (address) {
-        fetch(`${API}/api/push/preferences`, {
+        apiFetch(`/api/push/preferences`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", "x-wallet": address },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(next),
         }).then(() => setSyncedAt(Date.now())).catch(() => {});
       }
@@ -148,9 +149,9 @@ export default function NotificationsTab() {
                 if (!address) { setTestResult("Connect wallet first."); return; }
                 setTestResult("Sending…");
                 try {
-                  const r = await fetch(`${API}/api/push/test`, {
+                  const r = await apiFetch(`/api/push/test`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json", "x-wallet": address },
+                    headers: { "Content-Type": "application/json" },
                   });
                   const j = await r.json().catch(() => ({}));
                   if (r.ok) setTestResult(`Sent to ${j.pushedTo || 1} device(s). Check your notifications.`);

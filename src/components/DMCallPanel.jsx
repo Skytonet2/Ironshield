@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Mic, MicOff, Minimize2, PhoneOff, Radio } from "lucide-react";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 let LK = null;
 let LK_FAILED = false;
@@ -177,9 +178,9 @@ export default function DMCallPanel({
 
     (async () => {
       try {
-        const r = await fetch(`${API}/api/dm/${conversationId}/call-token`, {
+        const r = await apiFetch(`/api/dm/${conversationId}/call-token`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-wallet": wallet },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         });
         const raw = await r.text();

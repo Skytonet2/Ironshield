@@ -32,15 +32,11 @@ async function reportImpression({ postId, viewerWallet }) {
   if (SEEN.has(postId)) return;
   SEEN.add(postId);
   try {
-    // Send the wallet as `x-wallet` header (canonical auth path used
-    // across /api/feed, /api/notifications, etc.) in addition to the
-    // body field — the backend accepts either but other routes only
-    // read the header, so this keeps our auth signature consistent.
-    const headers = { "Content-Type": "application/json" };
-    if (viewerWallet) headers["x-wallet"] = viewerWallet;
+    // /api/feed/impression is a public route (Day 2.1): wallet identity
+    // travels in the body, no signature required.
     await fetch(`${BACKEND_BASE}/api/feed/impression`, {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ postId, viewerWallet: viewerWallet || null }),
     });
   } catch {

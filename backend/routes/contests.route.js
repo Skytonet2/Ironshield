@@ -2,6 +2,8 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
+const requireAdmin  = require("../middleware/requireAdmin");
 
 // GET /api/contests — list all contests
 router.get("/", async (req, res) => {
@@ -40,10 +42,11 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// POST /api/contests — create contest (admin only)
-router.post("/", async (req, res) => {
-  const { title, description, reward, difficulty, end_date, created_by } = req.body;
-  if (!title || !created_by) return res.status(400).json({ success: false, error: "title and created_by required" });
+// POST /api/contests — create contest (admin allowlist enforced)
+router.post("/", requireWallet, requireAdmin, async (req, res) => {
+  const { title, description, reward, difficulty, end_date } = req.body;
+  const created_by = req.wallet;
+  if (!title) return res.status(400).json({ success: false, error: "title required" });
 
   try {
     const { rows: [contest] } = await db.query(
@@ -57,8 +60,8 @@ router.post("/", async (req, res) => {
   }
 });
 
-// PUT /api/contests/:id — update contest (admin only)
-router.put("/:id", async (req, res) => {
+// PUT /api/contests/:id — update contest (admin allowlist enforced)
+router.put("/:id", requireWallet, requireAdmin, async (req, res) => {
   const { title, description, reward, difficulty, status, end_date } = req.body;
   try {
     const { rows: [contest] } = await db.query(
@@ -80,8 +83,8 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/contests/:id — delete contest (admin only)
-router.delete("/:id", async (req, res) => {
+// DELETE /api/contests/:id — delete contest (admin allowlist enforced)
+router.delete("/:id", requireWallet, requireAdmin, async (req, res) => {
   try {
     await db.query("DELETE FROM contests WHERE id = $1", [req.params.id]);
     res.json({ success: true });
@@ -91,9 +94,9 @@ router.delete("/:id", async (req, res) => {
 });
 
 // POST /api/contests/:id/submit — submit to contest
-router.post("/:id/submit", async (req, res) => {
-  const { near_wallet, proof_link, notes, image_url } = req.body;
-  if (!near_wallet) return res.status(400).json({ success: false, error: "near_wallet required" });
+router.post("/:id/submit", requireWallet, async (req, res) => {
+  const { proof_link, notes, image_url } = req.body;
+  const near_wallet = req.wallet;
 
   try {
     // Upsert user
@@ -119,9 +122,10 @@ router.post("/:id/submit", async (req, res) => {
   }
 });
 
-// POST /api/contests/:id/review — approve/reject submission (admin only)
-router.post("/:id/review", async (req, res) => {
-  const { submission_id, status, reviewed_by, points } = req.body;
+// POST /api/contests/:id/review — approve/reject submission (admin allowlist enforced)
+router.post("/:id/review", requireWallet, requireAdmin, async (req, res) => {
+  const { submission_id, status, points } = req.body;
+  const reviewed_by = req.wallet;
   if (!submission_id || !status) return res.status(400).json({ success: false, error: "submission_id and status required" });
 
   try {

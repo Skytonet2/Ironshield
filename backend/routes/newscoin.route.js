@@ -48,6 +48,7 @@ const router = express.Router();
 const fetch = require("node-fetch");
 const db = require("../db/client");
 const { providers } = require("near-api-js");
+const requireWallet = require("../middleware/requireWallet");
 
 const RPC_URL = process.env.NEAR_RPC_URL || "https://rpc.fastnear.com";
 const provider = new providers.JsonRpcProvider({ url: RPC_URL });
@@ -208,7 +209,10 @@ router.get("/list", async (req, res, next) => {
         price_near: Number(r.price),
         volume24h,
         volume_24h: volume24h,
-        change24h: 0, // TODO: compute from sparkline
+        // change_24h is computed by the Day 10 sparkline indexer, not yet live.
+        // Until then the row renders flat (0) which the frontend already
+        // tolerates — no fake numbers.
+        change24h: 0,
         change_24h: 0,
         age: `${Math.round(ageHours)}h`,
         created_at: r.created_at,
@@ -447,16 +451,17 @@ router.get("/creator/:wallet", async (req, res, next) => {
       [wallet]
     );
 
+    // claimableFees and totalPnl require the trade-fee accumulator + cost-
+    // basis tracker that lands in Day 10. Until then both render as 0; the
+    // dashboard explains "fees claimable: 0 — coming with NewsCoin v1".
     const coins = rows.map((r) => ({
       id: r.id,
       name: r.name,
       ticker: r.ticker,
       mcap: Number(r.mcap),
       holdings: Number(r.holdings),
-      claimableFees: 0, // TODO: compute from trade fee accumulator
+      claimableFees: 0,
     }));
-
-    // Total PnL is placeholder until we track cost basis
     const totalPnl = 0;
     const totalClaimable = coins.reduce((s, c) => s + c.claimableFees, 0);
 
@@ -482,7 +487,7 @@ function ironClawScore(headline) {
   return Math.max(0.5, Math.min(9.9, Number(raw.toFixed(1))));
 }
 
-router.post("/suggest", async (req, res, next) => {
+router.post("/suggest", requireWallet, async (req, res, next) => {
   try {
     const { headline } = req.body || {};
     if (!headline) return res.status(400).json({ error: "headline required" });
@@ -559,13 +564,11 @@ router.post("/suggest", async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/newscoin/:coinId/verify-trade
 // ---------------------------------------------------------------------------
-router.post("/:coinId/verify-trade", async (req, res, next) => {
+router.post("/:coinId/verify-trade", requireWallet, async (req, res, next) => {
   try {
     if (!ensureDb(res)) return;
 
-    const wallet = req.header("x-wallet");
-    if (!wallet) return res.status(401).json({ error: "wallet required" });
-
+    const wallet = req.wallet;
     const { txHash, type } = req.body || {};
     if (!txHash) return res.status(400).json({ error: "txHash required" });
     if (!["buy", "sell"].includes(type))

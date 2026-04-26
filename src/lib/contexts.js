@@ -1,6 +1,8 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSettings } from "@/lib/stores/settingsStore";
+import { apiFetch, setWalletState as setApiFetchWalletState } from "@/lib/apiFetch";
+import { NETWORK_ID, NODE_URL, STAKING_CONTRACT } from "@/lib/nearConfig";
 
 // Cache a single near-api-js Near instance across the whole app. We build it
 // lazily and reuse it for both viewMethod reads (anonymous account) and per-
@@ -10,8 +12,8 @@ async function getNearInstance() {
   if (_nearInstance) return _nearInstance;
   const { connect, keyStores } = await import("near-api-js");
   _nearInstance = await connect({
-    networkId: "mainnet",
-    nodeUrl:   "https://rpc.fastnear.com",
+    networkId: NETWORK_ID,
+    nodeUrl:   NODE_URL,
     keyStore:  new keyStores.InMemoryKeyStore(),
   });
   return _nearInstance;
@@ -153,6 +155,13 @@ export function WalletProvider({ children }) {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Mirror selector + walletType into apiFetch's module-level ref so
+  // non-hook callers (the apiFetch wrapper itself, libs, tests) can
+  // sign requests without prop-drilling the selector. Reset on signOut.
+  useEffect(() => {
+    setApiFetchWalletState({ selector, walletType });
+  }, [selector, walletType]);
+
   // Referral claim: once a wallet connects, see if the visitor arrived
   // via a /?ref=<code> link (stashed in localStorage by the inline
   // script in layout.js). If so, POST it to claim-referrer so the
@@ -165,16 +174,11 @@ export function WalletProvider({ children }) {
     let ref;
     try { ref = localStorage.getItem("ironshield:ref-pending"); } catch {}
     if (!ref) return;
-    const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL
-      ? process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/+$/, "")
-      : (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-        ? "http://localhost:3001"
-        : "https://ironclaw-backend.onrender.com";
     (async () => {
       try {
-        const r = await fetch(`${apiBase}/api/rewards/claim-referrer`, {
+        const r = await apiFetch(`/api/rewards/claim-referrer`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-wallet": address },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code: ref }),
         });
         const j = await r.json().catch(() => ({}));
@@ -220,7 +224,7 @@ export function WalletProvider({ children }) {
         ]);
 
         const _selector = await setupWalletSelector({
-          network: "mainnet",
+          network: NETWORK_ID,
           modules: [
             setupMeteorWallet(),
             setupHereWallet(),
@@ -229,7 +233,7 @@ export function WalletProvider({ children }) {
           ],
         });
 
-        const _modal = _setupModal(_selector, { contractId: "ironshield.near" });
+        const _modal = _setupModal(_selector, { contractId: STAKING_CONTRACT });
 
         const state = _selector.store.getState();
         if (state.accounts.length > 0) {
@@ -670,7 +674,7 @@ function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
 // Single source of truth for get_proposals. AgentPage, EarnPage,
 // and GovernancePage all read from this shared cache instead of
 // each calling the RPC independently on every mount.
-const PROPOSALS_CONTRACT_ID = "ironshield.near";
+const PROPOSALS_CONTRACT_ID = STAKING_CONTRACT;
 const PROPOSALS_TTL_MS      = 30_000; // re-fetch after 30s of staleness
 
 export const ProposalsCtx = createContext({

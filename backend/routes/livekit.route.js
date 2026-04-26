@@ -14,7 +14,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 
 let AccessToken;
 try { ({ AccessToken } = require("livekit-server-sdk")); } catch { AccessToken = null; }

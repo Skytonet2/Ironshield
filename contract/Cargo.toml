@@ -11,6 +11,11 @@ near-sdk = "=5.1.0"
 near-contract-standards = "=5.1.0"
 uint = "0.9.5"
 
+[features]
+# testnet-fast: 60-second voting period instead of 72 hours. ONLY for the
+# Day 4.3 testnet sandbox — never enable for mainnet builds.
+testnet-fast = []
+
 [profile.release]
 codegen-units = 1
 opt-level = "z"

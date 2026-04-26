@@ -14,26 +14,27 @@
 // so callers don't need to know which is active. Governance-injected
 // prompt + mission are still prepended in both modes.
 const fetch = require("node-fetch");
-const path  = require("path");
-const fs    = require("fs");
 const ironclaw = require("./ironclawClient");
+const agentState = require("../db/agentState");
+const aiBudget = require("./aiBudget");
 
 const ENDPOINT        = process.env.NEAR_AI_ENDPOINT     || "https://cloud-api.near.ai/v1/chat/completions";
 const API_KEY         = process.env.NEAR_AI_KEY          || "";
 const MODEL           = process.env.NEAR_AI_MODEL        || "Qwen/Qwen3-30B-A3B-Instruct-2507";
 const IRONCLAW_MODE   = String(process.env.IRONCLAW_AGENT_MODE || "").toLowerCase() === "true";
 
-const PROMPT_FILE   = path.join(__dirname, "../../agent/activePrompt.json");
-const MISSION_FILE  = path.join(__dirname, "../../agent/activeMission.json");
-
-const readJson = (file) => {
-  try { const d = JSON.parse(fs.readFileSync(file, "utf8")); return d; } catch { return {}; }
-};
-
+// Cached governance context. getCached returns last-known value (possibly
+// null on a cold cache) and refreshes in the background — adds zero DB
+// hits to the AI hot path. The fallback strings below cover the cold-
+// start case before the first refresh completes.
+const GOV_TTL_MS = 30_000;
 const getGovContext = () => {
-  const govPrompt  = readJson(PROMPT_FILE).content  || "";
-  const govMission = readJson(MISSION_FILE).content || "Monitor for scams, phishing links, and malicious wallets.";
-  return { govPrompt, govMission };
+  const prompt  = agentState.getCached("activePrompt",  GOV_TTL_MS);
+  const mission = agentState.getCached("activeMission", GOV_TTL_MS);
+  return {
+    govPrompt:  prompt?.content  || "",
+    govMission: mission?.content || "Monitor for scams, phishing links, and malicious wallets.",
+  };
 };
 
 /* ── MODE 1: CRYPTO RESEARCH SYSTEM PROMPT ────────────────────── */
@@ -220,26 +221,32 @@ RULES:
  * still see both. One-shot: fresh thread per call (stateless at
  * the agentConnector layer — thread state is IronClaw's concern).
  */
-const ironclawDispatch = async ({ systemPrompt, userPrompt, expectJson, timeoutMs = 60000 }) => {
+const ironclawDispatch = async ({ wallet, systemPrompt, userPrompt, expectJson, timeoutMs = 60000 }) => {
+  // Day 5.3 budget gate. checkBudget throws BudgetExceededError → caller
+  // surfaces 402 ai-budget-exceeded. wallet is optional for system callers.
+  if (wallet) await aiBudget.checkBudget(wallet);
   const content =
     `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userPrompt}` +
     (expectJson ? `\n\n[OUTPUT]\nRespond with a single valid JSON object only. No prose, no markdown fences.` : "");
   try {
-    const { reply } = await ironclaw.chat({ content, timeoutMs });
+    const { reply, usage } = await ironclaw.chat({ content, timeoutMs });
+    if (wallet) await aiBudget.recordSpend(wallet, usage);
     if (!expectJson) return reply || "";
     const clean = String(reply || "{}").replace(/```json|```/g, "").trim();
     return JSON.parse(clean || "{}");
   } catch (err) {
+    if (err.code === "ai-budget-exceeded") throw err;
     throw new Error(`IronClaw dispatch failed: ${err.message}`);
   }
 };
 
 /* ── Legacy direct chat-completions helpers ────────────────── */
-const dispatch = async (taskType, userPrompt, systemPrompt) => {
+const dispatch = async (taskType, userPrompt, systemPrompt, wallet) => {
   const sysPrompt  = systemPrompt || baseSystemPrompt();
   if (IRONCLAW_MODE) {
-    return ironclawDispatch({ systemPrompt: sysPrompt, userPrompt, expectJson: true });
+    return ironclawDispatch({ wallet, systemPrompt: sysPrompt, userPrompt, expectJson: true });
   }
+  if (wallet) await aiBudget.checkBudget(wallet);
   const maxTokens  = taskType === "summary" ? 1200 : 800;
   const controller = new AbortController();
   const timeout    = setTimeout(() => controller.abort(), 30000);
@@ -260,19 +267,22 @@ const dispatch = async (taskType, userPrompt, systemPrompt) => {
     clearTimeout(timeout);
     if (!res.ok) throw new Error(`NEAR AI returned ${res.status}: ${await res.text()}`);
     const json   = await res.json();
+    if (wallet) await aiBudget.recordSpend(wallet, json.usage);
     const text   = json.choices?.[0]?.message?.content || "{}";
     const clean  = text.replace(/```json|```/g, "").trim();
     return JSON.parse(clean);
   } catch (err) {
     clearTimeout(timeout);
+    if (err.code === "ai-budget-exceeded") throw err;
     throw new Error(`Agent dispatch failed: ${err.message}`);
   }
 };
 
-const complete = async ({ systemPrompt, userPrompt, maxTokens = 600, expectJson = false }) => {
+const complete = async ({ wallet, systemPrompt, userPrompt, maxTokens = 600, expectJson = false }) => {
   if (IRONCLAW_MODE) {
-    return ironclawDispatch({ systemPrompt, userPrompt, expectJson });
+    return ironclawDispatch({ wallet, systemPrompt, userPrompt, expectJson });
   }
+  if (wallet) await aiBudget.checkBudget(wallet);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
@@ -292,11 +302,13 @@ const complete = async ({ systemPrompt, userPrompt, maxTokens = 600, expectJson 
     clearTimeout(timeout);
     if (!res.ok) throw new Error(`NEAR AI returned ${res.status}: ${await res.text()}`);
     const json = await res.json();
+    if (wallet) await aiBudget.recordSpend(wallet, json.usage);
     const text = json.choices?.[0]?.message?.content || (expectJson ? "{}" : "");
     const clean = text.replace(/```json|```/g, "").trim();
     return expectJson ? JSON.parse(clean || "{}") : clean;
   } catch (err) {
     clearTimeout(timeout);
+    if (err.code === "ai-budget-exceeded") throw err;
     throw new Error(`Agent completion failed: ${err.message}`);
   }
 };
@@ -335,7 +347,8 @@ Return JSON: {
 CRITICAL: Only report what is ACTUALLY in the transcript. Do NOT invent discussions, tokens, or alpha.
 If the conversation is benign, return empty arrays for redFlags and alphaFindings.
 If fewer than 5 messages, set confidenceLevel to "low — insufficient data".`,
-  groupAnalysisPrompt()
+  groupAnalysisPrompt(),
+  payload.wallet
 );
 
 exports.research = (payload) => {
@@ -382,7 +395,8 @@ Scoring guide:
 - No website/twitter: reduce score by 15
 - Good liquidity (>$50k) + verified audit: trustScore 60-90
 - L1 chain with strong ecosystem: trustScore 70-95`,
-    researchSystemPrompt()
+    researchSystemPrompt(),
+    payload.wallet
   );
 };
 
@@ -411,12 +425,15 @@ Return JSON: {
 
 NEVER say "verification failed". Always provide a verdict with reasoning.
 If you lack data for a sub-claim, mark it INSUFFICIENT_EVIDENCE and explain what's missing.`,
-  factCheckPrompt()
+  factCheckPrompt(),
+  payload.wallet
 );
 
 exports.portfolio = (payload) => dispatch("portfolio",
   `Analyze these wallets: ${JSON.stringify(payload.wallets)}.
-   Return JSON: { totalNetWorthUSD, change24hUSD, change24hPct, wallets: [{ address, chain, balanceUSD, tokens: [{ symbol, amount, valueUSD }], riskFlags: [] }] }`
+   Return JSON: { totalNetWorthUSD, change24hUSD, change24hPct, wallets: [{ address, chain, balanceUSD, tokens: [{ symbol, amount, valueUSD }], riskFlags: [] }] }`,
+  undefined,
+  payload.wallet
 );
 
 exports.scan = (payload) => dispatch("scan",
@@ -436,11 +453,13 @@ Return JSON: {
 }
 
 If you cannot determine risk, set riskLevel to "UNKNOWN" and recommend manual review.`,
-  securityScanPrompt()
+  securityScanPrompt(),
+  payload.wallet
 );
 
 exports.chat = (payload) => {
   return complete({
+    wallet: payload.wallet,
     systemPrompt: generalAIPrompt(),
     userPrompt: payload.message,
     maxTokens: 600,
@@ -449,6 +468,7 @@ exports.chat = (payload) => {
 };
 
 exports.personalAssistant = (payload) => complete({
+  wallet: payload.wallet,
   systemPrompt: `You are IronClaw Assistant — a brilliant, thoughtful AI agent operating as a PERSONAL AGENT inside IronFeed direct messages. You are modelled after the reasoning, helpfulness, and integrity of top-tier assistants like Claude: careful, honest, proactive, and direct.
 
 CORE PRINCIPLES
@@ -502,6 +522,7 @@ exports.composePost = async (payload) => {
   const maxChars = Math.min(Math.max(parseInt(payload?.maxChars) || 500, 80), 500);
   const prompt = String(payload?.prompt || "").slice(0, 400);
   const result = await complete({
+    wallet: payload?.wallet,
     systemPrompt: `You are IronClaw, helping a user draft a short social post for the IronShield feed.
 
 RULES:
@@ -518,6 +539,7 @@ RULES:
 };
 
 exports.suggestPostFormats = (payload) => complete({
+  wallet: payload?.wallet,
   systemPrompt: `You are IronClaw, helping a user reshape a social post draft into stronger publishing formats.
 
 Return valid JSON only with this exact shape:
@@ -551,3 +573,22 @@ ${payload.content || ""}`,
   maxTokens: 900,
   expectJson: true,
 });
+
+// Test seam: returns the actual system prompt that would hit NEAR AI for a
+// given task, without making the network call. Used by Day 4.3's
+// governance-loop evidence script (scripts/day4-evidence.js) to assert that
+// a governance-passed PromptUpdate proposal flows through to the AI prompt.
+// Read-only — no security implication exposing this.
+exports._systemPromptForTesting = ({ kind }) => {
+  switch (kind) {
+    case "research": return researchSystemPrompt();
+    default: throw new Error(`unknown kind: ${kind}`);
+  }
+};
+
+// Test seam (Day 4.4): exposes the cached governance context so the evidence
+// script can directly assert both activePrompt and activeMission landed.
+// researchSystemPrompt() prefixes mission as "Current mission: ..." and prompt
+// as "Governance instructions: ..." so the same systemPrompt assertion already
+// covers both keys, but exposing the raw context keeps the assertion narrow.
+exports._govContextForTesting = () => getGovContext();

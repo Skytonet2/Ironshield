@@ -34,6 +34,7 @@ import {
   splitBody, detectAutomationIntent, encodeChip,
   CHIP_TYPES, classifyAddress,
 } from "@/lib/messageParser";
+import { apiFetch } from "@/lib/apiFetch";
 
 const API = (() => {
   if (typeof window === "undefined") return "";
@@ -45,14 +46,15 @@ const API = (() => {
 })();
 
 async function api(path, { method = "GET", wallet, body } = {}) {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(wallet ? { "x-wallet": wallet } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  // GETs still rely on the legacy x-wallet header for personalization;
+  // mutating calls go through apiFetch which signs them via NEP-413.
+  const isGet = (method || "GET").toUpperCase() === "GET";
+  const headers = {
+    "Content-Type": "application/json",
+    ...(isGet && wallet ? { "x-wallet": wallet } : {}),
+  };
+  const opts = { method, headers, body: body ? JSON.stringify(body) : undefined };
+  const res = isGet ? await fetch(`${API}${path}`, opts) : await apiFetch(path, opts);
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
     throw new Error(j?.error || `${method} ${path} → ${res.status}`);

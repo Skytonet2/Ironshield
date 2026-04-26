@@ -6,14 +6,15 @@ const cache   = require("../services/cacheService");
 const limiter = require("../services/rateLimiter");
 const fs      = require("fs");
 const path    = require("path");
+const requireWallet = require("../middleware/requireWallet");
 
 const USERS_FILE = path.join(__dirname, "../../jobs/data/users.json");
 const readUsers  = () => { try { return JSON.parse(fs.readFileSync(USERS_FILE, "utf8")); } catch { return []; } };
 const writeUsers = (data) => fs.writeFileSync(USERS_FILE, JSON.stringify(data, null, 2));
 
-router.post("/", async (req, res) => {
-  const { action = "fetch", userId, wallet } = req.body;
-  if (!userId) return res.status(400).json({ success: false, error: "userId required" });
+router.post("/", requireWallet, async (req, res) => {
+  const { action = "fetch", wallet } = req.body;
+  const userId = req.wallet;
 
   const limit = limiter.check(userId, "portfolio");
   if (!limit.allowed) return res.status(429).json({ success: false, error: `Rate limit hit. Retry in ${limit.retryAfter}s` });

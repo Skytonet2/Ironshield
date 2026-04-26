@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { UserPlus, UserMinus, Loader2 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 export default function FollowButton({ targetWallet, onCountChange }) {
   const t = useTheme();
@@ -53,9 +54,9 @@ export default function FollowButton({ targetWallet, onCountChange }) {
     setBusy(true);
     setErr("");
     try {
-      const r = await fetch(`${API}/api/social/follow`, {
+      const r = await apiFetch(`/api/social/follow`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-wallet": viewer },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetWallet }),
       });
       const j = await r.json();

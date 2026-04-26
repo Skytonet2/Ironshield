@@ -21,13 +21,6 @@ async function getOrCreateUser(wallet) {
   return r.rows[0];
 }
 
-function requireWallet(req, res, next) {
-  const w = req.header("x-wallet") || req.body?.wallet || req.query?.wallet;
-  if (!w) return res.status(401).json({ error: "wallet required (set X-Wallet header)" });
-  req.wallet = String(w).toLowerCase().trim();
-  next();
-}
-
 function postHash(content, authorId, ts) {
   return crypto.createHash("sha256").update(`${content}|${authorId}|${ts}`).digest("hex");
 }
@@ -100,4 +93,4 @@ async function hydratePosts(rows, viewerId) {
   });
 }
 
-module.exports = { getOrCreateUser, requireWallet, postHash, hydratePosts };
+module.exports = { getOrCreateUser, postHash, hydratePosts };

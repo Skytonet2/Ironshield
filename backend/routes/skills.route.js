@@ -14,12 +14,7 @@ const adapters = require("../services/agents");
 const connectionStore = require("../services/agents/connectionStore");
 const skills = require("../services/skills");
 const httpRunner = require("../services/skills/http_runner");
-
-function requireWallet(req, res) {
-  const wallet = (req.get("x-wallet") || "").trim();
-  if (!wallet) { res.status(401).json({ error: "x-wallet header required" }); return null; }
-  return wallet;
-}
+const requireWallet = require("../middleware/requireWallet");
 
 /** GET /api/skills/registry
  *  Public list of every executable built-in skill + its expected
@@ -38,8 +33,8 @@ router.get("/registry", (_req, res) => {
  *  when a rule's action is `call_skill` — they share the registry,
  *  so a manual run mirrors what a scheduled rule would do.
  */
-router.post("/run", async (req, res) => {
-  const wallet = requireWallet(req, res); if (!wallet) return;
+router.post("/run", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   // `verified` is set by callers that have already verified the on-
   // chain SkillMetadata.verified flag (e.g. automationExecutor when
   // it loads the rule's skill_id). Manual /run calls from the UI
@@ -103,13 +98,13 @@ router.post("/run", async (req, res) => {
 
 /** POST /api/skills/http_callback/:token
  *  Author-hosted skills POST here while their /run is in flight to
- *  ask the user's connected framework agent for an LLM hop. The token
- *  authenticates the call (HMAC-signed, short-lived) — no x-wallet
- *  required because the author's process doesn't have one.
+ *  ask the user's connected framework agent for an LLM hop.
  *
  *  Body: { kind: "agent_message", message, system?, framework? }
  *  Returns: { reply }
  */
+// public: HMAC-signed short-lived token in the URL is the credential —
+// the author's server-side process has no NEAR wallet to sign with.
 router.post("/http_callback/:token", async (req, res) => {
   const payload = httpRunner.verifyCallbackToken(req.params.token);
   if (!payload) return res.status(401).json({ error: "Invalid or expired token" });

@@ -25,6 +25,7 @@ import DMCallPanel from "@/components/DMCallPanel";
 import { useCall } from "@/lib/callContext";
 
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 
 // Wallets granted free access to premium features (org badge, agent deploy).
 // Team / founder accounts bypass the NEAR payment step.
@@ -37,13 +38,19 @@ const FOLLOWED = "In Squad";
 const UNFOLLOW = "Retire";
 
 function api(path, { method = "GET", body, wallet, raw } = {}) {
+  // GETs still send x-wallet (legacy unsigned reads); mutating calls go
+  // through apiFetch which signs them with NEP-413 and sets x-wallet
+  // from the connected wallet itself.
+  const isGet = (method || "GET").toUpperCase() === "GET";
   const headers = {};
   if (!raw) headers["content-type"] = "application/json";
-  if (wallet) headers["x-wallet"] = wallet;
-  return fetch(`${API}${path}`, {
+  if (isGet && wallet) headers["x-wallet"] = wallet;
+  const opts = {
     method, headers,
     body: raw ? body : body ? JSON.stringify(body) : undefined,
-  }).then(async r => {
+  };
+  const p = isGet ? fetch(`${API}${path}`, opts) : apiFetch(path, opts);
+  return p.then(async r => {
     const text = await r.text();
     // If the backend isn't deployed (SPA HTML fallback or CDN 404 page), don't
     // crash the UI with "Unexpected token '<'". Surface a clean, recognizable error.
@@ -284,7 +291,7 @@ function ComposePost({ wallet, selector, onPosted, placeholder = "What's happeni
     try {
       const fd = new FormData();
       fd.append("file", f);
-      const r = await fetch(`${API}/api/media/upload`, { method: "POST", body: fd, headers: { "x-wallet": wallet || "" } });
+      const r = await apiFetch(`/api/media/upload`, { method: "POST", body: fd });
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error || "upload failed");
       setMedia({ url: data.url, type: data.type });
@@ -1278,7 +1285,7 @@ function ProfileModal({ wallet, viewerWallet, viewerSelector, onClose, onOpenDM,
     try {
       const fd = new FormData();
       fd.append("file", f);
-      const r = await fetch(`${API}/api/media/upload`, { method: "POST", body: fd, headers: { "x-wallet": viewerWallet || "" } });
+      const r = await apiFetch(`/api/media/upload`, { method: "POST", body: fd });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.error || "upload failed");
       setForm(fm => ({ ...fm, [kind === "pfp" ? "pfpUrl" : "bannerUrl"]: d.url }));
@@ -2199,11 +2206,11 @@ function GroupAvatar({ group, size = 38 }) {
   );
 }
 
-function uploadGroupImage(file, wallet) {
+function uploadGroupImage(file, _wallet) {
   const fd = new FormData();
   fd.append("file", file);
-  return fetch(`${API}/api/media/upload`, {
-    method: "POST", body: fd, headers: { "x-wallet": wallet || "" },
+  return apiFetch(`/api/media/upload`, {
+    method: "POST", body: fd,
   }).then(async r => {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d?.error || "upload failed");

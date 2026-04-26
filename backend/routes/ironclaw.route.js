@@ -23,6 +23,9 @@ const router  = express.Router();
 const bridge  = require("../services/ironclawBridge");
 
 // ── Inbound webhook ──────────────────────────────────────────────
+// public: HMAC-SHA256 over the raw body in X-Ironclaw-Signature is the
+// credential — the calling agent has a shared secret, not a NEAR wallet.
+// Verified inline below.
 router.post("/bridge/inbound", async (req, res) => {
   const sig = req.header("x-ironclaw-signature");
   const raw = req.rawBody;

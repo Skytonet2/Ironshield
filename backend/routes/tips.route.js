@@ -2,7 +2,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 const { createAndPush } = require("../services/pushNotify");
 
 // Holding-period proxy: users created ≥ 7 days ago count as "held

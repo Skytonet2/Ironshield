@@ -897,3 +897,114 @@ CREATE TABLE IF NOT EXISTS agent_avatars (
   UNIQUE (owner, sha256)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_avatars_owner ON agent_avatars(owner);
+
+-- ── Auth nonces (NEP-413 signed-message auth) ─────────────────────────
+-- One row per nonce issued via GET /api/auth/nonce. Marked used by
+-- the requireWallet middleware on the first valid signed request that
+-- consumes it. Layout, TTL, and verification rules: docs/auth-contract.md.
+CREATE TABLE IF NOT EXISTS auth_nonces (
+  nonce      TEXT        PRIMARY KEY,         -- base64url of 32 random bytes
+  wallet     TEXT,                            -- NULL until consumed
+  issued_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  used_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS auth_nonces_active_idx
+  ON auth_nonces (issued_at) WHERE used_at IS NULL;
+
+-- ── Admin wallet allowlist (replaces NEXT_PUBLIC_ADMIN_PW) ────────────
+-- One row per wallet that may access AdminPanel + admin-only mutations.
+-- Seeded from $ADMIN_WALLET_SEED on first boot if the table is empty,
+-- so a fresh deploy isn't locked out. After that, manage rows directly
+-- via SQL — no admin-management UI in v1 by design.
+CREATE TABLE IF NOT EXISTS admin_wallets (
+  wallet               TEXT        PRIMARY KEY,
+  role                 TEXT        NOT NULL DEFAULT 'admin',
+  daily_ai_budget_usd  NUMERIC,
+  added_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── Agent runtime state (Day 3.2 — replaces 4 mutable JSON files) ─────
+-- Single key→jsonb store for IronClaw runtime config + listener state.
+-- Replaces agent/activePrompt.json, agent/activeMission.json,
+-- agent/listenerState.json, and agent/loopState.json — those lived on
+-- ephemeral container disk, which meant duplicate Telegram pushes after
+-- every Render restart and lost prompt updates on cold deploys.
+--
+-- Used keys (informal, no constraint):
+--   activePrompt    — { content, updatedAt, proposalId }
+--   activeMission   — { content, updatedAt, proposalId }
+--   listenerState   — { lastSeenId, announcedIds: { created, finalized, executed } }
+--   loopState       — autonomousLoop.js bookkeeping
+CREATE TABLE IF NOT EXISTS agent_state (
+  key        TEXT        PRIMARY KEY,
+  value      JSONB       NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── Media upload audit + per-wallet daily quota (Day 5.1) ─────────────
+-- One row per successful upload. The quota check is a 24-hour rolling
+-- count keyed on `wallet`. Admins (admin_wallets) bypass the cap; for
+-- everyone else: default 10/day. The index keeps the COUNT query off
+-- the heap.
+CREATE TABLE IF NOT EXISTS media_uploads (
+  id          SERIAL      PRIMARY KEY,
+  wallet      TEXT        NOT NULL,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  bytes       INTEGER     NOT NULL,
+  content_type TEXT       NOT NULL,
+  url         TEXT        NOT NULL,
+  host        TEXT        NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_media_uploads_wallet_at
+  ON media_uploads (wallet, uploaded_at DESC);
+
+-- ── Per-wallet AI $ cap (Day 5.3) ────────────────────────────────────
+-- wallet_budgets: per-wallet daily cap in USD. Missing rows default to
+-- the constant in aiBudget.js. Admins (admin_wallets row) get
+-- admin_wallets.daily_ai_budget_usd instead — see aiBudget.getBudget.
+CREATE TABLE IF NOT EXISTS wallet_budgets (
+  wallet              TEXT       PRIMARY KEY,
+  daily_ai_budget_usd NUMERIC    NOT NULL DEFAULT 5.0,
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- wallet_ai_spend: today's accumulated cost. Row keyed (wallet, day).
+-- Updated via UPSERT after each NEAR AI call lands.
+CREATE TABLE IF NOT EXISTS wallet_ai_spend (
+  wallet    TEXT    NOT NULL,
+  day       DATE    NOT NULL,
+  cost_usd  NUMERIC NOT NULL DEFAULT 0,
+  PRIMARY KEY (wallet, day)
+);
+
+-- ── Hot-path indexes (Day 6.1) ────────────────────────────────────────
+-- Functional and partial indexes added after auditing every pool.query
+-- callsite in backend/routes against existing schema coverage. Each
+-- entry below corresponds to a query that fires per page-load or per
+-- user action and was demonstrably index-less prior to this section.
+
+-- feed_users wallet/username lookup. Every profile, DM, social,
+-- tips, and posts route resolves identity via
+-- `WHERE LOWER(wallet_address)=$1 OR LOWER(username)=$1`. The raw
+-- UNIQUE on wallet_address and idx_feed_users_username don't apply
+-- under LOWER(); functional indexes do. Postgres planner unions both
+-- via BitmapOr for the OR'd lookup.
+CREATE INDEX IF NOT EXISTS idx_feed_users_wallet_lower
+  ON feed_users (LOWER(wallet_address));
+CREATE INDEX IF NOT EXISTS idx_feed_users_username_lower
+  ON feed_users (LOWER(username));
+
+-- Profile post list and post-count: `WHERE author_id=$1 AND deleted_at
+-- IS NULL ORDER BY created_at DESC LIMIT 50`. Existing
+-- idx_feed_posts_author finds the rows but forces a sort + post-filter;
+-- this partial index pre-orders and skips deleted rows, so the LIMIT 50
+-- is a straight scan of the index head.
+CREATE INDEX IF NOT EXISTS idx_feed_posts_author_active
+  ON feed_posts (author_id, created_at DESC) WHERE deleted_at IS NULL;
+
+-- Bulk read-all on notifications: `UPDATE ... WHERE user_id=$1 AND
+-- read_at IS NULL`. The existing (user_id, created_at DESC) reads all
+-- of a user's notifications and filters in-memory; for a power user
+-- with thousands of read rows that's wasteful. Partial index lets
+-- the UPDATE touch only the unread set.
+CREATE INDEX IF NOT EXISTS idx_feed_notifs_unread
+  ON feed_notifications (user_id) WHERE read_at IS NULL;

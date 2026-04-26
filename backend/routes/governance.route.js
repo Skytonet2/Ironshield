@@ -2,6 +2,7 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
 
 // GET /api/governance/proposals — list proposals
 router.get("/proposals", async (req, res) => {
@@ -41,10 +42,11 @@ router.get("/proposals/:id", async (req, res) => {
 });
 
 // POST /api/governance/proposals — create proposal
-router.post("/proposals", async (req, res) => {
-  const { title, description, proposal_type, proposer, content, expires_at } = req.body;
-  if (!title || !proposal_type || !proposer) {
-    return res.status(400).json({ success: false, error: "title, proposal_type, and proposer required" });
+router.post("/proposals", requireWallet, async (req, res) => {
+  const { title, description, proposal_type, content, expires_at } = req.body;
+  const proposer = req.wallet;
+  if (!title || !proposal_type) {
+    return res.status(400).json({ success: false, error: "title and proposal_type required" });
   }
 
   try {
@@ -60,9 +62,10 @@ router.post("/proposals", async (req, res) => {
 });
 
 // POST /api/governance/proposals/:id/vote — cast vote
-router.post("/proposals/:id/vote", async (req, res) => {
-  const { user_wallet, vote, power = 1 } = req.body;
-  if (!user_wallet || !vote) return res.status(400).json({ success: false, error: "user_wallet and vote required" });
+router.post("/proposals/:id/vote", requireWallet, async (req, res) => {
+  const { vote, power = 1 } = req.body;
+  const user_wallet = req.wallet;
+  if (!vote) return res.status(400).json({ success: false, error: "vote required" });
   if (!["for", "against"].includes(vote)) return res.status(400).json({ success: false, error: "vote must be 'for' or 'against'" });
 
   try {
@@ -97,32 +100,15 @@ router.post("/proposals/:id/vote", async (req, res) => {
   }
 });
 
-// POST /api/governance/sync — sync proposals from chain (called by governanceListener)
-router.post("/sync", async (req, res) => {
-  const { proposals } = req.body;
-  if (!Array.isArray(proposals)) return res.status(400).json({ success: false, error: "proposals array required" });
-
-  try {
-    let synced = 0;
-    for (const p of proposals) {
-      await db.query(
-        `INSERT INTO proposals (chain_id, title, description, proposal_type, proposer, content, votes_for, votes_against, status, executed, executed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (chain_id) DO UPDATE SET
-           votes_for = EXCLUDED.votes_for,
-           votes_against = EXCLUDED.votes_against,
-           status = EXCLUDED.status,
-           executed = EXCLUDED.executed,
-           executed_at = EXCLUDED.executed_at`,
-        [p.id, p.title, p.description, p.proposal_type, p.proposer, p.content,
-         p.votes_for || 0, p.votes_against || 0, p.status || "active", p.executed || false, p.executed_at]
-      );
-      synced++;
-    }
-    res.json({ success: true, synced });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+// /api/governance/sync intentionally removed (Day 4 cleanup).
+//
+// The route was originally intended for a server-to-server proposals
+// mirror called by governanceListener, but the listener does its own
+// agent_state writes and the proposals table is read directly off-chain
+// via near-api-js viewMethod from the frontend. Nothing in the repo
+// calls /sync — confirmed by grep — so leaving it open was a needless
+// attack surface (a public POST that bulk-upserts the proposals table).
+// If a future listener-to-server mirror is needed, re-add with a
+// shared-secret gate from day 1.
 
 module.exports = router;

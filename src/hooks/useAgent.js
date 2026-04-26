@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import useNear, { STAKING_CONTRACT } from "./useNear";
 import { useWallet, getReadAccount } from "@/lib/contexts";
+import { NETWORK_ID, NODE_URL } from "@/lib/nearConfig";
 
 const LEADERBOARD_TTL_MS = 30_000;
 
@@ -680,11 +681,11 @@ export default function useAgent() {
     const { KeyPair, keyStores, connect } = await import("near-api-js");
     const keyStore = new keyStores.InMemoryKeyStore();
     const keyPair  = KeyPair.fromString(stored.privateKey);
-    await keyStore.setKey("mainnet", stored.subAccount, keyPair);
+    await keyStore.setKey(NETWORK_ID, stored.subAccount, keyPair);
 
     const near = await connect({
-      networkId: "mainnet",
-      nodeUrl:   "https://rpc.fastnear.com",
+      networkId: NETWORK_ID,
+      nodeUrl:   NODE_URL,
       keyStore,
     });
     const subAccount = await near.account(stored.subAccount);
@@ -695,7 +696,7 @@ export default function useAgent() {
     const result = await subAccount.addKey(
       orchestratorPublicKey,
       STAKING_CONTRACT,
-      [], // all methods on ironshield.near
+      [], // all methods on the staking contract
       BigInt(DELEGATED_FC_KEY_ALLOWANCE),
     );
 
@@ -713,11 +714,11 @@ export default function useAgent() {
 
     const { KeyPair, keyStores, connect } = await import("near-api-js");
     const keyStore = new keyStores.InMemoryKeyStore();
-    await keyStore.setKey("mainnet", stored.subAccount, KeyPair.fromString(stored.privateKey));
+    await keyStore.setKey(NETWORK_ID, stored.subAccount, KeyPair.fromString(stored.privateKey));
 
     const near = await connect({
-      networkId: "mainnet",
-      nodeUrl:   "https://rpc.fastnear.com",
+      networkId: NETWORK_ID,
+      nodeUrl:   NODE_URL,
       keyStore,
     });
     const subAccount = await near.account(stored.subAccount);

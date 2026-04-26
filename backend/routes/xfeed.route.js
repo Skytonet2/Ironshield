@@ -25,6 +25,7 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
 const {
   VOICES_CATEGORIES,
   VOICES_PRESET_HANDLES,
@@ -304,10 +305,9 @@ router.get("/follows", async (req, res) => {
   });
 });
 
-router.post("/follows", async (req, res) => {
-  const wallet = String(req.body?.wallet || "").trim().toLowerCase();
+router.post("/follows", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const handle = normalizeHandle(req.body?.handle);
-  if (!wallet) return res.status(400).json({ error: "wallet required" });
   if (!handle) return res.status(400).json({ error: "invalid X handle (1-15 chars, a-z 0-9 _)" });
   try {
     // Seed with preset on first add so the user's curated list is
@@ -334,10 +334,10 @@ router.post("/follows", async (req, res) => {
   }
 });
 
-router.delete("/follows", async (req, res) => {
-  const wallet = String(req.body?.wallet || req.query.wallet || "").trim().toLowerCase();
+router.delete("/follows", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
   const handle = normalizeHandle(req.body?.handle || req.query.handle);
-  if (!wallet || !handle) return res.status(400).json({ error: "wallet and handle required" });
+  if (!handle) return res.status(400).json({ error: "handle required" });
   try {
     await db.query(
       "DELETE FROM feed_xfeed_follows WHERE wallet = $1 AND LOWER(handle) = LOWER($2)",

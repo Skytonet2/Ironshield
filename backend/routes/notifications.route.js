@@ -2,11 +2,19 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
-const { getOrCreateUser, requireWallet } = require("../services/feedHelpers");
+const { getOrCreateUser } = require("../services/feedHelpers");
+const requireWallet = require("../middleware/requireWallet");
 
-router.get("/", requireWallet, async (req, res, next) => {
+// GET is unsigned: signed reads would force a wallet-popup-per-poll
+// (this endpoint polls every 30s). Identity comes from the bare
+// x-wallet header — same trust posture as the pre-Day-1 reads. Returns
+// an empty list when no header is present so the inbox renders cleanly
+// for logged-out viewers.
+router.get("/", async (req, res, next) => {
   try {
-    const me = await getOrCreateUser(req.wallet);
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ notifications: [] });
+    const me = await getOrCreateUser(wallet);
     const r = await db.query(
       `SELECT n.*, u.username AS actor_username, u.display_name AS actor_name, u.pfp_url AS actor_pfp
          FROM feed_notifications n

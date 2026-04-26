@@ -1,33 +1,87 @@
 // bot/index.js — IronShield Telegram bot entrypoint
+//
+// Two modes:
+//   - polling (dev default): TelegramBot's long-poll loop pulls updates.
+//     No public URL needed; perfect for `npm run bot` on a laptop.
+//   - webhook (prod): a small Express server listens at
+//     POST /tg/webhook/:secret and forwards the body into bot.processUpdate().
+//     :secret is constant-time-compared against TELEGRAM_WEBHOOK_SECRET so a
+//     leaked URL alone isn't enough. setWebhook is called once on boot;
+//     the registered URL is cached in agent_state so we don't pound
+//     Telegram's API on every restart.
+//
+// Mode is picked by BOT_MODE: "polling" or "webhook" (default: polling
+// in non-prod, webhook in NODE_ENV=production).
+
 require("dotenv").config();
+const crypto = require("crypto");
+const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
 const { handleCommand }  = require("./handlers/commandHandler");
 const { handleMessage }  = require("./handlers/messageHandler");
 const { handleDM }       = require("./handlers/dmHandler");
 const { handleCallback } = require("./handlers/callbackHandler");
 const { recordMessage }  = require("./commands/summary");
+const agentState = require("../backend/db/agentState");
 
 const priceMonitor    = require("./jobs/priceMonitor");
 const pumpMonitor     = require("./jobs/pumpMonitor");
 const dailyDigest     = require("./jobs/dailyDigest");
 const downtimeMonitor = require("./jobs/downtimeMonitor");
 
-const TOKEN        = process.env.TELEGRAM_BOT_TOKEN;
-const USE_WEBHOOK  = process.env.BOT_MODE === "webhook";
-const WEBHOOK_URL  = process.env.WEBHOOK_URL || ""; // e.g. https://ironclaw.com/bot
-const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || "8443", 10);
+const TOKEN          = process.env.TELEGRAM_BOT_TOKEN;
+const SECRET         = process.env.TELEGRAM_WEBHOOK_SECRET || "";
+const WEBHOOK_URL    = process.env.WEBHOOK_URL || ""; // public hostname, no trailing slash
+const PORT           = parseInt(process.env.PORT || process.env.WEBHOOK_PORT || "8443", 10);
+const DEFAULT_MODE   = process.env.NODE_ENV === "production" ? "webhook" : "polling";
+const BOT_MODE       = (process.env.BOT_MODE || DEFAULT_MODE).toLowerCase();
 
 if (!TOKEN) { console.error("TELEGRAM_BOT_TOKEN not set"); process.exit(1); }
 
-// Production uses webhook mode (no long-poll, Telegram pushes updates).
-// Dev falls back to polling so running the bot locally requires no
-// public URL. The monitor jobs + autonomous loop run regardless of mode
-// since they're timer-driven rather than update-driven.
 let bot;
-if (USE_WEBHOOK && WEBHOOK_URL) {
-  bot = new TelegramBot(TOKEN, { webHook: { port: WEBHOOK_PORT } });
-  bot.setWebHook(`${WEBHOOK_URL}/bot${TOKEN}`);
-  console.log(`IronClaw bot started (webhook mode → ${WEBHOOK_URL})`);
+if (BOT_MODE === "webhook") {
+  if (!WEBHOOK_URL || !SECRET) {
+    console.error("[FATAL] webhook mode requires WEBHOOK_URL and TELEGRAM_WEBHOOK_SECRET");
+    process.exit(1);
+  }
+  // Library set to no-poll, no internal webhook server — Express is the
+  // listener so we own the URL shape and can constant-time-compare the
+  // secret in the path.
+  bot = new TelegramBot(TOKEN, { polling: false });
+
+  const app = express();
+  app.use(express.json({ limit: "1mb" }));
+
+  app.post("/tg/webhook/:secret", (req, res) => {
+    // Buffer-based timingSafeEqual; tolerate length mismatch by padding so
+    // we don't leak length via early-return.
+    const provided = Buffer.from(req.params.secret || "", "utf8");
+    const expected = Buffer.from(SECRET, "utf8");
+    const ok = provided.length === expected.length &&
+               crypto.timingSafeEqual(provided, expected);
+    if (!ok) return res.status(403).end();
+    try { bot.processUpdate(req.body); } catch (e) { console.error("processUpdate:", e.message); }
+    res.status(200).end();
+  });
+  app.get("/health", (_req, res) => res.json({ ok: true, mode: "webhook" }));
+
+  app.listen(PORT, async () => {
+    const fullUrl = `${WEBHOOK_URL.replace(/\/+$/, "")}/tg/webhook/${SECRET}`;
+    // Skip the round-trip to Telegram if we already registered this URL.
+    let cached = null;
+    try { cached = await agentState.get("tgWebhookUrl"); } catch {}
+    if (cached?.url !== fullUrl) {
+      try {
+        await bot.setWebHook(fullUrl);
+        await agentState.set("tgWebhookUrl", { url: fullUrl, setAt: new Date().toISOString() });
+        console.log(`IronClaw bot: webhook registered at ${WEBHOOK_URL}/tg/webhook/<secret>`);
+      } catch (e) {
+        console.error("setWebHook failed:", e.message);
+      }
+    } else {
+      console.log(`IronClaw bot: webhook URL unchanged (cached) — listening on :${PORT}`);
+    }
+  });
 } else {
   bot = new TelegramBot(TOKEN, { polling: true });
   console.log("IronClaw bot started (polling mode)");

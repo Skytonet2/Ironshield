@@ -19,6 +19,7 @@ import { Section, Badge, Btn } from "./Primitives";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import { STAKING_CONTRACT } from "@/hooks/useNear";
+import { NETWORK_ID, NODE_URL } from "@/lib/nearConfig";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function truncKey(k) {
@@ -742,8 +743,8 @@ export default function AgentDashboardPage({ openWallet }) {
       try {
         const { connect, keyStores } = await import("near-api-js");
         const near = await connect({
-          networkId: "mainnet",
-          nodeUrl:   "https://rpc.fastnear.com",
+          networkId: NETWORK_ID,
+          nodeUrl:   NODE_URL,
           keyStore:  new keyStores.InMemoryKeyStore(),
         });
         const account = await near.account(subAccountId);

@@ -5,17 +5,13 @@
 
 require("dotenv").config();
 const fetch = require("node-fetch");
-const fs    = require("fs");
-const path  = require("path");
+const agentState = require("../backend/db/agentState");
 
 const ENDPOINT = process.env.NEAR_AI_ENDPOINT || "https://cloud-api.near.ai/v1/chat/completions";
 const API_KEY  = process.env.NEAR_AI_KEY       || "";
 const MODEL    = process.env.NEAR_AI_MODEL     || "Qwen/Qwen3-30B-A3B-Instruct-2507";
 
-const PROMPT_FILE  = path.join(__dirname, "activePrompt.json");
-const MISSION_FILE = path.join(__dirname, "activeMission.json");
-
-const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return {}; } };
+const GOV_TTL_MS = 30_000;
 
 class NearAgent {
   constructor() {
@@ -25,8 +21,10 @@ class NearAgent {
   }
 
   getSystemPrompt() {
-    const govPrompt  = readJson(PROMPT_FILE).content  || "";
-    const govMission = readJson(MISSION_FILE).content || "Monitor for scams, phishing links, and malicious wallets.";
+    const prompt  = agentState.getCached("activePrompt",  GOV_TTL_MS);
+    const mission = agentState.getCached("activeMission", GOV_TTL_MS);
+    const govPrompt  = prompt?.content  || "";
+    const govMission = mission?.content || "Monitor for scams, phishing links, and malicious wallets.";
     return [
       "You are IronClaw, a Web3 AI security and intelligence agent built on NEAR Protocol.",
       `Current mission: ${govMission}`,

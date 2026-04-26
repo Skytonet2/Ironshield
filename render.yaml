@@ -1,4 +1,22 @@
+# render.yaml — three Render services share one repo + Node runtime.
+#
+#   ironclaw-backend               → backend/server.js          (web, public)
+#   ironshield-worker-governance   → governanceListener.js      (worker, no http)
+#   ironshield-worker-bot          → bot/index.js (BOT_MODE=webhook) (web, public)
+#
+# Day 3.1 split: previously a single `npm run ironclaw` mega-process ran
+# 5 child processes inside one container — OOM-prone under load and
+# entangled crash semantics. Per-service isolation lets each piece
+# scale, restart, and log independently. Same Node runtime across all
+# three; only the start command + env differ.
+#
+# Memory caveat (per project_render_backend.md): Render deploys are
+# triggered by direct API calls pinning a commit, not by render.yaml
+# auto-sync. This file documents the desired shape; the actual deploy
+# happens via POST /v1/services/<srv-id>/deploys with {commitId}.
+
 services:
+  # ── 1. Web server: HTTP API for the frontend ─────────────────────
   - type: web
     name: ironclaw-backend
     runtime: node
@@ -15,18 +33,14 @@ services:
         fromEnvironment: NEAR_AI_KEY
       - key: NEAR_AI_MODEL
         fromEnvironment: NEAR_AI_MODEL
-      - key: TELEGRAM_BOT_TOKEN
-        fromEnvironment: TELEGRAM_BOT_TOKEN
-      - key: TELEGRAM_GOVERNANCE_CHAT_ID
-        fromEnvironment: TELEGRAM_GOVERNANCE_CHAT_ID
-      - key: AGENT_ACCOUNT_ID
-        fromEnvironment: AGENT_ACCOUNT_ID
-      - key: AGENT_PRIVATE_KEY
-        fromEnvironment: AGENT_PRIVATE_KEY
       - key: STAKING_CONTRACT_ID
         value: ironshield.near
       - key: DATABASE_URL
         fromEnvironment: DATABASE_URL
+      - key: ADMIN_WALLET_SEED
+        fromEnvironment: ADMIN_WALLET_SEED
+      - key: CORS_ALLOWED_ORIGINS
+        fromEnvironment: CORS_ALLOWED_ORIGINS
       - key: LIVEKIT_URL
         fromEnvironment: LIVEKIT_URL
       - key: LIVEKIT_API_KEY
@@ -39,3 +53,56 @@ services:
         fromEnvironment: VAPID_PUBLIC_KEY
       - key: VAPID_PRIVATE_KEY
         fromEnvironment: VAPID_PRIVATE_KEY
+
+  # ── 2. Governance worker: polls the contract every 5 min ─────────
+  # No HTTP surface. Self-checks AGENT_ACCOUNT_ID + AGENT_PRIVATE_KEY +
+  # STAKING_CONTRACT_ID at boot and exits non-zero (Day 3.3) if missing.
+  # Persists listener state in agent_state Postgres rows (Day 3.2) so a
+  # restart doesn't double-push Telegram announcements.
+  - type: worker
+    name: ironshield-worker-governance
+    runtime: node
+    buildCommand: npm install
+    startCommand: node backend/services/governanceListener.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STAKING_CONTRACT_ID
+        value: ironshield.near
+      - key: AGENT_ACCOUNT_ID
+        fromEnvironment: AGENT_ACCOUNT_ID
+      - key: AGENT_PRIVATE_KEY
+        fromEnvironment: AGENT_PRIVATE_KEY
+      - key: NEAR_RPC_URL
+        fromEnvironment: NEAR_RPC_URL
+      - key: TELEGRAM_BOT_TOKEN
+        fromEnvironment: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_GOVERNANCE_CHAT_ID
+        fromEnvironment: TELEGRAM_GOVERNANCE_CHAT_ID
+      - key: DATABASE_URL
+        fromEnvironment: DATABASE_URL
+
+  # ── 3. Telegram bot worker: webhook listener ─────────────────────
+  # Web service so Telegram can POST to a public URL. PORT is auto-
+  # assigned by Render; bot/index.js reads $PORT for the Express
+  # webhook listener. WEBHOOK_URL must match the service's public
+  # hostname (Render exposes RENDER_EXTERNAL_URL — set WEBHOOK_URL to
+  # the same value, or a custom domain pointing at it).
+  - type: web
+    name: ironshield-worker-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node bot/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BOT_MODE
+        value: webhook
+      - key: TELEGRAM_BOT_TOKEN
+        fromEnvironment: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_WEBHOOK_SECRET
+        fromEnvironment: TELEGRAM_WEBHOOK_SECRET
+      - key: WEBHOOK_URL
+        fromEnvironment: WEBHOOK_URL
+      - key: DATABASE_URL
+        fromEnvironment: DATABASE_URL
