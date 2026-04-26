@@ -337,4 +337,47 @@ router.get("/revenue", requireWallet, async (req, res) => {
   }
 });
 
+/** GET /api/skills/history?wallet=<>&before=<iso>
+ *  Lifetime purchase history for the connected wallet. Reads
+ *  skill_sales filtered by buyer_wallet. Cursor pagination on sold_at
+ *  DESC; pass `before=<sold_at>` of the last row of the previous page
+ *  to fetch the next 50.
+ */
+router.get("/history", requireWallet, async (req, res) => {
+  try {
+    const wallet = String(req.query.wallet || "").toLowerCase();
+    if (!wallet) return res.status(400).json({ error: "wallet required" });
+    if (wallet !== req.wallet.toLowerCase()) {
+      return res.status(403).json({ error: "wallet mismatch" });
+    }
+    const before = req.query.before ? new Date(String(req.query.before)) : null;
+    const params = [wallet];
+    let where = "buyer_wallet = $1";
+    if (before && !isNaN(before.getTime())) {
+      params.push(before.toISOString());
+      where += ` AND sold_at < $${params.length}`;
+    }
+    const r = await db.query(
+      `SELECT tx_hash, skill_id, creator_wallet,
+              price_yocto::text         AS price_yocto,
+              creator_take_yocto::text  AS creator_take_yocto,
+              treasury_take_yocto::text AS treasury_take_yocto,
+              sold_at
+         FROM skill_sales
+        WHERE ${where}
+        ORDER BY sold_at DESC
+        LIMIT 51`,
+      params
+    );
+    const hasMore = r.rows.length > 50;
+    const rows = hasMore ? r.rows.slice(0, 50) : r.rows;
+    res.json({
+      rows,
+      nextBefore: hasMore ? rows[rows.length - 1].sold_at : null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

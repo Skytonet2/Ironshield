@@ -28,7 +28,7 @@ import { useEffect, useState } from "react";
 import {
   Zap, Search, Bell, ChevronDown, Menu, X as XIcon,
   Compass, LayoutGrid, Trophy, Sparkles, Crown, TrendingUp,
-  Bot, Users, Wrench, ArrowLeft,
+  Bot, Users, Wrench, ArrowLeft, History,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 
@@ -58,9 +58,10 @@ const SIDEBAR_PRIMARY = [
 // anywhere in the shell instead of buried as a route only the wizard CTA
 // could reach.
 const SIDEBAR_CREATE = [
-  { key: "create-agent", label: "Create Agent", Icon: Bot,    href: "/agents/create", badge: "New" },
-  { key: "my-agents",    label: "My Agents",    Icon: Users,  href: "/agents/me"                    },
-  { key: "my-skills",    label: "My Skills",    Icon: Wrench, href: "/skills/mine"                  },
+  { key: "create-agent", label: "Create Agent",   Icon: Bot,     href: "/agents/create", badge: "New" },
+  { key: "my-agents",    label: "My Agents",      Icon: Users,   href: "/agents/me"                    },
+  { key: "my-skills",    label: "My Skills",      Icon: Wrench,  href: "/skills/mine"                  },
+  { key: "history",      label: "Purchase History", Icon: History, href: "/skills/history"             },
 ];
 
 const SIDEBAR_CATEGORIES = [

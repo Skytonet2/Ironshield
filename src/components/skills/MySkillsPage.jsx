@@ -35,18 +35,51 @@ export default function MySkillsPage() {
   const agentRef = useRef(agent);
   agentRef.current = agent;
 
-  const [rows, setRows]       = useState([]);
+  // Each entry: { agentId, label, isPrimary, rows: [{ skill, metadata }] }.
+  // The `rows` shape on each group matches getInstalledSkillsWithMetadata
+  // so the per-card render below stays unchanged.
+  const [groups, setGroups]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
   const [removingId, setRemovingId] = useState(null);
 
   const load = useCallback(async () => {
-    if (!address) { setRows([]); return; }
+    if (!address) { setGroups([]); return; }
     setLoading(true);
     setError(null);
     try {
-      const items = await agentRef.current.getInstalledSkillsWithMetadata(address);
-      setRows(Array.isArray(items) ? items : []);
+      const a = agentRef.current;
+      // Primary first; sub-agent listing is best-effort (unsupported on
+      // pre-Phase-7C deployments returns empty/throws — degrade gracefully).
+      const [primarySkills, subs] = await Promise.all([
+        a.getInstalledSkillsWithMetadata(address),
+        a.listSubAgents?.(address).catch(() => []) || [],
+      ]);
+      const subRows = await Promise.all(
+        (subs || []).map(async (s) => {
+          const acct = s?.agent_account || s?.account_id || s;
+          if (!acct) return null;
+          try {
+            const list = await a.getInstalledSkillsWithMetadata(acct);
+            return {
+              agentId: acct,
+              label: s?.handle || acct,
+              isPrimary: false,
+              rows: Array.isArray(list) ? list : [],
+            };
+          } catch { return { agentId: acct, label: s?.handle || acct, isPrimary: false, rows: [] }; }
+        })
+      );
+      const groupsBuilt = [
+        {
+          agentId: address,
+          label: "Primary",
+          isPrimary: true,
+          rows: Array.isArray(primarySkills) ? primarySkills : [],
+        },
+        ...subRows.filter(Boolean).filter((g) => g.rows.length > 0),
+      ];
+      setGroups(groupsBuilt);
     } catch (err) {
       setError(err?.message || "Failed to load installed skills");
     } finally {
@@ -135,7 +168,7 @@ export default function MySkillsPage() {
         </div>
       )}
 
-      {connected && !loading && rows.length === 0 && (
+      {connected && !loading && groups.every((g) => g.rows.length === 0) && (
         <div style={{
           padding: "44px 24px", borderRadius: 14,
           background: t.bgCard, border: `1px dashed ${t.border}`,
@@ -163,108 +196,132 @@ export default function MySkillsPage() {
         </div>
       )}
 
-      {connected && !loading && rows.length > 0 && (
-        <div style={{ display: "grid", gap: 10 }}>
-          {rows.map(({ skill, metadata }) => (
-            <div key={skill.id} style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 0.7fr) auto",
-              gap: 18, alignItems: "center",
-              padding: "16px 18px",
-              background: t.bgCard, border: `1px solid ${t.border}`,
-              borderRadius: 14,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                <span aria-hidden style={{
-                  width: 44, height: 44, flexShrink: 0, borderRadius: 10,
-                  background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  color: "#fff",
-                }}><Package size={20} /></span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: t.white }}>
-                      {skill.name}
-                    </span>
-                    {metadata?.verified && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                        background: "rgba(59,130,246,0.18)", color: "#60a5fa",
-                        display: "inline-flex", alignItems: "center", gap: 4,
-                      }}><CheckCircle2 size={10} /> Verified</span>
-                    )}
-                    {metadata?.category && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
-                        background: t.bgSurface, color: t.textMuted,
-                      }}>{metadata.category}</span>
-                    )}
-                  </div>
-                  <div style={{
-                    fontSize: 11.5, color: t.textMuted, marginTop: 2,
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    maxWidth: 420,
+      {connected && !loading && groups.some((g) => g.rows.length > 0) && (
+        <div style={{ display: "grid", gap: 18 }}>
+          {groups.map((group) => group.rows.length === 0 ? null : (
+            <section key={group.agentId} style={{ display: "grid", gap: 10 }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                fontSize: 11, fontWeight: 800, letterSpacing: 0.6,
+                color: t.textMuted, textTransform: "uppercase",
+              }}>
+                <span>{group.isPrimary ? "Primary agent" : `Agent: ${group.label}`}</span>
+                <span style={{ color: t.textDim, fontFamily: "var(--font-jetbrains-mono), monospace", fontWeight: 600, letterSpacing: 0 }}>
+                  {truncAddr(group.agentId)}
+                </span>
+                <span style={{ color: t.textDim, fontWeight: 600, letterSpacing: 0 }}>
+                  · {group.rows.length} skill{group.rows.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {group.rows.map(({ skill, metadata }) => (
+                  <div key={`${group.agentId}-${skill.id}`} style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 0.7fr) auto",
+                    gap: 18, alignItems: "center",
+                    padding: "16px 18px",
+                    background: t.bgCard, border: `1px solid ${t.border}`,
+                    borderRadius: 14,
                   }}>
-                    {skill.description || "—"}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                      <span aria-hidden style={{
+                        width: 44, height: 44, flexShrink: 0, borderRadius: 10,
+                        background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        color: "#fff",
+                      }}><Package size={20} /></span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 14, fontWeight: 800, color: t.white }}>
+                            {skill.name}
+                          </span>
+                          {metadata?.verified && (
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                              background: "rgba(59,130,246,0.18)", color: "#60a5fa",
+                              display: "inline-flex", alignItems: "center", gap: 4,
+                            }}><CheckCircle2 size={10} /> Verified</span>
+                          )}
+                          {metadata?.category && (
+                            <span style={{
+                              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+                              background: t.bgSurface, color: t.textMuted,
+                            }}>{metadata.category}</span>
+                          )}
+                        </div>
+                        <div style={{
+                          fontSize: 11.5, color: t.textMuted, marginTop: 2,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          maxWidth: 420,
+                        }}>
+                          {skill.description || "—"}
+                        </div>
+                        <div style={{
+                          fontSize: 11, color: t.textDim, marginTop: 2,
+                          fontFamily: "var(--font-jetbrains-mono), monospace",
+                        }}>
+                          by {truncAddr(skill.author)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                        Price
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: t.white }}>
+                        {formatNear(skill.price_yocto)}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                        Installs
+                      </div>
+                      <div style={{
+                        fontSize: 18, fontWeight: 800, color: t.white,
+                        fontFamily: "var(--font-jetbrains-mono), monospace",
+                      }}>
+                        {skill.install_count ?? 0}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Link href={`/skills/view?id=${skill.id}`} style={{
+                        padding: "9px 14px",
+                        background: t.bgSurface, border: `1px solid ${t.border}`,
+                        borderRadius: 10, fontSize: 12, fontWeight: 700, color: t.text,
+                        textDecoration: "none", whiteSpace: "nowrap",
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                      }}><ExternalLink size={12} /> View</Link>
+                      {/* Sub-agent uninstalls would need to sign as the sub-agent;
+                          the primary owner has access via the localStorage seed
+                          but threading that through useAgent.uninstallSkill is
+                          out of scope for Day 17. Disable for now. */}
+                      <button
+                        type="button"
+                        onClick={() => group.isPrimary && handleUninstall(skill.id)}
+                        disabled={!group.isPrimary || removingId === skill.id}
+                        title={group.isPrimary ? "Uninstall" : "Switch to this sub-agent to uninstall"}
+                        aria-label="Uninstall"
+                        style={{
+                          width: 34, height: 34, borderRadius: 10,
+                          background: t.bgSurface, border: `1px solid ${t.border}`,
+                          color: t.textMuted,
+                          cursor: group.isPrimary && removingId !== skill.id ? "pointer" : "not-allowed",
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          opacity: !group.isPrimary || removingId === skill.id ? 0.4 : 1,
+                        }}
+                      >
+                        {removingId === skill.id
+                          ? <Loader2 size={14} style={{ animation: "ma-spin 0.9s linear infinite" }} />
+                          : <Trash2 size={14} />}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{
-                    fontSize: 11, color: t.textDim, marginTop: 2,
-                    fontFamily: "var(--font-jetbrains-mono), monospace",
-                  }}>
-                    by {truncAddr(skill.author)}
-                  </div>
-                </div>
+                ))}
               </div>
-
-              <div>
-                <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                  Price
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.white }}>
-                  {formatNear(skill.price_yocto)}
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                  Installs
-                </div>
-                <div style={{
-                  fontSize: 18, fontWeight: 800, color: t.white,
-                  fontFamily: "var(--font-jetbrains-mono), monospace",
-                }}>
-                  {skill.install_count ?? 0}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Link href={`/skills/view?id=${skill.id}`} style={{
-                  padding: "9px 14px",
-                  background: t.bgSurface, border: `1px solid ${t.border}`,
-                  borderRadius: 10, fontSize: 12, fontWeight: 700, color: t.text,
-                  textDecoration: "none", whiteSpace: "nowrap",
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                }}><ExternalLink size={12} /> View</Link>
-                <button
-                  type="button"
-                  onClick={() => handleUninstall(skill.id)}
-                  disabled={removingId === skill.id}
-                  aria-label="Uninstall"
-                  style={{
-                    width: 34, height: 34, borderRadius: 10,
-                    background: t.bgSurface, border: `1px solid ${t.border}`,
-                    color: t.textMuted,
-                    cursor: removingId === skill.id ? "not-allowed" : "pointer",
-                    display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    opacity: removingId === skill.id ? 0.5 : 1,
-                  }}
-                >
-                  {removingId === skill.id
-                    ? <Loader2 size={14} style={{ animation: "ma-spin 0.9s linear infinite" }} />
-                    : <Trash2 size={14} />}
-                </button>
-              </div>
-            </div>
+            </section>
           ))}
         </div>
       )}
