@@ -60,6 +60,10 @@ export default function TreasuryPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  // Day 16 — per-source revenue rollup (skill installs + NewsCoin
+  // fees). Fetched in parallel with the legacy /newscoin/treasury
+  // payload so the panel renders alongside without blocking.
+  const [sources, setSources] = useState(null);
 
   const load = () => {
     setErr("");
@@ -74,6 +78,11 @@ export default function TreasuryPage() {
       .then(setData)
       .catch(e => setErr(e.message || "Failed to load"))
       .finally(() => setLoading(false));
+    // Best-effort sources fetch — failures don't block the page.
+    fetch(`${API}/api/treasury/sources`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => setSources(j?.sources || null))
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -192,6 +201,47 @@ export default function TreasuryPage() {
           </div>
         ))}
       </div>
+
+      {/* Day 16 — Revenue sources panel. Renders only when the backend
+          returns at least one source with non-zero lifetime revenue —
+          on a brand-new deploy with no skill sales and no NewsCoin
+          trades, the panel hides itself rather than show a row of
+          zeros that's just visual noise. */}
+      {sources && sources.some(s => s.lifetime_near > 0) && (
+        <div style={{ ...cardStyle, marginBottom: 16 }}>
+          <div style={{
+            fontSize: 12, fontWeight: 700, textTransform: "uppercase",
+            letterSpacing: 0.5, color: t.textMuted, marginBottom: 10,
+          }}>
+            Revenue sources
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {sources.map(s => (
+              <div key={s.key} style={{
+                display: "grid",
+                gridTemplateColumns: "1.4fr repeat(3, 1fr) 0.8fr",
+                gap: 10, alignItems: "center",
+                padding: "8px 10px", borderRadius: 8,
+                background: t.bgSurface, fontSize: 12,
+              }}>
+                <span style={{ color: t.white, fontWeight: 700 }}>{s.label}</span>
+                <span style={{ color: t.textDim }}>
+                  Lifetime <strong style={{ color: t.white }}>{fmtNear(s.lifetime_near)} N</strong>
+                </span>
+                <span style={{ color: t.textDim }}>
+                  24h <strong style={{ color: t.white }}>{fmtNear(s.d24h_near)} N</strong>
+                </span>
+                <span style={{ color: t.textDim }}>
+                  7d <strong style={{ color: t.white }}>{fmtNear(s.d7d_near)} N</strong>
+                </span>
+                <span style={{ color: t.textDim, textAlign: "right" }}>
+                  {fmtInt(s.tx_count)} tx
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Two-column: Revenue feed + Payout schedule */}
       <div style={{

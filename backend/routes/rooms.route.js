@@ -5,6 +5,21 @@ const crypto = require("crypto");
 const db = require("../db/client");
 const { getOrCreateUser, postHash } = require("../services/feedHelpers");
 const requireWallet = require("../middleware/requireWallet");
+const feedHub = require("../ws/feedHub");
+
+// LiveKit server SDK is optional at boot. When LIVEKIT_* env is unset
+// (preview deploys, local dev) we surface 503 from mute/kick so the
+// caller knows the action didn't actually land in voice. The DB-side
+// effects (left_at) still apply.
+let RoomServiceClient;
+try { ({ RoomServiceClient } = require("livekit-server-sdk")); } catch { RoomServiceClient = null; }
+function livekitClient() {
+  const url = process.env.LIVEKIT_URL || "";
+  const apiKey = process.env.LIVEKIT_API_KEY || "";
+  const apiSecret = process.env.LIVEKIT_API_SECRET || "";
+  if (!url || !apiKey || !apiSecret || !RoomServiceClient) return null;
+  return new RoomServiceClient(url, apiKey, apiSecret);
+}
 
 const MIN_STAKE_USD = 50; // spec: min 50 $IRONCLAW ≈ $50-equiv for MVP
 const ALLOWED_ACCESS = ["open", "token_gated", "invite_only"];
@@ -440,6 +455,34 @@ router.post("/:id/messages", requireWallet, async (req, res, next) => {
        RETURNING id, created_at`,
       [req.params.id, user.id, content.trim(), !!isAlphaCall]
     );
+
+    // Live fanout. Clients in the room subscribe to type "room:msg"
+    // and filter by roomId locally. Best-effort — if the WS hub is
+    // down we still return the inserted row so the sender's UI updates
+    // and HTTP polling/pull will replay for everyone else.
+    try {
+      feedHub.broadcast({
+        type: "room:msg",
+        roomId: Number(req.params.id),
+        message: {
+          id: r.rows[0].id,
+          content: content.trim(),
+          isAlphaCall: !!isAlphaCall,
+          alphaUpvotes: 0,
+          alphaDownvotes: 0,
+          pinned: false,
+          createdAt: r.rows[0].created_at,
+          author: {
+            id: user.id,
+            wallet: user.wallet_address,
+            username: user.username,
+            displayName: user.display_name,
+            pfpUrl: user.pfp_url,
+          },
+        },
+      });
+    } catch { /* best-effort */ }
+
     res.json({ id: r.rows[0].id, createdAt: r.rows[0].created_at });
   } catch (e) { next(e); }
 });
@@ -500,11 +543,110 @@ router.post("/:id/kick", requireWallet, async (req, res, next) => {
   try {
     const guard = await assertHost(req.params.id, req.wallet);
     if (!guard.ok) return res.status(guard.code).json({ error: guard.msg });
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    // Resolve target wallet (LiveKit identity) and the room's livekit
+    // room name, then call removeParticipant. Without this the kicked
+    // user stays in voice until they reconnect even though their DB
+    // row is set to left.
+    const [targetRow, roomRow] = await Promise.all([
+      db.query("SELECT wallet_address FROM feed_users WHERE id=$1", [userId]),
+      db.query("SELECT livekit_room_name FROM feed_rooms WHERE id=$1", [req.params.id]),
+    ]);
+    const identity = targetRow.rows[0]?.wallet_address;
+    const roomName = roomRow.rows[0]?.livekit_room_name;
+
     await db.query(
       "UPDATE feed_room_participants SET left_at=NOW() WHERE room_id=$1 AND user_id=$2",
-      [req.params.id, req.body?.userId]
+      [req.params.id, userId]
     );
+
+    let livekitOk = false;
+    const lk = livekitClient();
+    if (lk && roomName && identity) {
+      try {
+        await lk.removeParticipant(roomName, identity);
+        livekitOk = true;
+      } catch (e) {
+        // Already gone or never joined LiveKit. The DB-side left_at is
+        // still authoritative for the participants list.
+        if (!/not.?found|does not exist/i.test(e.message || "")) throw e;
+        livekitOk = true;
+      }
+    }
+
+    try {
+      feedHub.broadcast({
+        type: "room:participant_kicked",
+        roomId: Number(req.params.id),
+        userId,
+      });
+    } catch { /* best-effort */ }
+
+    res.json({ ok: true, livekit: livekitOk });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/mute  body: { userId, trackSid? }
+// Owner-only. Mutes the target's published audio track. If trackSid is
+// omitted we mute the first audio track LiveKit lists for that
+// identity, which is the common case (one mic per participant).
+router.post("/:id/mute", requireWallet, async (req, res, next) => {
+  try {
+    const guard = await assertHost(req.params.id, req.wallet);
+    if (!guard.ok) return res.status(guard.code).json({ error: guard.msg });
+    const { userId, trackSid } = req.body || {};
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const lk = livekitClient();
+    if (!lk) return res.status(503).json({ error: "LiveKit not configured" });
+
+    const [targetRow, roomRow] = await Promise.all([
+      db.query("SELECT wallet_address FROM feed_users WHERE id=$1", [userId]),
+      db.query("SELECT livekit_room_name FROM feed_rooms WHERE id=$1", [req.params.id]),
+    ]);
+    const identity = targetRow.rows[0]?.wallet_address;
+    const roomName = roomRow.rows[0]?.livekit_room_name;
+    if (!identity || !roomName) return res.status(404).json({ error: "user or room not found" });
+
+    let sid = trackSid;
+    if (!sid) {
+      const p = await lk.getParticipant(roomName, identity).catch(() => null);
+      const audio = (p?.tracks || []).find((t) => t.type === 0 || t.type === "AUDIO");
+      sid = audio?.sid;
+    }
+    if (!sid) return res.status(404).json({ error: "no audio track to mute" });
+
+    await lk.mutePublishedTrack(roomName, identity, sid, true);
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// POST /api/rooms/:id/recording  body: { on }
+// Owner-only. Toggles `feed_rooms.recording_enabled`. We don't start an
+// actual recording here — that's Day 19 LiveKit Egress work. The flag
+// is the metadata signal Day 19 reads to know which rooms to capture.
+router.post("/:id/recording", requireWallet, async (req, res, next) => {
+  try {
+    const guard = await assertHost(req.params.id, req.wallet);
+    if (!guard.ok) return res.status(guard.code).json({ error: guard.msg });
+    const on = !!req.body?.on;
+    const r = await db.query(
+      "UPDATE feed_rooms SET recording_enabled=$1 WHERE id=$2 RETURNING recording_enabled",
+      [on, req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "room not found" });
+
+    try {
+      feedHub.broadcast({
+        type: "room:recording",
+        roomId: Number(req.params.id),
+        on: r.rows[0].recording_enabled,
+      });
+    } catch { /* best-effort */ }
+
+    res.json({ ok: true, recording_enabled: r.rows[0].recording_enabled });
   } catch (e) { next(e); }
 });
 

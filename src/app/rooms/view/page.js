@@ -17,6 +17,7 @@ import LiveStage from "@/components/LiveStage";
 
 import { API_BASE as API } from "@/lib/apiBase";
 import { apiFetch } from "@/lib/apiFetch";
+import { addListener, send as wsSend } from "@/lib/ws/wsClient";
 
 function shortWallet(w = "") { return w?.length > 18 ? `${w.slice(0, 8)}…${w.slice(-6)}` : (w || ""); }
 function timeLeft(endsAt) {
@@ -129,6 +130,37 @@ function RoomViewInner() {
     const b = setInterval(pollMessages, 3000);
     return () => { clearInterval(a); clearInterval(b); };
   }, [roomId, wallet]); // eslint-disable-line
+
+  // WS chat fanout. The 3s poll is the safety net; this cuts live
+  // latency to ~the network round trip. Empty trackers = "send me
+  // everything" — server-side feedHub filters only when subs is
+  // non-empty. Dedup on the id since poll + WS can both deliver.
+  useEffect(() => {
+    if (!roomId) return;
+    wsSend({ type: "subscribe", trackers: [] });
+    const off = [
+      addListener("room:msg", (e) => {
+        if (Number(e.roomId) !== Number(roomId) || !e.message) return;
+        setMsgs((prev) => {
+          if (prev.some((m) => m.id === e.message.id)) return prev;
+          const next = [...prev, e.message];
+          return next.slice(-300);
+        });
+        if (e.message.createdAt) lastMsgTs.current = e.message.createdAt;
+      }),
+      addListener("room:participant_kicked", (e) => {
+        if (Number(e.roomId) !== Number(roomId)) return;
+        // If the local user is the one being kicked, leave the page.
+        // Otherwise just refresh participants.
+        loadRoom();
+      }),
+      addListener("room:recording", (e) => {
+        if (Number(e.roomId) !== Number(roomId)) return;
+        loadRoom();
+      }),
+    ];
+    return () => { off.forEach((u) => u && u()); };
+  }, [roomId]); // eslint-disable-line
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [msgs.length]);

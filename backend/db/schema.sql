@@ -986,6 +986,33 @@ CREATE TABLE IF NOT EXISTS wallet_ai_spend (
   PRIMARY KEY (wallet, day)
 );
 
+-- ── Skill sales (Day 16) ──────────────────────────────────────────────
+-- One row per successful install_skill purchase indexed off-chain. The
+-- on-chain event emits {owner, skill_id, price_yocto, paid}; we derive
+-- creator_take_yocto = price * 0.99 and treasury_take_yocto = price * 0.01
+-- to match the contract's hardcoded PLATFORM_FEE_BPS at index time. If
+-- the platform cut ever changes on-chain, indexer math diverges — for
+-- v1 the cut is fixed so this is fine.
+--
+-- tx_hash is the dedupe key: a paranoid double-call to the verify
+-- endpoint or a future block-scanning backfill won't double-count.
+-- paid=false rows are skipped at index time — free installs aren't
+-- revenue and would skew the dashboards.
+CREATE TABLE IF NOT EXISTS skill_sales (
+  tx_hash             TEXT        PRIMARY KEY,
+  block_height        BIGINT,
+  skill_id            TEXT        NOT NULL,
+  buyer_wallet        TEXT        NOT NULL,
+  creator_wallet      TEXT        NOT NULL,
+  price_yocto         NUMERIC(40,0) NOT NULL,
+  creator_take_yocto  NUMERIC(40,0) NOT NULL,
+  treasury_take_yocto NUMERIC(40,0) NOT NULL,
+  sold_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_skill_sales_creator ON skill_sales (creator_wallet, sold_at DESC);
+CREATE INDEX IF NOT EXISTS idx_skill_sales_skill   ON skill_sales (skill_id, sold_at DESC);
+CREATE INDEX IF NOT EXISTS idx_skill_sales_sold_at ON skill_sales (sold_at DESC);
+
 -- ── Hot-path indexes (Day 6.1) ────────────────────────────────────────
 -- Functional and partial indexes added after auditing every pool.query
 -- callsite in backend/routes against existing schema coverage. Each

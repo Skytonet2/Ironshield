@@ -94,6 +94,7 @@ app.use("/api/livekit",       require("./routes/livekit.route"));
 app.use("/api/revenue",       require("./routes/revenue.route"));
 app.use("/api/push",          require("./routes/push.route"));
 app.use("/api/newscoin",      require("./routes/newscoin.route"));
+app.use("/api/treasury",      require("./routes/treasury.route"));
 app.use("/api/tg",            require("./routes/tg.route"));
 app.use("/api/xfeed",         require("./routes/xfeed.route"));
 app.use("/api/trading",       require("./routes/trading.route"));
