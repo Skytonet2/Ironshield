@@ -29,12 +29,14 @@ import {
 import {
   getOrCreateKeypair, exportPublicKey,
   encrypt as naclEncrypt, decrypt as naclDecrypt,
+  getKeypairByFp, fingerprint as keyFingerprint,
 } from "@/lib/dmCrypto";
 import {
   splitBody, detectAutomationIntent, encodeChip,
   CHIP_TYPES, classifyAddress,
 } from "@/lib/messageParser";
 import { apiFetch } from "@/lib/apiFetch";
+import * as wsClient from "@/lib/ws/wsClient";
 
 const API = (() => {
   if (typeof window === "undefined") return "";
@@ -166,6 +168,37 @@ export default function MessagesPage() {
     const id = setInterval(() => loadThread(active), 8_000);
     return () => clearInterval(id);
   }, [active, loadThread]);
+
+  // Day 8.2: subscribe to dm:state events. The server emits these to the
+  // sender when their messages flip to delivered (recipient socket got
+  // the dm:new push) or read (recipient called /read). We patch the
+  // local `messages` array in place so the bubble's tick rerenders
+  // without a full thread refetch.
+  useEffect(() => {
+    if (!wallet) return;
+    const off = wsClient.addListener("dm:state", (event) => {
+      const ids = event?.messageIds;
+      if (!Array.isArray(ids) || !ids.length) return;
+      const stamp = event.at || new Date().toISOString();
+      const field = event.state === "read" ? "read_at" : "delivered_at";
+      setMessages((prev) => {
+        let changed = false;
+        const next = prev.map((m) => {
+          if (!ids.includes(m.id)) return m;
+          if (m[field]) return m;
+          changed = true;
+          // Read implies delivered — backfill the lower state for free
+          // so a bubble that goes straight from sent to read still has
+          // a coherent timeline.
+          return event.state === "read" && !m.delivered_at
+            ? { ...m, read_at: stamp, delivered_at: m.delivered_at || stamp }
+            : { ...m, [field]: stamp };
+        });
+        return changed ? next : prev;
+      });
+    });
+    return () => { off(); };
+  }, [wallet]);
 
   // Open a conversation by walletOrUsername (from the "New message" sheet).
   const openWith = useCallback(async (peerWallet) => {
@@ -626,6 +659,11 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
   // groups is the higher-value ask.
   const [replyingTo, setReplyingTo] = useState(null);
   const scrollRef = useRef(null);
+  // Day 8.4: hidden file input that the 📎 button triggers. Drives
+  // upload-then-send for image attachments. Direct DMs only — group
+  // chats don't go through the encrypted /send path.
+  const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   // Composer height — user-resizable via the drag handle that sits on
   // the top border of the composer form. 56px matches the baked-in
@@ -741,6 +779,8 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             conversationId: conv.id,
             encryptedPayload: enc.encryptedPayload,
             nonce: enc.nonce,
+            senderKeyFp: enc.senderKeyFp,
+            recipientKeyFp: enc.recipientKeyFp,
           },
         });
         onSent?.({
@@ -781,6 +821,38 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
     if (!body) return;
     try { await sendRaw(body); setText(""); } catch { /* handled above */ }
   }, [text, sendRaw]);
+
+  // Day 8.4: image attachment for direct DMs. Upload via the hardened
+  // /api/media/upload (5MB cap, magic-byte MIME allowlist, 10/day quota
+  // — Day 5.1) and send the resulting URL + mime as the encrypted
+  // message body. Image bytes themselves stay at the unencrypted host
+  // URL; we encrypt the *metadata* only. Tracked as v1.1 in
+  // docs/dm-crypto-review.md.
+  const onAttachImage = useCallback(async (file) => {
+    if (!file || conv?.kind !== "direct" || uploading || sending) return;
+    setUploading(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const resp = await apiFetch(`/api/media/upload`, { method: "POST", body: fd });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        // 413 (too big), 415 (bad MIME), 429 (quota) all bubble up the
+        // server's `error` string; show it inline in the composer.
+        throw new Error(data?.error || `upload failed (${resp.status})`);
+      }
+      // Encrypted body is JSON: the receiver detects this shape and
+      // renders <img>. Plain-text messages can't collide because they
+      // don't parse as a JSON object with both keys.
+      const payload = JSON.stringify({ url: data.url, mime: file.type || "image/*" });
+      await sendRaw(payload);
+    } catch (e) {
+      setErr(e.message || "upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }, [conv, uploading, sending, sendRaw]);
 
   // Attach a structured chip (token send, portfolio share, etc.) by
   // appending the encoded token to whatever's in the composer. If the
@@ -1173,15 +1245,36 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             + sheet, and desktop has plenty of horizontal space for all
             four. The .ix-msg-quick class is toggled by the block at
             the bottom of Thread. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            // Reset the value so picking the same file twice in a row
+            // still fires onChange. The async upload is fire-and-forget
+            // from this handler's perspective.
+            e.target.value = "";
+            if (f) onAttachImage(f);
+          }}
+        />
         <button
           type="button"
-          onClick={() => alert("Attach an image — comes with the media upload pass in the next build.")}
+          onClick={() => {
+            if (conv?.kind !== "direct") {
+              setErr("Image attachments are direct-DM only for now.");
+              return;
+            }
+            fileInputRef.current?.click();
+          }}
+          disabled={uploading || sending}
           aria-label="Attach image"
-          title="Attach image"
+          title={uploading ? "Uploading…" : "Attach image"}
           className="ix-msg-quick"
           style={composerIconBtn(t)}
         >
-          <ImageIcon size={16} />
+          {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
         </button>
         <button
           type="button"
@@ -1353,7 +1446,24 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
   if (!body) {
     if (conv.kind === "direct") {
       if (keypair && conv.peer?.dmPubkey && m.encrypted_payload && m.nonce) {
-        body = naclDecrypt(m.encrypted_payload, m.nonce, conv.peer.dmPubkey, keypair) || "[unable to decrypt]";
+        // Day 8.3: pick the secret half by fingerprint. The current
+        // keypair handles every message until we rotate; after a
+        // rotation, getKeypairByFp finds older keys in localStorage
+        // history. If nothing matches (cleared site data, fresh
+        // device), we render a graceful placeholder instead of the
+        // ambiguous "[unable to decrypt]".
+        let kp = keypair;
+        if (m.recipient_key_fp && m.recipient_key_fp !== keypair.fp) {
+          kp = getKeypairByFp(wallet, m.recipient_key_fp);
+        }
+        if (!kp) {
+          body = "[encrypted with rotated key]";
+        } else {
+          body = naclDecrypt(m.encrypted_payload, m.nonce, conv.peer.dmPubkey, kp)
+            || (m.sender_key_fp && m.sender_key_fp !== keyFingerprint(conv.peer.dmPubkey)
+                ? "[encrypted with rotated key]"
+                : "[unable to decrypt]");
+        }
       } else {
         body = "[encrypted]";
       }
@@ -1362,10 +1472,26 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
     }
   }
 
+  // Day 8.4: image attachment. Sender encodes `{ url, mime }` as JSON
+  // and encrypts; if the decrypted body parses as that shape, we render
+  // the image inline instead of running the chip/entity pipeline. Plain
+  // text never collides — JSON.parse on free-form text either throws
+  // or yields a non-object.
+  const attachment = useMemo(() => {
+    if (!body || body[0] !== "{") return null;
+    try {
+      const obj = JSON.parse(body);
+      if (obj && typeof obj === "object" && typeof obj.url === "string" && typeof obj.mime === "string") {
+        return obj;
+      }
+    } catch {}
+    return null;
+  }, [body]);
+
   // Parse the body into segments so chip tokens render as rich cards
   // and plain URLs/addresses become inline entity pills. A bubble can
   // hold any mix of text + entity + chip segments.
-  const segs = useMemo(() => splitBody(body), [body]);
+  const segs = useMemo(() => attachment ? [] : splitBody(body), [attachment, body]);
   const hasOnlyChips = segs.length && segs.every((s) => s.kind === "chip");
 
   // When a bubble is JUST a chip, skip the gradient wrapper and let
@@ -1471,14 +1597,43 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
             </div>
           </div>
         )}
-        <BodySegments segs={segs} t={t} isMine={isMine} />
+        {attachment ? (
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: "block", lineHeight: 0 }}
+          >
+            <img
+              src={attachment.url}
+              alt="attachment"
+              style={{
+                maxWidth: "100%",
+                maxHeight: 320,
+                borderRadius: 10,
+                display: "block",
+              }}
+            />
+          </a>
+        ) : (
+          <BodySegments segs={segs} t={t} isMine={isMine} />
+        )}
         {!hasOnlyChips && (
           <div style={{
             fontSize: 10, opacity: 0.7, marginTop: 4,
             display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 3,
           }}>
             {formatTime(m.created_at)}
-            {isMine && m.read_at && <CheckCheck size={10} />}
+            {/* Day 8.2 ticks (1:1 DMs only — group messages don't have
+                per-recipient state). Single-tick = sent, double-tick
+                = delivered, filled double-tick = read. */}
+            {isMine && conv.kind === "direct" && (
+              m.read_at
+                ? <CheckCheck size={10} style={{ color: "#22d3ee", opacity: 1 }} />
+                : m.delivered_at
+                  ? <CheckCheck size={10} />
+                  : <Check size={10} />
+            )}
           </div>
         )}
       </div>

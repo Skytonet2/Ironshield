@@ -9,6 +9,7 @@ const { getOrCreateUser } = require("../services/feedHelpers");
 const requireWallet = require("../middleware/requireWallet");
 const agent = require("../services/agentConnector");
 const feedHub = require("../ws/feedHub");
+const eventBus = require("../services/eventBus");
 
 // Group @handle rules: 3–24 chars, lowercase letters/digits/underscore.
 const HANDLE_RE = /^[a-z0-9_]{3,24}$/;
@@ -552,31 +553,83 @@ router.get("/:conversationId/messages", async (req, res, next) => {
       : "SELECT * FROM feed_dms WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 50";
     const params = cursor ? [cid, cursor] : [cid];
     const r = await db.query(sql, params);
+
+    // Day 8.2: catch the offline-then-online case. Mark any inbound
+    // messages we haven't yet acknowledged as delivered, and tell the
+    // sender so their bubble flips. Synchronous before responding so
+    // the client's first render already shows delivered state for its
+    // own outbound messages once the sender's WS event arrives.
+    try {
+      const upd = await db.query(
+        `UPDATE feed_dms SET delivered_at=NOW()
+         WHERE conversation_id=$1 AND to_id=$2 AND delivered_at IS NULL
+         RETURNING id, from_id, delivered_at`,
+        [cid, me.id]
+      );
+      if (upd.rows.length) {
+        const byFrom = new Map();
+        for (const row of upd.rows) {
+          if (!byFrom.has(row.from_id)) byFrom.set(row.from_id, []);
+          byFrom.get(row.from_id).push(row.id);
+          for (const m of r.rows) if (m.id === row.id) m.delivered_at = row.delivered_at;
+        }
+        const senders = await db.query(
+          "SELECT id, wallet_address FROM feed_users WHERE id = ANY($1)",
+          [[...byFrom.keys()]]
+        );
+        for (const s of senders.rows) {
+          if (s.wallet_address) {
+            feedHub.publish(s.wallet_address, {
+              type: "dm:state",
+              conversationId: cid,
+              messageIds: byFrom.get(s.id),
+              state: "delivered",
+              at: upd.rows[0].delivered_at,
+            });
+          }
+        }
+      }
+    } catch { /* best-effort */ }
+
     res.json({ messages: r.rows });
   } catch (e) { next(e); }
 });
 
-// POST /api/dm/send  body: { conversationId, encryptedPayload, nonce }
+// POST /api/dm/send  body: { conversationId, encryptedPayload, nonce,
+//                              senderKeyFp?, recipientKeyFp? }
 router.post("/send", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
-    const { conversationId, encryptedPayload, nonce } = req.body || {};
+    const { conversationId, encryptedPayload, nonce, senderKeyFp, recipientKeyFp } = req.body || {};
     if (!encryptedPayload || !nonce) return res.status(400).json({ error: "encryptedPayload + nonce required" });
+    // Day 8.3 fingerprints are advisory metadata — clients may omit
+    // them (older builds) and the message is still encrypted/decryptable
+    // via the currently-published dm_pubkey. Tight bound + lowercase
+    // hex shape check so a malicious client can't shove pages of junk.
+    const fpOk = (v) => v == null || (typeof v === "string" && /^[0-9a-f]{8,32}$/.test(v));
+    if (!fpOk(senderKeyFp) || !fpOk(recipientKeyFp)) {
+      return res.status(400).json({ error: "invalid key fingerprint" });
+    }
     const conv = await db.query("SELECT * FROM feed_conversations WHERE id=$1", [conversationId]);
     if (!conv.rows.length) return res.status(404).json({ error: "conversation not found" });
     const c = conv.rows[0];
     if (c.participant_a !== me.id && c.participant_b !== me.id) return res.status(403).json({ error: "not a participant" });
     const toId = c.participant_a === me.id ? c.participant_b : c.participant_a;
     const r = await db.query(
-      `INSERT INTO feed_dms (conversation_id, from_id, to_id, encrypted_payload, nonce)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [conversationId, me.id, toId, encryptedPayload, nonce]);
+      `INSERT INTO feed_dms (conversation_id, from_id, to_id, encrypted_payload, nonce, sender_key_fp, recipient_key_fp)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [conversationId, me.id, toId, encryptedPayload, nonce, senderKeyFp || null, recipientKeyFp || null]);
     await db.query("UPDATE feed_conversations SET last_message_at=NOW() WHERE id=$1", [conversationId]);
 
     // Live WS push to the recipient's authed sockets. Replaces the 30s
     // poll on /api/dm/conversations the AppShell used to run. Body is
     // ciphertext-only — server can't read it — so the event carries
     // just routing metadata; the client refetches the conversation.
+    //
+    // Day 8.2: if the recipient has a live socket, mark delivered_at
+    // immediately and emit dm:state back to the sender so their bubble
+    // flips from single-tick to double-tick. Offline recipients pick
+    // this up on their next GET /messages.
     try {
       const peer = await db.query("SELECT wallet_address FROM feed_users WHERE id=$1", [toId]);
       const peerWallet = peer.rows[0]?.wallet_address;
@@ -587,6 +640,31 @@ router.post("/send", requireWallet, async (req, res, next) => {
           fromId: me.id,
           messageId: r.rows[0].id,
         });
+        // Day 12.2: surface to the in-process bus so a recipient's
+        // event-trigger automation ({type:"event", channel:"dm.received",
+        // filter:{ to_wallet: "<their wallet>" }}) can act on inbound
+        // DMs without a server poll. Body stays encrypted — only
+        // routing metadata travels.
+        try { eventBus.emit("dm.received", {
+          conversationId, fromId: me.id, toId,
+          from_wallet: req.wallet, to_wallet: peerWallet, messageId: r.rows[0].id,
+        }); } catch { /* best-effort */ }
+        if (feedHub.hasAuthedSocket(peerWallet)) {
+          const upd = await db.query(
+            "UPDATE feed_dms SET delivered_at=NOW() WHERE id=$1 AND delivered_at IS NULL RETURNING delivered_at",
+            [r.rows[0].id]
+          );
+          if (upd.rows[0]) {
+            r.rows[0].delivered_at = upd.rows[0].delivered_at;
+            feedHub.publish(me.wallet_address, {
+              type: "dm:state",
+              conversationId,
+              messageIds: [r.rows[0].id],
+              state: "delivered",
+              at: upd.rows[0].delivered_at,
+            });
+          }
+        }
       }
     } catch { /* best-effort */ }
 
@@ -654,9 +732,41 @@ router.post("/send", requireWallet, async (req, res, next) => {
 router.post("/:conversationId/read", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
-    await db.query(
-      "UPDATE feed_dms SET read_at=NOW() WHERE conversation_id=$1 AND to_id=$2 AND read_at IS NULL",
-      [req.params.conversationId, me.id]);
+    const cid = req.params.conversationId;
+    // Day 8.2: RETURNING the affected rows lets us fan out a dm:state
+    // event to each unique sender so their bubbles flip to "read"
+    // within ~1s. Multiple senders is rare (1:1 conv) but we group
+    // anyway — the same logic powers the offline-fetch delivered
+    // fanout above.
+    const upd = await db.query(
+      `UPDATE feed_dms SET read_at=NOW()
+       WHERE conversation_id=$1 AND to_id=$2 AND read_at IS NULL
+       RETURNING id, from_id, read_at`,
+      [cid, me.id]);
+    if (upd.rows.length) {
+      try {
+        const byFrom = new Map();
+        for (const row of upd.rows) {
+          if (!byFrom.has(row.from_id)) byFrom.set(row.from_id, []);
+          byFrom.get(row.from_id).push(row.id);
+        }
+        const senders = await db.query(
+          "SELECT id, wallet_address FROM feed_users WHERE id = ANY($1)",
+          [[...byFrom.keys()]]
+        );
+        for (const s of senders.rows) {
+          if (s.wallet_address) {
+            feedHub.publish(s.wallet_address, {
+              type: "dm:state",
+              conversationId: parseInt(cid, 10),
+              messageIds: byFrom.get(s.id),
+              state: "read",
+              at: upd.rows[0].read_at,
+            });
+          }
+        }
+      } catch { /* best-effort */ }
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

@@ -26,6 +26,7 @@ const { connect, keyStores, providers } = require("near-api-js");
 const { getAgentAccount }                                        = require("./nearSigner");
 const { pushProposalCreated, pushProposalFinalized, pushProposalExecuted } = require("./governancePusher");
 const agentState = require("../db/agentState");
+const eventBus   = require("./eventBus");
 
 // Fail loud if creds the aggregator absolutely needs are missing. Render
 // will surface a non-zero exit and email the operator. Better than the
@@ -133,6 +134,14 @@ async function tryAnnounce(proposals, state) {
     if (p.executed && !has(state.announcedIds.executed, p.id)) {
       try { await pushProposalExecuted(p); } catch (e) { console.error("[pusher] executed:", e.message); }
       remember(state.announcedIds.executed, p.id);
+      // Day 12.2: surface to the in-process bus so event-trigger
+      // automations ({type:"event", channel:"proposal.executed"}) fire
+      // alongside the existing TG/runtime side-effects. Same dedupe
+      // window — we only emit the first time we observe `executed`.
+      try { eventBus.emit("proposal.executed", {
+        id: p.id, title: p.title, proposal_type: p.proposal_type,
+        passed: p.passed, executed: true,
+      }); } catch (e) { console.error("[eventBus] proposal.executed:", e.message); }
     }
   }
 }

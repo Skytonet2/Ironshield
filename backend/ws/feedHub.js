@@ -187,4 +187,16 @@ function stats() {
   return { clients: clients.size, wallets: walletIndex.size };
 }
 
-module.exports = { attach, broadcast, publish, stats };
+// True if any socket is currently authed for `wallet` and OPEN. Day 8.2
+// uses this to decide whether a freshly-sent DM was actually delivered
+// to the recipient's client (so the sender can flip "sent" → "delivered").
+function hasAuthedSocket(wallet) {
+  const set = walletIndex.get(String(wallet || "").toLowerCase().trim());
+  if (!set) return false;
+  for (const { ws } of set) {
+    if (ws.readyState === ws.OPEN) return true;
+  }
+  return false;
+}
+
+module.exports = { attach, broadcast, publish, hasAuthedSocket, stats };

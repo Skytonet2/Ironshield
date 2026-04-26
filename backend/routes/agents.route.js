@@ -9,11 +9,23 @@
 // Mounted under /api/agents.
 
 const router = require("express").Router();
+const db       = require("../db/client");
 const adapters = require("../services/agents");
 const store    = require("../services/agents/connectionStore");
 const automationStore   = require("../services/agents/automationStore");
 const automationExecutor = require("../services/agents/automationExecutor");
 const requireWallet = require("../middleware/requireWallet");
+
+// Day 12.4 quota. Admins (admin_wallets row) bypass; Day 18 Pro tier
+// will lift this for paying users. Constant rather than config so
+// behaviour is auditable from source.
+const AUTOMATION_QUOTA_PER_WALLET = 10;
+async function isQuotaAdmin(wallet) {
+  try {
+    const r = await db.query("SELECT 1 FROM admin_wallets WHERE wallet = $1 LIMIT 1", [wallet]);
+    return r.rows.length > 0;
+  } catch { return false; }
+}
 
 // ── GET /api/agents/frameworks
 // Public list of supported frameworks for the wizard's framework picker.
@@ -189,6 +201,18 @@ router.post("/automations", requireWallet, async (req, res) => {
   if (!agent_account || !name || !trigger || !action) {
     return res.status(400).json({ error: "agent_account, name, trigger, action required" });
   }
+  // Day 12.4 quota. Counts both enabled + disabled rules so disabled
+  // entries can't be used as a sneak-around. Admins bypass.
+  if (!(await isQuotaAdmin(wallet))) {
+    const used = await automationStore.countByOwner(wallet).catch(() => 0);
+    if (used >= AUTOMATION_QUOTA_PER_WALLET) {
+      return res.status(429).json({
+        error: "automation-quota-exceeded",
+        used, cap: AUTOMATION_QUOTA_PER_WALLET,
+        hint: "Delete an existing automation or upgrade in /rewards (Pro lifts the cap).",
+      });
+    }
+  }
   try {
     const row = await automationStore.create({
       owner: wallet, agent_account, name, description, trigger, action, enabled,
@@ -222,6 +246,38 @@ router.delete("/automations/:id", requireWallet, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Day 12.4 dry-run. Returns what *would* fire — trigger + action +
+// predicted AI cost — without executing the action. Echoes the rule
+// rather than running through the executor so there's no side
+// effect: no LLM call, no webhook out, no run row. Predicted cost is
+// 0 for everything except ask_agent (and even there, the live agent
+// price is variable; we surface the configured ceiling so the UI can
+// warn before the user hits Save).
+router.post("/automations/:id/dry-run", requireWallet, async (req, res) => {
+  const wallet = req.wallet;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
+  let rule;
+  try { rule = await automationStore.findOne(id, wallet); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
+  if (!rule) return res.status(404).json({ error: "Not found" });
+
+  const action = rule.action || {};
+  const predictedCostUsd = action.type === "ask_agent"
+    ? Number(process.env.AI_DRYRUN_BUDGET_USD || 0.005)
+    : 0;
+  res.json({
+    dry_run: true,
+    automation_id: rule.id,
+    trigger: rule.trigger,
+    action,
+    predicted_cost_usd: predictedCostUsd,
+    note: action.type === "ask_agent"
+      ? "ask_agent dry-run does not call the LLM; predicted_cost_usd is the per-call ceiling, not a charge."
+      : "no side effects; nothing executed.",
+  });
 });
 
 // Manual fire: useful for testing a rule from the dashboard.
