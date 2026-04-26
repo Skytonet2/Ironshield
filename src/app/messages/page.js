@@ -1446,21 +1446,32 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
   if (!body) {
     if (conv.kind === "direct") {
       if (keypair && conv.peer?.dmPubkey && m.encrypted_payload && m.nonce) {
-        // Day 8.3: pick the secret half by fingerprint. The current
-        // keypair handles every message until we rotate; after a
-        // rotation, getKeypairByFp finds older keys in localStorage
-        // history. If nothing matches (cleared site data, fresh
-        // device), we render a graceful placeholder instead of the
-        // ambiguous "[unable to decrypt]".
+        // Day 8.3 + DM-decrypt fix: pick the secret half by fingerprint,
+        // but pick the RIGHT fingerprint based on direction. For an
+        // incoming message I'm the recipient, so my fp is
+        // recipient_key_fp; for an outgoing one I'm the sender, so my
+        // fp is sender_key_fp. The previous version always looked up
+        // recipient_key_fp, which for outgoing messages is the PEER's
+        // fingerprint — never in my local key history — and produced a
+        // false "rotated key" placeholder for every sent message after
+        // a page reload (when the in-memory _decrypted plaintext was
+        // gone).
+        //
+        // NaCl box's shared secret is symmetric: box.open(cipher, nonce,
+        // peerPub, mySecret) works for both directions, so once we pick
+        // the right "my keypair" the existing decrypt call is fine.
+        const myKeyFp   = isMine ? m.sender_key_fp    : m.recipient_key_fp;
+        const peerKeyFp = isMine ? m.recipient_key_fp : m.sender_key_fp;
+
         let kp = keypair;
-        if (m.recipient_key_fp && m.recipient_key_fp !== keypair.fp) {
-          kp = getKeypairByFp(wallet, m.recipient_key_fp);
+        if (myKeyFp && myKeyFp !== keypair.fp) {
+          kp = getKeypairByFp(wallet, myKeyFp);
         }
         if (!kp) {
           body = "[encrypted with rotated key]";
         } else {
           body = naclDecrypt(m.encrypted_payload, m.nonce, conv.peer.dmPubkey, kp)
-            || (m.sender_key_fp && m.sender_key_fp !== keyFingerprint(conv.peer.dmPubkey)
+            || (peerKeyFp && peerKeyFp !== keyFingerprint(conv.peer.dmPubkey)
                 ? "[encrypted with rotated key]"
                 : "[unable to decrypt]");
         }
