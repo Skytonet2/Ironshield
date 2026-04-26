@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "e2e": "playwright test",
     "bot": "node bot/index.js",
     "backend": "node backend/server.js",
     "governance": "node backend/services/governanceListener.js",
@@ -70,6 +71,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.2"
   }
