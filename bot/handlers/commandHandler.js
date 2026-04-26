@@ -15,6 +15,7 @@ const watch     = require("../commands/watch");
 const tip       = require("../commands/tip");
 const digest    = require("../commands/digest");
 const custodial = require("../commands/custodial");
+const vote      = require("../commands/vote");
 
 function escapeMarkdownV2(text) {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
@@ -50,6 +51,7 @@ const COMMANDS = {
 
   "/alert":     alert.handle,
   "/tip":       tip.handle,
+  "/vote":      vote.handle,
 
   // Phase 7 — custodial trading account
   "/deposit":   custodial.handleDeposit,
@@ -89,6 +91,7 @@ async function helpHandler(bot, msg) {
 • /alert $TOKEN 10x — price alert (also 5%, above $X, below $X)
 • /tip @user 1 NEAR — send a tip
 • /digest — 24h summary (auto-sent 8 AM)
+• /vote — list active proposals; /vote <id> for detail
 
 🔍 *Research & Intel*
 • /research $TOKEN — token report
