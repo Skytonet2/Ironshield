@@ -267,9 +267,25 @@ function EmptyState({ t, label }) {
 }
 
 function resolveHref(n) {
-  if (n.type === "follow" && n.actor_username) return `/profile?username=${encodeURIComponent(n.actor_username)}`;
-  if (n.post_id) return `/feed?post=${encodeURIComponent(n.post_id)}`;
-  return "#";
+  // Follow → the follower's profile. Username is preferred (clean URL),
+  // wallet is the fallback when the actor has no handle yet.
+  if (n.type === "follow") {
+    if (n.actor_username) return `/profile?username=${encodeURIComponent(n.actor_username)}`;
+    if (n.actor_wallet)   return `/profile?address=${encodeURIComponent(n.actor_wallet)}`;
+    return "/feed";
+  }
+  // Like / comment / repost / mention / tip with a post → the full
+  // post view (which renders comments + author actions). The /feed
+  // homepage doesn't read ?post= so we land users on /post?id=N
+  // instead, where the comment thread is visible.
+  if (n.post_id) return `/post?id=${encodeURIComponent(n.post_id)}`;
+  // Tip without a post (e.g. profile tip) → tipper's profile if known.
+  if (n.type === "tip") {
+    if (n.actor_username) return `/profile?username=${encodeURIComponent(n.actor_username)}`;
+    if (n.actor_wallet)   return `/profile?address=${encodeURIComponent(n.actor_wallet)}`;
+  }
+  // Last resort — feed homepage instead of "#" so the click always does something.
+  return "/feed";
 }
 
 function timeAgo(iso) {
