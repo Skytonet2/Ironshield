@@ -6,6 +6,73 @@ const db = require("../db/client");
 const { getOrCreateUser } = require("../services/feedHelpers");
 const requireWallet = require("../middleware/requireWallet");
 
+// GET /api/profile/me — viewer's own profile, used by the onboarding
+// modal trigger. Includes `onboardedAt` so the frontend can decide
+// whether to show the welcome flow. Unsigned read keyed by x-wallet
+// header (matches /api/rewards/me posture).
+router.get("/me", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "x-wallet header required" });
+    const user = await getOrCreateUser(wallet);
+    res.json({
+      user: {
+        id: user.id,
+        walletAddress: user.wallet_address,
+        username: user.username,
+        displayName: user.display_name,
+        bio: user.bio,
+        pfpUrl: user.pfp_url,
+        bannerUrl: user.banner_url,
+        accountType: user.account_type,
+        verified: user.verified,
+        onboardedAt: user.onboarded_at || null,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/profile/onboard — atomic "save profile + mark onboarded".
+// Body matches PATCH /api/profile plus the implicit completion stamp.
+// Username + displayName required; pfpUrl and bannerUrl optional.
+// Wrapping in a transaction so a duplicate-username 409 doesn't leave
+// the user half-onboarded with their pfp set but no name.
+router.post("/onboard", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const username    = String(req.body?.username    || "").trim();
+    const displayName = String(req.body?.displayName || "").trim();
+    const pfpUrl      = req.body?.pfpUrl    ? String(req.body.pfpUrl)    : null;
+    const bannerUrl   = req.body?.bannerUrl ? String(req.body.bannerUrl) : null;
+
+    if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) {
+      return res.status(400).json({
+        error: "Username must be 3–24 chars of letters, digits, or underscore.",
+      });
+    }
+    if (displayName.length < 1 || displayName.length > 40) {
+      return res.status(400).json({ error: "Display name must be 1–40 characters." });
+    }
+
+    const r = await db.query(
+      `UPDATE feed_users SET
+         username     = $2,
+         display_name = $3,
+         pfp_url      = COALESCE($4, pfp_url),
+         banner_url   = COALESCE($5, banner_url),
+         onboarded_at = NOW()
+       WHERE id=$1 RETURNING *`,
+      [user.id, username, displayName, pfpUrl, bannerUrl]
+    );
+    res.json({ user: r.rows[0] });
+  } catch (e) {
+    if (String(e.message).includes("duplicate") || String(e.code) === "23505") {
+      return res.status(409).json({ error: "Username taken" });
+    }
+    next(e);
+  }
+});
+
 // GET /api/profile/:walletOrUsername
 router.get("/:key", async (req, res, next) => {
   try {

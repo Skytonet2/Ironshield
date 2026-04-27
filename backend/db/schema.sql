@@ -426,6 +426,17 @@ ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS staked_amount     NUMERIC(40,18)
 -- column only carries the offline "last seen" timestamp.
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_seen_at      TIMESTAMPTZ;
 
+-- Onboarding completion timestamp. NULL = first-time user; needs to
+-- run through the username/display-name/pfp/banner setup modal. Set
+-- by POST /api/profile/onboard once the modal submits.
+--
+-- Existing rows pre-migration are NULL by default. They'll see the
+-- modal once on next visit — that's a feature, not a bug: they have
+-- auto-generated usernames + display names from their wallet prefix
+-- and the modal is their chance to set real ones. They can submit
+-- with whatever values are pre-filled if they like the defaults.
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS onboarded_at      TIMESTAMPTZ;
+
 -- Referral system. ref_code is the user's invite code (auto-generated
 -- on first /api/rewards/me; customizable via POST /api/rewards/ref-code).
 -- referrer_id points back to the inviter once

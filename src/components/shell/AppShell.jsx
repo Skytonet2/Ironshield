@@ -26,6 +26,7 @@ import { usePWA } from "@/lib/usePWA";
 import * as wsClient from "@/lib/ws/wsClient";
 import { fetchWsTicket } from "@/lib/wsTicket";
 import NotificationsDrawer from "@/components/notifications/NotificationsDrawer";
+import OnboardingModal from "@/components/onboarding/OnboardingModal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BrandMark } from "@/components/brand/Brand";
@@ -890,6 +891,46 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
     return () => { alive = false; off(); };
   }, [walletAddress]);
 
+  // First-time onboarding modal trigger. On wallet connect, ask the
+  // backend whether this user has completed setup. If onboarded_at is
+  // null we surface the modal once; submission stamps it server-side.
+  // Ignoring the modal (clicking "Later") leaves the column null so
+  // the prompt returns next visit — that's intentional.
+  const [onboardingNeeded, setOnboardingNeeded] = useState(false);
+  const [onboardingInitial, setOnboardingInitial] = useState(null);
+  useEffect(() => {
+    if (!walletAddress) { setOnboardingNeeded(false); return; }
+    let alive = true;
+    const API = (() => {
+      if (process.env.NEXT_PUBLIC_BACKEND_URL) return process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/+$/, "");
+      if (typeof window !== "undefined") {
+        const h = window.location.hostname;
+        if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3001";
+      }
+      return "https://ironclaw-backend.onrender.com";
+    })();
+    (async () => {
+      try {
+        const r = await fetch(`${API}/api/profile/me`, {
+          headers: { "x-wallet": walletAddress },
+        });
+        if (!r.ok || !alive) return;
+        const j = await r.json();
+        if (!j?.user) return;
+        if (!j.user.onboardedAt) {
+          setOnboardingInitial({
+            username: j.user.username || "",
+            displayName: j.user.displayName || j.user.username || "",
+            pfpUrl: j.user.pfpUrl || "",
+            bannerUrl: j.user.bannerUrl || "",
+          });
+          setOnboardingNeeded(true);
+        }
+      } catch { /* silent — non-critical UX */ }
+    })();
+    return () => { alive = false; };
+  }, [walletAddress]);
+
   // Authenticated WS connection for live DM + notification delivery.
   // Ticket is minted via signed REST per /api/auth/ws-ticket and
   // re-fetched on every reconnect; wsClient handles the auth handshake
@@ -1119,6 +1160,13 @@ export default function AppShell({ children, rightPanel = null, onAction }) {
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
       />
+      {onboardingNeeded && (
+        <OnboardingModal
+          initial={onboardingInitial}
+          onComplete={() => setOnboardingNeeded(false)}
+          onClose={() => setOnboardingNeeded(false)}
+        />
+      )}
       {note && (
         <div
           onClick={() => setNote(null)}
