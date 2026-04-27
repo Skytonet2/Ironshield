@@ -625,7 +625,7 @@ function MobileBottomNav({ pathname, onAction, unreadCount = 0, dmUnread = 0 }) 
   // the \`/\` hotkey and the hamburger drawer. The badge reads the
   // shared unread count polled by useNotifications in AppShell.
   const items = [
-    { key: "home",      label: "Home",   Icon: Home,          kind: "link",   href: "/"        },
+    { key: "home",      label: "Home",   Icon: Home,          kind: "link",   href: "/feed"    },
     { key: "alerts",    label: "Alerts", Icon: Bell,          kind: "action", action: "notifications", badge: unreadCount },
     { key: "post",      label: "",       Icon: Plus,          kind: "fab",    action: "post"   },
     { key: "messages",  label: "Chat",   Icon: MessageCircle, kind: "link",   href: "/messages", badge: dmUnread },
@@ -634,7 +634,7 @@ function MobileBottomNav({ pathname, onAction, unreadCount = 0, dmUnread = 0 }) 
   const activeKey = (() => {
     if (pathname?.startsWith("/profile"))  return "profile";
     if (pathname?.startsWith("/messages")) return "messages";
-    if (pathname === "/")                  return "home";
+    if (pathname?.startsWith("/feed"))     return "home";
     return null;
   })();
 
