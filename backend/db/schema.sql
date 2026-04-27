@@ -367,6 +367,53 @@ ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_post_tx TEXT;
 ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS onchain_tx TEXT;
 -- Day 8.2: per-message delivery state. read_at already exists.
 ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+-- v1.1: ciphertext envelope format version. 0 (or NULL) = legacy
+-- nacl.box bytes, no fingerprints. 1 = nacl.box bytes + sender/recipient
+-- fingerprints (Day 8.3 rows). Future versions slot in here without
+-- another schema change. Decoders branch on this column; legacy rows
+-- still decrypt via the v0 path.
+ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS format_version SMALLINT NOT NULL DEFAULT 0;
+
+-- v1.1: DM safety numbers (out-of-band pubkey verification). One row
+-- per (viewer, peer) — the viewer has compared the peer's pubkey
+-- fingerprint via a side channel and marked it as theirs. We store
+-- the fingerprint AT verify time so a later peer rotation surfaces
+-- as a mismatch ("their key changed since you verified") rather than
+-- silently grandfathering the new key.
+CREATE TABLE IF NOT EXISTS feed_dm_verifications (
+  viewer_wallet     TEXT NOT NULL,
+  peer_wallet       TEXT NOT NULL,
+  peer_pubkey_fp    TEXT NOT NULL,
+  verified_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (viewer_wallet, peer_wallet)
+);
+CREATE INDEX IF NOT EXISTS idx_dm_verifications_viewer ON feed_dm_verifications(viewer_wallet);
+
+-- v1.1: group-chat E2E (sender-keys flavor). Opt-in at group creation
+-- — owner mints a 32-byte symmetric key, wraps it via nacl.box to
+-- each member's dm_pubkey, and POSTs the wraps. Encrypted send/list
+-- branch on whether feed_group_messages.encrypted_content is set; the
+-- existing plaintext `content` column stays for legacy rows AND for
+-- groups that never opted in (existing groups continue to behave as
+-- before).
+ALTER TABLE feed_group_chats ADD COLUMN IF NOT EXISTS e2e_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE feed_group_messages ADD COLUMN IF NOT EXISTS encrypted_content TEXT;
+ALTER TABLE feed_group_messages ADD COLUMN IF NOT EXISTS nonce             TEXT;
+ALTER TABLE feed_group_messages ADD COLUMN IF NOT EXISTS sender_key_fp     TEXT;
+-- One wrapped copy of the group symmetric key per (group, member).
+-- The owner is the only writer (writes their wraps on creation, and
+-- writes new wraps when adding members). Members read their own row
+-- on first decrypt and cache the unwrapped key client-side.
+CREATE TABLE IF NOT EXISTS feed_group_keys (
+  group_id            INTEGER NOT NULL REFERENCES feed_group_chats(id) ON DELETE CASCADE,
+  user_id             INTEGER NOT NULL REFERENCES feed_users(id)       ON DELETE CASCADE,
+  wrapped_key         TEXT    NOT NULL,
+  wrap_nonce          TEXT    NOT NULL,
+  wrapped_by_pubkey   TEXT    NOT NULL,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_group_keys_user ON feed_group_keys(user_id);
 -- Day 8.3: per-message key fingerprints so the recipient can locate
 -- the matching secret key even after their wallet has rotated keys.
 -- 16-hex-char prefix of BLAKE2b(pubkey raw bytes); collision-resistant

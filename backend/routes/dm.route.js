@@ -122,7 +122,7 @@ router.get("/groups", async (req, res, next) => {
     const me = await getOrCreateUser(wallet);
     const r = await db.query(
       `SELECT g.id, g.name, g.handle, g.pfp_url, g.invite_token, g.created_by,
-              g.last_message_at,
+              g.last_message_at, g.e2e_enabled,
               COUNT(m.user_id)::int AS member_count
          FROM feed_group_chats g
          JOIN feed_group_chat_members mm ON mm.group_id = g.id AND mm.user_id = $1
@@ -141,6 +141,7 @@ router.get("/groups", async (req, res, next) => {
         inviteToken: x.created_by === me.id ? x.invite_token : null,
         isOwner: x.created_by === me.id,
         memberCount: x.member_count,
+        e2eEnabled: !!x.e2e_enabled,
         kind: "group",
       })),
     });
@@ -213,8 +214,12 @@ router.post("/groups", requireWallet, async (req, res, next) => {
 
     const pfpUrl = req.body?.pfpUrl ? String(req.body.pfpUrl).slice(0, 500) : null;
     const inviteToken = newInviteToken();
+    const e2eEnabled = !!req.body?.e2e;
 
     const memberInputs = Array.isArray(req.body?.members) ? req.body.members : [];
+    // Build a parallel list of resolved members so the owner can wrap
+    // the group key to each member's dm_pubkey on the next call. Set
+    // dedupes and we always include the owner themselves.
     const resolvedIds = new Set([me.id]);
     for (const entry of memberInputs.slice(0, 24)) {
       const q = String(entry || "").toLowerCase().trim();
@@ -226,9 +231,9 @@ router.post("/groups", requireWallet, async (req, res, next) => {
       if (u.rows[0]?.id) resolvedIds.add(u.rows[0].id);
     }
     const group = await db.query(
-      `INSERT INTO feed_group_chats (name, created_by, handle, pfp_url, invite_token)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [name, me.id, handle, pfpUrl, inviteToken]
+      `INSERT INTO feed_group_chats (name, created_by, handle, pfp_url, invite_token, e2e_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [name, me.id, handle, pfpUrl, inviteToken, e2eEnabled]
     );
     const gid = group.rows[0].id;
     for (const uid of resolvedIds) {
@@ -237,12 +242,102 @@ router.post("/groups", requireWallet, async (req, res, next) => {
         [gid, uid]
       );
     }
+    // For E2E groups, return each member's id + dm_pubkey so the
+    // owner client can wrap the group key per-member without another
+    // round-trip. Skip dm_pubkey-less members; they can't decrypt
+    // until they open Messages once and publish a key.
+    let members = [];
+    if (e2eEnabled) {
+      const r = await db.query(
+        "SELECT id, wallet_address, dm_pubkey FROM feed_users WHERE id = ANY($1)",
+        [[...resolvedIds]]
+      );
+      members = r.rows.map((m) => ({
+        id: m.id, wallet: m.wallet_address, dmPubkey: m.dm_pubkey,
+      }));
+    }
     res.json({
       group: {
         id: gid, name, handle, pfpUrl,
         inviteToken, isOwner: true,
         memberCount: resolvedIds.size, kind: "group",
+        e2eEnabled,
+        members, // populated only when e2eEnabled
       },
+    });
+  } catch (e) { next(e); }
+});
+
+// v1.1.1 — distribute the group key. Owner-only. Body: { wraps:
+// [{ userId, wrappedKey, wrapNonce, wrappedByPubkey }] }. Upserts so
+// the same call works on initial distribution and on re-wrap when a
+// new member joins.
+router.post("/groups/:groupId/key/distribute", requireWallet, async (req, res, next) => {
+  try {
+    const me = await getOrCreateUser(req.wallet);
+    const gid = parseInt(req.params.groupId, 10);
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+    const g = await db.query("SELECT created_by, e2e_enabled FROM feed_group_chats WHERE id=$1", [gid]);
+    if (!g.rows.length) return res.status(404).json({ error: "group not found" });
+    if (g.rows[0].created_by !== me.id) return res.status(403).json({ error: "only the owner can distribute keys" });
+    if (!g.rows[0].e2e_enabled) return res.status(409).json({ error: "group is not e2e-enabled" });
+
+    const wraps = Array.isArray(req.body?.wraps) ? req.body.wraps : [];
+    if (wraps.length === 0) return res.status(400).json({ error: "wraps array required" });
+
+    let written = 0;
+    for (const w of wraps) {
+      const userId = parseInt(w?.userId, 10);
+      const wk = String(w?.wrappedKey || "").trim();
+      const wn = String(w?.wrapNonce  || "").trim();
+      const wb = String(w?.wrappedByPubkey || "").trim();
+      if (!Number.isFinite(userId) || !wk || !wn || !wb) continue;
+      // Bound shape so a malicious owner can't shove pages of junk
+      // into their own group's key store.
+      if (wk.length > 200 || wn.length > 80 || wb.length > 80) continue;
+      // Member must actually be in the group; defends against an
+      // owner stuffing wraps for unrelated users.
+      const inGroup = await assertGroupMember(gid, userId);
+      if (!inGroup) continue;
+      await db.query(
+        `INSERT INTO feed_group_keys (group_id, user_id, wrapped_key, wrap_nonce, wrapped_by_pubkey)
+           VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (group_id, user_id)
+           DO UPDATE SET wrapped_key = EXCLUDED.wrapped_key,
+                         wrap_nonce  = EXCLUDED.wrap_nonce,
+                         wrapped_by_pubkey = EXCLUDED.wrapped_by_pubkey,
+                         created_at  = NOW()`,
+        [gid, userId, wk, wn, wb]
+      );
+      written++;
+    }
+    res.json({ ok: true, written });
+  } catch (e) { next(e); }
+});
+
+// v1.1.1 — fetch the caller's wrapped group key. The wrap was
+// nacl.box(group_key, wrap_nonce, recipient_dm_pubkey, owner_dm_secret),
+// so the caller decrypts via nacl.box.open with their dmCrypto secret
+// + the wrappedByPubkey. Returns 404 when the caller has no wrap (not
+// a member, or owner forgot to distribute).
+router.get("/groups/:groupId/key", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.status(401).json({ error: "x-wallet header required" });
+    const me = await getOrCreateUser(wallet);
+    const gid = parseInt(req.params.groupId, 10);
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+    if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
+    const r = await db.query(
+      "SELECT wrapped_key, wrap_nonce, wrapped_by_pubkey, created_at FROM feed_group_keys WHERE group_id=$1 AND user_id=$2 LIMIT 1",
+      [gid, me.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "no key distributed yet" });
+    res.json({
+      wrappedKey: r.rows[0].wrapped_key,
+      wrapNonce:  r.rows[0].wrap_nonce,
+      wrappedByPubkey: r.rows[0].wrapped_by_pubkey,
+      createdAt:  r.rows[0].created_at,
     });
   } catch (e) { next(e); }
 });
@@ -362,7 +457,8 @@ router.get("/groups/:groupId/messages", async (req, res, next) => {
     // the parent was deleted, ON DELETE SET NULL leaves reply_to_id
     // null — the UI falls back to "Replying to a deleted message."
     const r = await db.query(
-      `SELECT gm.id, gm.content, gm.created_at, gm.reply_to_id,
+      `SELECT gm.id, gm.content, gm.encrypted_content, gm.nonce, gm.sender_key_fp,
+              gm.created_at, gm.reply_to_id,
               u.wallet_address AS from_wallet,
               COALESCE(u.display_name, u.username, u.wallet_address) AS from_display,
               rm.content       AS reply_to_content,
@@ -382,11 +478,19 @@ router.get("/groups/:groupId/messages", async (req, res, next) => {
 });
 
 // POST /api/dm/groups/:groupId/send  body: { content, replyToId? }
+//   OR  body: { encryptedContent, nonce, senderKeyFp, replyToId? }
+//
+// E2E groups (e2e_enabled=true) require the encrypted shape — the
+// plaintext path is rejected for those. Non-E2E groups continue to
+// accept plaintext as before. This branching is what lets existing
+// groups stay fully backwards-compatible while new opt-in groups
+// land encrypted.
 router.post("/groups/:groupId/send", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
     const gid = parseInt(req.params.groupId, 10);
-    const content = String(req.body?.content || "").trim();
+    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
+
     // replyToId is optional; validate that it exists in the SAME group
     // so a member of group A can't reply into group B (info leak).
     let replyToId = null;
@@ -400,14 +504,40 @@ router.post("/groups/:groupId/send", requireWallet, async (req, res, next) => {
         if (r.rows[0]?.group_id === gid) replyToId = candidate;
       }
     }
-    if (!Number.isFinite(gid)) return res.status(400).json({ error: "invalid group id" });
-    if (!content) return res.status(400).json({ error: "content required" });
     if (!(await assertGroupMember(gid, me.id))) return res.status(403).json({ error: "not a group member" });
+
+    const groupRow = await db.query(
+      "SELECT e2e_enabled FROM feed_group_chats WHERE id=$1 LIMIT 1", [gid]
+    );
+    const e2e = !!groupRow.rows[0]?.e2e_enabled;
+
+    const encContent = req.body?.encryptedContent != null ? String(req.body.encryptedContent) : null;
+    const encNonce   = req.body?.nonce != null ? String(req.body.nonce) : null;
+    const senderKeyFp = req.body?.senderKeyFp != null ? String(req.body.senderKeyFp).toLowerCase() : null;
+    const plain = String(req.body?.content || "").trim();
+
+    if (e2e) {
+      if (!encContent || !encNonce) {
+        return res.status(400).json({ error: "encryptedContent + nonce required (e2e group)" });
+      }
+      if (senderKeyFp && !/^[0-9a-f]{8,32}$/.test(senderKeyFp)) {
+        return res.status(400).json({ error: "invalid sender key fingerprint" });
+      }
+    } else {
+      if (!plain) return res.status(400).json({ error: "content required" });
+    }
+
     const r = await db.query(
-      `INSERT INTO feed_group_messages (group_id, from_id, content, reply_to_id)
-       VALUES ($1,$2,$3,$4)
-       RETURNING id, content, created_at, reply_to_id`,
-      [gid, me.id, content.slice(0, 4000), replyToId]
+      `INSERT INTO feed_group_messages
+         (group_id, from_id, content, encrypted_content, nonce, sender_key_fp, reply_to_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id, content, encrypted_content, nonce, sender_key_fp, created_at, reply_to_id`,
+      [gid, me.id,
+       e2e ? null : plain.slice(0, 4000),
+       e2e ? encContent : null,
+       e2e ? encNonce   : null,
+       e2e ? senderKeyFp : null,
+       replyToId]
     );
     await db.query("UPDATE feed_group_chats SET last_message_at=NOW() WHERE id=$1", [gid]);
 
@@ -600,7 +730,7 @@ router.get("/:conversationId/messages", async (req, res, next) => {
 router.post("/send", requireWallet, async (req, res, next) => {
   try {
     const me = await getOrCreateUser(req.wallet);
-    const { conversationId, encryptedPayload, nonce, senderKeyFp, recipientKeyFp } = req.body || {};
+    const { conversationId, encryptedPayload, nonce, senderKeyFp, recipientKeyFp, formatVersion } = req.body || {};
     if (!encryptedPayload || !nonce) return res.status(400).json({ error: "encryptedPayload + nonce required" });
     // Day 8.3 fingerprints are advisory metadata — clients may omit
     // them (older builds) and the message is still encrypted/decryptable
@@ -610,15 +740,22 @@ router.post("/send", requireWallet, async (req, res, next) => {
     if (!fpOk(senderKeyFp) || !fpOk(recipientKeyFp)) {
       return res.status(400).json({ error: "invalid key fingerprint" });
     }
+    // v1.1.6: ciphertext envelope version. Default 0 (legacy bytes
+    // exactly as Day 8.x clients produced them). Clients stamping the
+    // current shape send 1. Anything outside [0, 16] is junk; reject.
+    const fv = formatVersion == null ? 0 : Number(formatVersion);
+    if (!Number.isInteger(fv) || fv < 0 || fv > 16) {
+      return res.status(400).json({ error: "invalid format version" });
+    }
     const conv = await db.query("SELECT * FROM feed_conversations WHERE id=$1", [conversationId]);
     if (!conv.rows.length) return res.status(404).json({ error: "conversation not found" });
     const c = conv.rows[0];
     if (c.participant_a !== me.id && c.participant_b !== me.id) return res.status(403).json({ error: "not a participant" });
     const toId = c.participant_a === me.id ? c.participant_b : c.participant_a;
     const r = await db.query(
-      `INSERT INTO feed_dms (conversation_id, from_id, to_id, encrypted_payload, nonce, sender_key_fp, recipient_key_fp)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [conversationId, me.id, toId, encryptedPayload, nonce, senderKeyFp || null, recipientKeyFp || null]);
+      `INSERT INTO feed_dms (conversation_id, from_id, to_id, encrypted_payload, nonce, sender_key_fp, recipient_key_fp, format_version)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [conversationId, me.id, toId, encryptedPayload, nonce, senderKeyFp || null, recipientKeyFp || null, fv]);
     await db.query("UPDATE feed_conversations SET last_message_at=NOW() WHERE id=$1", [conversationId]);
 
     // Live WS push to the recipient's authed sockets. Replaces the 30s
@@ -767,6 +904,70 @@ router.post("/:conversationId/read", requireWallet, async (req, res, next) => {
         }
       } catch { /* best-effort */ }
     }
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// v1.1 — DM safety numbers (out-of-band pubkey verification).
+//
+// GET /api/dm/verifications/:peerWallet — returns the viewer's
+//   verification state for `peerWallet`. Unsigned read (x-wallet
+//   header carries identity); the data here is non-sensitive
+//   (just a fingerprint the user themselves chose to record).
+router.get("/verifications/:peerWallet", async (req, res, next) => {
+  try {
+    const viewer = String(req.header("x-wallet") || "").toLowerCase().trim();
+    if (!viewer) return res.json({ verified: false, fpAtVerify: null, verifiedAt: null });
+    const peer = String(req.params.peerWallet || "").toLowerCase().trim();
+    if (!peer) return res.status(400).json({ error: "peerWallet required" });
+    const r = await db.query(
+      `SELECT peer_pubkey_fp, verified_at FROM feed_dm_verifications
+        WHERE viewer_wallet=$1 AND peer_wallet=$2 LIMIT 1`,
+      [viewer, peer]
+    );
+    if (!r.rows.length) return res.json({ verified: false, fpAtVerify: null, verifiedAt: null });
+    res.json({
+      verified: true,
+      fpAtVerify: r.rows[0].peer_pubkey_fp,
+      verifiedAt: r.rows[0].verified_at,
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /api/dm/verify body { peerWallet, peerPubkeyFp } — upsert.
+//   The fingerprint is the value the viewer just compared via a side
+//   channel; we trust the caller to send what they actually saw.
+router.post("/verify", requireWallet, async (req, res, next) => {
+  try {
+    const viewer = req.wallet;
+    const peer = String(req.body?.peerWallet || "").toLowerCase().trim();
+    const fp = String(req.body?.peerPubkeyFp || "").toLowerCase().trim();
+    if (!peer || !fp) return res.status(400).json({ error: "peerWallet + peerPubkeyFp required" });
+    if (!/^[0-9a-f]{8,32}$/.test(fp)) return res.status(400).json({ error: "invalid fingerprint" });
+    await db.query(
+      `INSERT INTO feed_dm_verifications (viewer_wallet, peer_wallet, peer_pubkey_fp)
+         VALUES ($1, $2, $3)
+       ON CONFLICT (viewer_wallet, peer_wallet)
+         DO UPDATE SET peer_pubkey_fp = EXCLUDED.peer_pubkey_fp,
+                       verified_at    = NOW()`,
+      [viewer, peer, fp]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// DELETE /api/dm/verify/:peerWallet — clear a verification (e.g. user
+// realizes they verified the wrong fp, or peer rotated and they want
+// to start over).
+router.delete("/verify/:peerWallet", requireWallet, async (req, res, next) => {
+  try {
+    const viewer = req.wallet;
+    const peer = String(req.params.peerWallet || "").toLowerCase().trim();
+    if (!peer) return res.status(400).json({ error: "peerWallet required" });
+    await db.query(
+      "DELETE FROM feed_dm_verifications WHERE viewer_wallet=$1 AND peer_wallet=$2",
+      [viewer, peer]
+    );
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
