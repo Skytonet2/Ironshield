@@ -16,6 +16,7 @@ import { primeViewerProfile } from "@/lib/hooks/useViewerProfile";
 import FollowButton from "@/components/profile/FollowButton";
 import ReferralCard from "@/components/profile/ReferralCard";
 import { apiFetch } from "@/lib/apiFetch";
+import { TipModal } from "@/components/TipModal";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -35,7 +36,7 @@ const TABS = [
 
 export default function ProfilePage() {
   const t = useTheme();
-  const { address: viewerAddress, showModal } = useWallet();
+  const { address: viewerAddress, showModal, selector } = useWallet();
 
   const [targetKey, setTargetKey] = useState(null);        // address OR username passed to the backend
   const [targetAddress, setTargetAddress] = useState(null); // wallet for self-profile detection
@@ -126,6 +127,74 @@ export default function ProfilePage() {
     if (!s) return null;
     return s.length > 14 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s;
   }, [profile, targetAddress]);
+
+  // ── Post action handlers (like/repost/comment/tip) ─────────────────
+  // Profile page used to render FeedCard with no handlers, so the
+  // metric buttons silently no-oped. Mirror feed/page.js patterns —
+  // optimistic UI with rollback on error.
+  const patchPost = useCallback((id, patch) => {
+    setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  }, []);
+  const onLike = useCallback(async (post) => {
+    if (!viewerAddress) { showModal?.(); return; }
+    const next = !post.likedByMe;
+    patchPost(post.id, {
+      likedByMe: next,
+      likes: Math.max(0, (post.likes || 0) + (next ? 1 : -1)),
+    });
+    try {
+      await apiFetch(`/api/social/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id, on: next }),
+      });
+    } catch {
+      patchPost(post.id, { likedByMe: post.likedByMe, likes: post.likes });
+    }
+  }, [viewerAddress, showModal, patchPost]);
+  const onRepost = useCallback(async (post) => {
+    if (!viewerAddress) { showModal?.(); return; }
+    const next = !post.repostedByMe;
+    patchPost(post.id, {
+      repostedByMe: next,
+      reposts: Math.max(0, (post.reposts || 0) + (next ? 1 : -1)),
+    });
+    try {
+      await apiFetch(`/api/social/repost`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id, on: next }),
+      });
+    } catch {
+      patchPost(post.id, { repostedByMe: post.repostedByMe, reposts: post.reposts });
+    }
+  }, [viewerAddress, showModal, patchPost]);
+  const onReply = useCallback(async (post, text) => {
+    if (!viewerAddress) { showModal?.(); return; }
+    const content = String(text || "").trim().slice(0, 500);
+    if (!content) return;
+    try {
+      await apiFetch(`/api/social/comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id, content }),
+      });
+      patchPost(post.id, { comments: (post.comments || 0) + 1 });
+    } catch { /* swallow */ }
+  }, [viewerAddress, showModal, patchPost]);
+  const [tipPost, setTipPost] = useState(null);
+  const onTip = useCallback((post) => {
+    if (!viewerAddress) { showModal?.(); return; }
+    setTipPost(post);
+  }, [viewerAddress, showModal]);
+  const onTipped = useCallback((tip) => {
+    if (!tipPost) return;
+    patchPost(tipPost.id, {
+      tipCount:    (tipPost.tipCount    || 0) + 1,
+      tipTotalUsd: (tipPost.tipTotalUsd || 0) + Number(tip?.amountUsd || 0),
+    });
+    setTipPost(null);
+  }, [tipPost, patchPost]);
 
   if (!targetKey) {
     return (
@@ -316,7 +385,15 @@ export default function ProfilePage() {
           {!loading && tab !== "deployed" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {posts.map((p) => (
-                <FeedCard key={p.id} post={p} viewer={{ wallet_address: viewerAddress }} />
+                <FeedCard
+                  key={p.id}
+                  post={p}
+                  viewer={{ wallet_address: viewerAddress }}
+                  onLike={()        => onLike(p)}
+                  onRepost={()      => onRepost(p)}
+                  onTip={()         => onTip(p)}
+                  onReply={(text)   => onReply(p, text)}
+                />
               ))}
             </div>
           )}
@@ -378,6 +455,17 @@ export default function ProfilePage() {
           animation: ix-skel-shimmer 1.4s linear infinite;
         }
       `}</style>
+
+      {tipPost && (
+        <TipModal
+          post={tipPost}
+          wallet={viewerAddress}
+          selector={selector}
+          openWallet={() => showModal?.()}
+          onClose={() => setTipPost(null)}
+          onTipped={onTipped}
+        />
+      )}
     </AppShell>
   );
 }
