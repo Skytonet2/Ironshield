@@ -46,4 +46,23 @@ const tg = {
   agentConfirm: (body) => req("/api/tg/agent/confirm", { method: "POST", body }),
 };
 
-module.exports = { req, tg, BACKEND };
+// ─── Phase 10 — Agent Economy helpers ───────────────────────────────
+// Resolve an escalation when the owner taps Approve/Reject. The bot
+// authenticates via the orchestrator shared secret because the user
+// has already authenticated to TG and we trust the chat id ↔ wallet
+// linkage on the backend side.
+const economy = {
+  missions:        (wallet) => req(`/api/missions?mine=1`, { wallet }),
+  mission:         (id)     => req(`/api/missions/${id}`),
+  resolveEscalation: (id, decision, note, wallet) =>
+    req(`/api/escalations/${id}/resolve`, {
+      method: "POST",
+      body: { decision, note, source: "tg" },
+      wallet,
+      headers: process.env.ORCHESTRATOR_SHARED_SECRET
+        ? { "x-orchestrator-secret": process.env.ORCHESTRATOR_SHARED_SECRET }
+        : {},
+    }),
+};
+
+module.exports = { req, tg, economy, BACKEND };

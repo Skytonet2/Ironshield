@@ -16,6 +16,7 @@ const tip       = require("../commands/tip");
 const digest    = require("../commands/digest");
 const custodial = require("../commands/custodial");
 const vote      = require("../commands/vote");
+const missions  = require("../commands/missions");
 
 function escapeMarkdownV2(text) {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
@@ -65,6 +66,9 @@ const COMMANDS = {
   "/buy":       custodial.handleSwap,
   "/send":      custodial.handleSend,
   "/withdraw":  custodial.handleWithdraw,
+
+  // Phase 10 — Agent Economy
+  "/missions":  missions.handle,
 };
 
 async function helpHandler(bot, msg) {
