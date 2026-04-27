@@ -30,6 +30,9 @@ import {
   getOrCreateKeypair, exportPublicKey,
   encrypt as naclEncrypt, decrypt as naclDecrypt,
   getKeypairByFp, fingerprint as keyFingerprint,
+  generateAttachmentKey, encryptAttachmentBytes, decryptAttachmentBytes,
+  attachmentKeyToBase64, attachmentNonceToBase64,
+  getCachedGroupKey, cacheGroupKey, unwrapGroupKey, decryptGroup, encryptGroup,
 } from "@/lib/dmCrypto";
 import {
   splitBody, detectAutomationIntent, encodeChip,
@@ -702,6 +705,31 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
   // chats don't go through the encrypted /send path.
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  // v1.1.1 — symmetric key for the active E2E group, base64. Loaded
+  // on thread switch from cache → server-fetch+unwrap → null. Null
+  // means messages with encrypted_content render the "[no group key]"
+  // placeholder; the bubble respects that.
+  const [activeGroupKey, setActiveGroupKey] = useState(null);
+  useEffect(() => {
+    setActiveGroupKey(null);
+    if (!conv || conv.kind !== "group" || !conv.e2eEnabled || !wallet || !keypair) return;
+    let cancelled = false;
+    (async () => {
+      const cached = getCachedGroupKey(wallet, conv.id);
+      if (cached) { setActiveGroupKey(cached); return; }
+      try {
+        const r = await api(`/api/dm/groups/${conv.id}/key`, { wallet });
+        if (cancelled) return;
+        if (!r?.wrappedKey) return;
+        const sym = unwrapGroupKey(keypair, r.wrappedKey, r.wrapNonce, r.wrappedByPubkey);
+        if (sym) {
+          cacheGroupKey(wallet, conv.id, sym);
+          setActiveGroupKey(sym);
+        }
+      } catch { /* leave null — bubbles render the placeholder */ }
+    })();
+    return () => { cancelled = true; };
+  }, [conv?.id, conv?.kind, conv?.e2eEnabled, wallet, keypair]);
 
   // Composer height — user-resizable via the drag handle that sits on
   // the top border of the composer form. 56px matches the baked-in
@@ -819,6 +847,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             nonce: enc.nonce,
             senderKeyFp: enc.senderKeyFp,
             recipientKeyFp: enc.recipientKeyFp,
+            formatVersion: enc.formatVersion,
           },
         });
         onSent?.({
@@ -828,21 +857,43 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
         });
       } else if (conv.kind === "group") {
         const replyToId = replyingTo?.id || null;
+        // v1.1.1 — E2E groups go through encryptGroup with the cached
+        // symmetric key. Plaintext groups keep the existing path. The
+        // server enforces the same branching from its side, so a
+        // plaintext send to an e2e group fails fast with a clear error.
+        let payload;
+        if (conv.e2eEnabled) {
+          if (!activeGroupKey) {
+            throw new Error("Group key not loaded yet. Wait a moment or reopen the thread.");
+          }
+          const enc = encryptGroup(body, activeGroupKey, keypair);
+          payload = {
+            encryptedContent: enc.encryptedContent,
+            nonce: enc.nonce,
+            senderKeyFp: enc.senderKeyFp,
+            ...(replyToId ? { replyToId } : {}),
+          };
+        } else {
+          payload = { content: body, ...(replyToId ? { replyToId } : {}) };
+        }
         const r = await api(`/api/dm/groups/${conv.id}/send`, {
           method: "POST", wallet,
-          body: { content: body, ...(replyToId ? { replyToId } : {}) },
+          body: payload,
         });
         // Synthesize the quoted-preview fields the render path expects
         // so the just-sent bubble shows its quote without waiting for
         // the next refetch. The backend SELECT will populate these
         // naturally on reload.
+        const baseMsg = conv.e2eEnabled
+          ? { ...r.message, _decrypted: body } // skip re-decrypt on render
+          : r.message;
         const hydrated = replyToId ? {
-          ...r.message,
+          ...baseMsg,
           reply_to_id:      replyToId,
           reply_to_content: replyingTo.content,
           reply_to_display: replyingTo.from_display,
           reply_to_wallet:  replyingTo.from_wallet,
-        } : r.message;
+        } : baseMsg;
         onSent?.(hydrated);
         setReplyingTo(null);
       }
@@ -852,7 +903,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
     } finally {
       setSending(false);
     }
-  }, [conv, wallet, keypair, sending, onSent, replyingTo]);
+  }, [conv, wallet, keypair, sending, onSent, replyingTo, activeGroupKey]);
 
   const send = useCallback(async () => {
     const body = text.trim();
@@ -860,30 +911,47 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
     try { await sendRaw(body); setText(""); } catch { /* handled above */ }
   }, [text, sendRaw]);
 
-  // Day 8.4: image attachment for direct DMs. Upload via the hardened
-  // /api/media/upload (5MB cap, magic-byte MIME allowlist, 10/day quota
-  // — Day 5.1) and send the resulting URL + mime as the encrypted
-  // message body. Image bytes themselves stay at the unencrypted host
-  // URL; we encrypt the *metadata* only. Tracked as v1.1 in
-  // docs/dm-crypto-review.md.
+  // v1.1.5 — image attachment for direct DMs with full byte encryption.
+  //
+  // Day 8.4 only encrypted the URL — the bytes sat at a public host
+  // unencrypted, so anyone with the URL could fetch the image. Now
+  // the sender mints a per-message symmetric key + nonce, encrypts
+  // the file bytes via nacl.secretbox before upload, and embeds the
+  // symmetric key in the dmCrypto-encrypted message body so only the
+  // recipient can recover it.
+  //
+  // Server side: /api/media/upload?encrypted=1 skips the magic-byte
+  // MIME check + sharp/EXIF strip (the bytes are opaque ciphertext)
+  // but keeps the size cap, daily quota, and host cascade.
+  //
+  // Recipient flow lives in MessageBubble: detects attachKey on the
+  // decrypted body, fetches ciphertext, decrypts to a Blob, renders
+  // via blob URL. Backwards compat with Day 8.4: bodies without
+  // attachKey still render as a plain <img src={url}>.
   const onAttachImage = useCallback(async (file) => {
     if (!file || conv?.kind !== "direct" || uploading || sending) return;
     setUploading(true);
     setErr(null);
     try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const { key, nonce } = generateAttachmentKey();
+      const ciphertext = encryptAttachmentBytes(buf, key, nonce);
+      const blob = new Blob([ciphertext], { type: "application/octet-stream" });
       const fd = new FormData();
-      fd.append("file", file);
-      const resp = await apiFetch(`/api/media/upload`, { method: "POST", body: fd });
+      fd.append("file", blob, "ciphertext.bin");
+      const resp = await apiFetch(`/api/media/upload?encrypted=1`, { method: "POST", body: fd });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        // 413 (too big), 415 (bad MIME), 429 (quota) all bubble up the
-        // server's `error` string; show it inline in the composer.
+        // 413 (too big), 429 (quota) bubble up the server's `error`
+        // string; show inline in the composer.
         throw new Error(data?.error || `upload failed (${resp.status})`);
       }
-      // Encrypted body is JSON: the receiver detects this shape and
-      // renders <img>. Plain-text messages can't collide because they
-      // don't parse as a JSON object with both keys.
-      const payload = JSON.stringify({ url: data.url, mime: file.type || "image/*" });
+      const payload = JSON.stringify({
+        url: data.url,
+        mime: file.type || "image/*",
+        attachKey:   attachmentKeyToBase64(key),
+        attachNonce: attachmentNonceToBase64(nonce),
+      });
       await sendRaw(payload);
     } catch (e) {
       setErr(e.message || "upload failed");
@@ -1122,6 +1190,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
             return (
               <MessageBubble
                 key={key} m={seg.m} t={t} wallet={wallet} conv={conv} keypair={keypair}
+                groupKey={activeGroupKey}
                 fresh={freshIds.has(key)}
                 onReply={conv.kind === "group" ? () => setReplyingTo(seg.m) : null}
               />
@@ -1480,7 +1549,7 @@ function Thread({ t, wallet, keypair, conv, messages, loading, onBack, onSent, s
   );
 }
 
-function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
+function MessageBubble({ m, t, wallet, conv, keypair, groupKey, fresh, onReply }) {
   const isMine = conv.kind === "group"
     ? (m.from_wallet && wallet && m.from_wallet.toLowerCase() === wallet.toLowerCase())
     : (m._decrypted ? true : (conv.peer?.id != null ? m.from_id !== conv.peer.id : false));
@@ -1520,6 +1589,23 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
         }
       } else {
         body = "[encrypted]";
+      }
+    } else if (conv.kind === "group") {
+      // v1.1.1 — E2E group rendering. If the message has
+      // encrypted_content we expect a cached symmetric group key
+      // (loaded by the parent Thread on conv switch). Without the
+      // key we render a clear placeholder so the rest of the
+      // bubble — reply preview, ticks, timestamp — still draws.
+      // Plaintext content path stays for legacy / non-e2e groups.
+      if (m.encrypted_content && m.nonce) {
+        if (!groupKey) {
+          body = "[no group key on this device]";
+        } else {
+          body = decryptGroup(m.encrypted_content, m.nonce, groupKey)
+                 || "[unable to decrypt group message]";
+        }
+      } else {
+        body = m.content || "";
       }
     } else {
       body = m.content || "";
@@ -1652,23 +1738,7 @@ function MessageBubble({ m, t, wallet, conv, keypair, fresh, onReply }) {
           </div>
         )}
         {attachment ? (
-          <a
-            href={attachment.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ display: "block", lineHeight: 0 }}
-          >
-            <img
-              src={attachment.url}
-              alt="attachment"
-              style={{
-                maxWidth: "100%",
-                maxHeight: 320,
-                borderRadius: 10,
-                display: "block",
-              }}
-            />
-          </a>
+          <EncryptedAttachment attachment={attachment} t={t} />
         ) : (
           <BodySegments segs={segs} t={t} isMine={isMine} />
         )}
@@ -2219,6 +2289,17 @@ function ContextPane({ t, conv, profile, prefs, onPref, onClose, open }) {
         </div>
       )}
 
+      {/* Safety number — out-of-band pubkey verification. Shows the
+          peer's current DM key fingerprint, lets the viewer mark it
+          as verified after comparing through a side channel, and
+          surfaces a warning when the peer rotates their key after
+          verification. */}
+      <SafetyNumberSection
+        t={t}
+        peerWallet={peer.walletAddress || conv.peer?.wallet}
+        peerPubkey={peer.dmPubkey || conv.peer?.dmPubkey}
+      />
+
       {/* Shared Media — the last few media attachments this peer has
           sent to *any* feed (not just this DM, since DMs are E2E
           encrypted — their bodies aren't readable server-side). Pulls
@@ -2272,6 +2353,239 @@ function ContextPane({ t, conv, profile, prefs, onPref, onClose, open }) {
         </a>
       </div>
     </aside>
+  );
+}
+
+// v1.1.5 — DM image attachment renderer.
+//
+// Two cases:
+//
+// • Day 8.4 legacy bodies have only { url, mime } — bytes sit
+//   unencrypted at the host. We render the URL directly with an <img>
+//   tag (and the click-to-open-in-new-tab anchor wrapper).
+//
+// • v1.1.5 bodies carry { url, mime, attachKey, attachNonce } — the
+//   bytes at the host are nacl.secretbox ciphertext keyed to a
+//   per-message random key embedded in the (already E2E-encrypted)
+//   message body. We fetch the ciphertext, decrypt to a Uint8Array,
+//   wrap in a Blob, and render via blob: URL. On any failure
+//   (network, decrypt mismatch, browser CORS) we fall back to a
+//   placeholder so the rest of the bubble still renders.
+function EncryptedAttachment({ attachment, t }) {
+  const { url, mime, attachKey, attachNonce } = attachment || {};
+  const isEncrypted = !!(attachKey && attachNonce);
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    if (!isEncrypted || !url) return;
+    let cancelled = false;
+    let createdUrl = null;
+    (async () => {
+      try {
+        const r = await fetch(url, { mode: "cors" });
+        if (!r.ok) throw new Error(`fetch ${r.status}`);
+        const cipherBytes = new Uint8Array(await r.arrayBuffer());
+        const plain = decryptAttachmentBytes(cipherBytes, attachKey, attachNonce);
+        if (!plain) throw new Error("decrypt failed");
+        if (cancelled) return;
+        const blob = new Blob([plain], { type: mime || "application/octet-stream" });
+        createdUrl = URL.createObjectURL(blob);
+        setBlobUrl(createdUrl);
+      } catch (e) {
+        if (!cancelled) setError(e.message || "decrypt failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [isEncrypted, url, attachKey, attachNonce, mime]);
+
+  if (!url) return null;
+
+  // Legacy plaintext path (Day 8.4 bodies) — preserved unchanged.
+  if (!isEncrypted) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: "block", lineHeight: 0 }}>
+        <img
+          src={url}
+          alt="attachment"
+          style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 10, display: "block" }}
+        />
+      </a>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        padding: "10px 12px",
+        borderRadius: 10,
+        background: "rgba(239,68,68,0.08)",
+        border: "1px solid rgba(239,68,68,0.3)",
+        fontSize: 12, color: t.text,
+      }}>
+        Couldn't decrypt the attached image — {error}.
+      </div>
+    );
+  }
+  if (!blobUrl) {
+    return (
+      <div style={{
+        padding: "20px 12px", borderRadius: 10,
+        background: "var(--bg-input)",
+        fontSize: 12, color: t.textDim, textAlign: "center",
+      }}>
+        Decrypting image…
+      </div>
+    );
+  }
+  return (
+    // Local blob: URL — the encrypted-bytes URL on the host would
+    // download as gibberish if the user opened it directly.
+    <img
+      src={blobUrl}
+      alt="attachment"
+      style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 10, display: "block" }}
+    />
+  );
+}
+
+// v1.1 — Safety number / out-of-band verification.
+//
+// Renders the peer's current DM pubkey fingerprint and lets the
+// viewer mark it as verified after comparing through a side channel
+// (text it on Telegram, read it on a call, etc). Stores the
+// fingerprint at verify time so a later peer rotation surfaces as a
+// "their key changed since you verified" warning rather than
+// silently grandfathering the new key.
+function SafetyNumberSection({ t, peerWallet, peerPubkey }) {
+  const { address: viewerWallet } = useWallet();
+  const [state, setState] = useState({ loading: true, verified: false, fpAtVerify: null });
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState("");
+
+  const peerFp = useMemo(() => peerPubkey ? keyFingerprint(peerPubkey) : null, [peerPubkey]);
+
+  const refresh = useCallback(async () => {
+    if (!viewerWallet || !peerWallet) {
+      setState({ loading: false, verified: false, fpAtVerify: null });
+      return;
+    }
+    try {
+      const r = await api(`/api/dm/verifications/${encodeURIComponent(peerWallet)}`, { wallet: viewerWallet });
+      setState({ loading: false, verified: !!r.verified, fpAtVerify: r.fpAtVerify || null });
+    } catch {
+      setState({ loading: false, verified: false, fpAtVerify: null });
+    }
+  }, [viewerWallet, peerWallet]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  if (!peerWallet || !peerPubkey) return null;
+
+  const verifiedMatches = state.verified && state.fpAtVerify === peerFp;
+  const verifiedMismatch = state.verified && state.fpAtVerify && state.fpAtVerify !== peerFp;
+
+  const onVerify = async () => {
+    if (!peerFp || pending) return;
+    setPending(true); setErr("");
+    try {
+      await api("/api/dm/verify", {
+        method: "POST", wallet: viewerWallet,
+        body: { peerWallet, peerPubkeyFp: peerFp },
+      });
+      await refresh();
+    } catch (e) {
+      setErr(e.message || "verify failed");
+    } finally {
+      setPending(false);
+    }
+  };
+  const onUnverify = async () => {
+    if (pending) return;
+    setPending(true); setErr("");
+    try {
+      await api(`/api/dm/verify/${encodeURIComponent(peerWallet)}`, {
+        method: "DELETE", wallet: viewerWallet,
+      });
+      await refresh();
+    } catch (e) {
+      setErr(e.message || "unverify failed");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  let badgeColor = t.textDim;
+  let badgeLabel = "Not verified";
+  if (verifiedMatches) { badgeColor = "#10b981"; badgeLabel = "Verified"; }
+  else if (verifiedMismatch) { badgeColor = "#f59e0b"; badgeLabel = "Key changed since verify"; }
+
+  return (
+    <div style={{ padding: "14px 16px", borderBottom: `1px solid ${t.border}` }}>
+      <SectionLabel t={t}>Safety number</SectionLabel>
+      <div style={{ fontSize: 11, color: t.textDim, lineHeight: 1.5, marginBottom: 8 }}>
+        Compare this fingerprint with your peer through a side channel (a call, another app). Marking it verified locks the value; if their key rotates later, the change shows up here.
+      </div>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+        padding: "8px 10px",
+        borderRadius: 8,
+        background: "var(--bg-input)",
+        fontFamily: "var(--font-jetbrains-mono), monospace",
+        fontSize: 12, color: t.text,
+        wordBreak: "break-all",
+      }}>
+        <span style={{ flex: 1 }}>{peerFp || "—"}</span>
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+          padding: "2px 7px", borderRadius: 999,
+          background: `${badgeColor}1e`, color: badgeColor,
+          border: `1px solid ${badgeColor}44`,
+        }}>{badgeLabel}</span>
+      </div>
+
+      {verifiedMismatch && state.fpAtVerify && (
+        <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 8 }}>
+          You verified <code style={{ fontFamily: "var(--font-jetbrains-mono), monospace" }}>{state.fpAtVerify}</code>; the live key is different. Re-verify only after confirming the new fingerprint with the peer.
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        {!verifiedMatches && (
+          <button
+            type="button"
+            onClick={onVerify}
+            disabled={pending || !peerFp}
+            style={{
+              padding: "6px 12px", borderRadius: 6, border: "none",
+              background: t.accent, color: "#fff",
+              fontSize: 11, fontWeight: 700, cursor: "pointer",
+            }}
+          >
+            {pending ? "…" : (state.verified ? "Re-verify" : "Mark as verified")}
+          </button>
+        )}
+        {state.verified && (
+          <button
+            type="button"
+            onClick={onUnverify}
+            disabled={pending}
+            style={{
+              padding: "6px 12px", borderRadius: 6,
+              border: `1px solid ${t.border}`,
+              background: "transparent", color: t.text,
+              fontSize: 11, cursor: "pointer",
+            }}
+          >
+            Clear verification
+          </button>
+        )}
+      </div>
+      {err && <div style={{ marginTop: 6, fontSize: 11, color: "#ef4444" }}>{err}</div>}
+    </div>
   );
 }
 

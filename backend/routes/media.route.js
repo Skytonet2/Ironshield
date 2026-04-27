@@ -382,16 +382,35 @@ router.post("/upload", requireWallet, (req, res) => {
       });
     }
 
-    // Magic-byte MIME check + EXIF strip via sharp.
-    let sanitized;
-    try { sanitized = await sanitizeImage(fileBuf); }
-    catch (err) {
-      const code = err.statusCode || 500;
-      return res.status(code).json({ error: err.message || "sanitize failed" });
+    // v1.1.5 — encrypted DM attachment path. Client encrypted the
+    // bytes before upload (NaCl secretbox with a per-message key
+    // it embeds in the message body). The bytes are opaque
+    // ciphertext from our point of view, so the magic-byte MIME
+    // check can't run, sharp can't run, and there's nothing to
+    // strip. We still apply the size cap + per-day quota; we still
+    // route through one of the configured hosts; we just skip
+    // sanitisation. Mark the row in media_uploads as encrypted so
+    // ops can audit the volume separately.
+    const isEncrypted = String(req.query.encrypted || "") === "1";
+
+    let cleanBuf, cleanMime, cleanExt;
+    if (isEncrypted) {
+      cleanBuf  = fileBuf;
+      cleanMime = "application/octet-stream";
+      cleanExt  = ".bin";
+    } else {
+      // Magic-byte MIME check + EXIF strip via sharp.
+      let sanitized;
+      try { sanitized = await sanitizeImage(fileBuf); }
+      catch (err) {
+        const code = err.statusCode || 500;
+        return res.status(code).json({ error: err.message || "sanitize failed" });
+      }
+      cleanBuf  = sanitized.buf;
+      cleanMime = sanitized.mime;
+      cleanExt  = sanitized.ext;
     }
-    const cleanBuf  = sanitized.buf;
-    const cleanMime = sanitized.mime;
-    const cleanName = `${crypto.randomUUID()}${sanitized.ext}`;
+    const cleanName = `${crypto.randomUUID()}${cleanExt}`;
 
     const hosts = [
       // R2 first when configured — persistent storage is always
