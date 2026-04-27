@@ -59,7 +59,7 @@ export default function SkillsRevenuePage() {
     if (!address) { setData(null); return; }
     setLoading(true); setErr("");
     try {
-      const res = await apiFetch(`${API}/api/skills/revenue?wallet=${encodeURIComponent(address)}`);
+      const res = await apiFetch(`/api/skills/revenue?wallet=${encodeURIComponent(address)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const j = await res.json();
       setData(j);

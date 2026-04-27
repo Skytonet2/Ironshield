@@ -52,7 +52,7 @@ export default function SkillsHistoryPage() {
     setLoading(true); setErr("");
     try {
       const [historyRes, installed] = await Promise.all([
-        apiFetch(`${API}/api/skills/history?wallet=${encodeURIComponent(address)}`),
+        apiFetch(`/api/skills/history?wallet=${encodeURIComponent(address)}`),
         // Best-effort. If chain RPC blips we still render history with
         // an unknown install state instead of failing the whole page.
         agent.getInstalledSkills?.(address).catch(() => []),
@@ -75,7 +75,7 @@ export default function SkillsHistoryPage() {
     if (!nextBefore || !address) return;
     setLoadingMore(true);
     try {
-      const r = await apiFetch(`${API}/api/skills/history?wallet=${encodeURIComponent(address)}&before=${encodeURIComponent(nextBefore)}`);
+      const r = await apiFetch(`/api/skills/history?wallet=${encodeURIComponent(address)}&before=${encodeURIComponent(nextBefore)}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       setRows((prev) => [...prev, ...(j.rows || [])]);

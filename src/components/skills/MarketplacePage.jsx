@@ -671,7 +671,7 @@ export default function MarketplacePage() {
   const recordInstallSale = async (txHash) => {
     if (!txHash) return;
     try {
-      await apiFetch(`${API}/api/skills/record-install`, {
+      await apiFetch(`/api/skills/record-install`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ txHash }),

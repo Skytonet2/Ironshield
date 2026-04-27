@@ -47,7 +47,7 @@ export default function OnboardingModal({ initial, onComplete, onClose }) {
     if (!file.type.startsWith("image/")) {
       throw new Error("Please pick an image file");
     }
-    const sigRes = await apiFetch(`${API}/api/profile/upload`, {
+    const sigRes = await apiFetch(`/api/profile/upload`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
@@ -100,26 +100,44 @@ export default function OnboardingModal({ initial, onComplete, onClose }) {
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true); setErr("");
+    const body = {
+      username: username.trim(),
+      displayName: displayName.trim(),
+      pfpUrl: pfpUrl || null,
+      bannerUrl: bannerUrl || null,
+    };
+    console.log("[onboarding] submit attempt", { path: "/api/profile/onboard", body });
+    let r;
     try {
-      const r = await apiFetch(`${API}/api/profile/onboard`, {
+      r = await apiFetch(`/api/profile/onboard`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: username.trim(),
-          displayName: displayName.trim(),
-          pfpUrl: pfpUrl || null,
-          bannerUrl: bannerUrl || null,
-        }),
+        body: JSON.stringify(body),
       });
-      const j = await r.json().catch(() => ({}));
-      if (r.status === 409) { setErr("That username is taken — try another."); return; }
-      if (!r.ok) { setErr(j.error || `Failed (${r.status})`); return; }
-      onComplete?.(j.user);
     } catch (e) {
-      setErr(e.message || "Failed to save");
-    } finally {
+      // Distinguish transport-level errors so the user sees something
+      // actionable instead of the generic "Failed to fetch". Common
+      // shapes: CORS preflight rejection, wallet popup dismissed,
+      // signMessage throwing, network drop.
+      const msg = String(e?.message || e || "");
+      console.error("[onboarding] submit threw before HTTP", e);
+      if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+        setErr("Couldn't reach the backend. Hard-refresh the page (Ctrl+Shift+R) and try again. If that fails, your browser may be blocking the request — check the console (F12).");
+      } else if (/sign|reject|cancel|denied/i.test(msg)) {
+        setErr("Wallet signing was cancelled. Try again and confirm the popup.");
+      } else {
+        setErr(msg || "Failed to save");
+      }
       setSubmitting(false);
+      return;
     }
+    let j = {};
+    try { j = await r.json(); } catch { /* empty body */ }
+    console.log("[onboarding] response", { status: r.status, body: j });
+    if (r.status === 409) { setErr("That username is taken — try another."); setSubmitting(false); return; }
+    if (!r.ok) { setErr(j.error || `Failed (${r.status})`); setSubmitting(false); return; }
+    onComplete?.(j.user);
+    setSubmitting(false);
   };
 
   return (
