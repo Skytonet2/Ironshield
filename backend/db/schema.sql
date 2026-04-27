@@ -426,6 +426,28 @@ ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS staked_amount     NUMERIC(40,18)
 -- column only carries the offline "last seen" timestamp.
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_seen_at      TIMESTAMPTZ;
 
+-- Referral system. ref_code is the user's invite code (auto-generated
+-- on first /api/rewards/me; customizable via POST /api/rewards/ref-code).
+-- referrer_id points back to the inviter once
+-- /api/rewards/claim-referrer lands a /?ref=<code> visit.
+--
+-- backend/routes/rewards.route.js falls back to an in-process Map when
+-- these columns aren't present — that fallback wipes on every Render
+-- redeploy, which is why pre-this-migration codes never persisted.
+-- ON DELETE SET NULL on referrer_id keeps the invitee's row alive if
+-- the inviter ever deletes their account.
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS ref_code          TEXT;
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS referrer_id       INTEGER REFERENCES feed_users(id) ON DELETE SET NULL;
+-- Case-insensitive uniqueness: rewards.route.js looks up via
+-- LOWER(ref_code)=LOWER($1) and POST /ref-code rejects duplicates
+-- through codeInUse(). Partial keeps NULL rows cheap.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_users_ref_code_lower
+  ON feed_users (LOWER(ref_code)) WHERE ref_code IS NOT NULL;
+-- Index for /me's referral count: SELECT COUNT(*) FROM feed_users
+-- WHERE referrer_id=$1.
+CREATE INDEX IF NOT EXISTS idx_feed_users_referrer
+  ON feed_users (referrer_id) WHERE referrer_id IS NOT NULL;
+
 -- Long-form articles. kind = 'post' (default) or 'article'. Articles get a
 -- title and lift the 500-char body limit (handled in posts.route.js).
 ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS kind  TEXT DEFAULT 'post';
