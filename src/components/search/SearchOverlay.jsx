@@ -118,13 +118,16 @@ export default function SearchOverlay({ open, onClose, onAction }) {
   // the @mention picker uses, which prefix/substring matches both
   // username AND wallet_address (case-insensitive). 2-char floor so
   // a single keystroke doesn't fan out to the DB on every press.
+  // Strip leading "@" — users instinctively type @handle the way
+  // mentions render, but usernames are stored without the prefix.
   useEffect(() => {
     if (!open) return;
-    if (q.trim().length < 2) { setUsers([]); return; }
+    const term = q.trim().replace(/^@+/, "");
+    if (term.length < 2) { setUsers([]); return; }
     const ctl = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const r = await fetch(`${API}/api/social/search?q=${encodeURIComponent(q.trim())}&limit=6`, {
+        const r = await fetch(`${API}/api/social/search?q=${encodeURIComponent(term)}&limit=6`, {
           signal: ctl.signal,
         });
         if (!r.ok) { setUsers([]); return; }

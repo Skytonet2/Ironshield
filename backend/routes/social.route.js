@@ -198,7 +198,12 @@ router.get("/following/:userId", async (req, res, next) => {
 // Matches prefix on username OR wallet_address (case-insensitive).
 router.get("/search", async (req, res, next) => {
   try {
-    const q = String(req.query.q || "").toLowerCase().trim();
+    // Strip a leading "@" — clients (composer @-mention picker, the
+    // global SearchOverlay, anyone testing) often pass the user's raw
+    // input which starts with @ since that's how handles render. The
+    // username column stores the bare handle, so a `LIKE '%@x%'`
+    // never matches.
+    const q = String(req.query.q || "").toLowerCase().trim().replace(/^@+/, "");
     const limit = Math.min(20, Number(req.query.limit) || 6);
     if (!q) return res.json({ users: [] });
     const r = await db.query(
