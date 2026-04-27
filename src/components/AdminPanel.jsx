@@ -257,6 +257,7 @@ export default function AdminPanel({ onClose }) {
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 6, padding: "14px 28px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
           {[
+            { key: "stats",      label: "Stats" },
             { key: "contests",   label: "Contests" },
             { key: "scores",     label: "Score Users" },
             { key: "governance", label: "Governance" },
@@ -270,6 +271,9 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div style={{ overflowY: "auto", padding: 28, flex: 1 }}>
+
+          {/* ── Stats tab ── live counts from /api/admin/stats. */}
+          {adminTab === "stats" && <StatsTab t={t} />}
 
           {/* ── Contests tab ── */}
           {adminTab === "contests" && (
@@ -572,6 +576,110 @@ export default function AdminPanel({ onClose }) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── StatsTab ─────────────────────────────────────────────────────────
+// Renders live aggregate counts from /api/admin/stats. Polls once on
+// mount; the manual Refresh button re-fires. Numbers stay null while
+// loading so the operator can tell "still fetching" from "actually
+// zero". Each section is a small grid; missing sections (older deploys
+// without that table) render as "—".
+function StatsTab({ t }) {
+  const [data, setData] = useState(null);
+  const [err, setErr]   = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const r = await apiFetch("/api/admin/stats", { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setData(await r.json());
+    } catch (e) {
+      setErr(e?.message || "Failed to load stats");
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString());
+
+  const tile = (label, value, sub) => (
+    <div key={label} style={{
+      padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: t.bgSurface,
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+        color: t.textDim, textTransform: "uppercase", marginBottom: 6,
+      }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: t.white,
+        fontFamily: "var(--font-jetbrains-mono), monospace", lineHeight: 1.1 }}>{fmt(value)}</div>
+      {sub && <div style={{ fontSize: 11, color: t.textDim, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: t.white }}>
+          Platform stats {data?.ts && <span style={{ fontSize: 11, color: t.textDim, marginLeft: 8 }}>· {new Date(data.ts).toLocaleString()}</span>}
+        </div>
+        <button onClick={load} disabled={loading} style={{
+          padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+          border: `1px solid ${t.border}`, background: t.bgSurface,
+          color: loading ? t.textDim : t.text, cursor: loading ? "wait" : "pointer",
+        }}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {err && (
+        <div style={{
+          padding: 10, borderRadius: 8, marginBottom: 12,
+          background: "rgba(239,68,68,0.08)", border: `1px solid var(--red)`,
+          color: "var(--red)", fontSize: 12,
+        }}>{err}</div>
+      )}
+
+      <Section t={t} title="Users">
+        {tile("Total accounts",   data?.users?.total,     "All-time signups")}
+        {tile("Onboarded",        data?.users?.onboarded, "Completed setup modal")}
+        {tile("Active (7 days)",  data?.users?.active7d,  "Connected in the last week")}
+        {tile("New (24h)",        data?.users?.new24h,    "Signups in the last day")}
+      </Section>
+
+      <Section t={t} title="Feed">
+        {tile("Posts",     data?.feed?.posts)}
+        {tile("Comments",  data?.feed?.comments)}
+        {tile("DMs",       data?.feed?.dms)}
+        {tile("Follows",   data?.feed?.follows)}
+      </Section>
+
+      <Section t={t} title="NewsCoin & Skills">
+        {tile("NewsCoins",       data?.newscoin?.total)}
+        {tile("NewsCoin trades", data?.newscoin?.trades)}
+        {tile("Skill sales",     data?.skills?.sales)}
+        {tile("Automations",     data?.agents?.automations)}
+      </Section>
+    </div>
+  );
+}
+
+function Section({ t, title, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: 0.6, color: t.textMuted,
+        textTransform: "uppercase", marginBottom: 8,
+      }}>{title}</div>
+      <div style={{
+        display: "grid", gap: 10,
+        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+      }}>
+        {children}
       </div>
     </div>
   );
