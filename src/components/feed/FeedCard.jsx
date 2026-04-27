@@ -664,12 +664,14 @@ function RepostMenu({ count, active, onRepost, onQuote, t }) {
         <div role="menu" style={{
           position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 100,
           minWidth: 160,
-          // Use bg-surface (fully opaque, e.g. #0d1220) — the default
-          // bg-card token is rgba(255,255,255,0.03) which leaves the
-          // menu transparent over the next FeedCard.
-          background: "var(--bg-surface)",
-          border: `1px solid ${t.border}`, borderRadius: 10,
-          boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
+          // Theme-aware solid color, slightly brighter than the page bg
+          // so the menu visually elevates instead of blending with the
+          // post below it. CSS-variable bgs were too dim (3% white) or
+          // too close in tone to the body — this pops cleanly.
+          background: t.bgCardHover || t.bgCard || "#141a2e",
+          border: `1px solid ${t.accent || "rgba(255,255,255,0.18)"}`,
+          borderRadius: 10,
+          boxShadow: "0 16px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,0,0,0.4)",
           overflow: "hidden",
         }}>
           <MenuItem t={t} onClick={() => { setOpen(false); onRepost?.(); }}>
