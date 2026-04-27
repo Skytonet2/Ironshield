@@ -64,13 +64,22 @@ export default function AdminPanel({ onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, adminTab]);
 
-  // Resolve admin status against the backend allowlist on mount + when
-  // the connected wallet changes. Server is the source of truth — no
-  // client-side bypass possible. Connection-less or non-admin wallets
-  // both render the "Not authorized" view; the panel only shows when
-  // authed === true.
+  // Resolve admin status against the backend allowlist. Server is the
+  // source of truth — no client-side bypass possible.
+  //
+  // Auth is split into two phases so wallets that pop a window for
+  // signMessage (MyNearWallet, etc.) work:
+  //   1. On wallet change → set authed=null and stop. We do NOT auto-
+  //      fire the signed POST, because browsers block the wallet popup
+  //      when it isn't initiated by a user gesture.
+  //   2. The "Verify admin access" button fires the check inside the
+  //      click handler. The click counts as a user gesture so the
+  //      popup is allowed.
+  //
+  // For Day 5.6 token-cached sessions (Meteor / HERE / HOT / Intear
+  // already signed once this session), the verify call is silent —
+  // no popup needed because apiFetch reuses the bearer token.
   useEffect(() => {
-    let cancelled = false;
     if (!connected || !address) {
       setAuthed(false);
       setAuthError(null);
@@ -78,26 +87,31 @@ export default function AdminPanel({ onClose }) {
     }
     setAuthed(null);
     setAuthError(null);
-    (async () => {
-      try {
-        const r = await apiFetch("/api/admin/check", { method: "POST" });
-        if (cancelled) return;
-        if (r.ok) {
-          setAuthed(true);
-        } else if (r.status === 401 || r.status === 403) {
-          setAuthed(false);
-        } else {
-          setAuthed(false);
-          setAuthError(`Server error (HTTP ${r.status})`);
-        }
-      } catch (err) {
-        if (cancelled) return;
-        setAuthed(false);
-        setAuthError(err?.message || "Auth check failed");
-      }
-    })();
-    return () => { cancelled = true; };
   }, [connected, address]);
+
+  const verifyAdmin = useCallback(async () => {
+    setAuthError(null);
+    setAuthed(null);
+    try {
+      const r = await apiFetch("/api/admin/check", { method: "POST" });
+      if (r.ok) {
+        setAuthed(true);
+      } else if (r.status === 401 || r.status === 403) {
+        setAuthed(false);
+      } else {
+        setAuthed(false);
+        setAuthError(`Server error (HTTP ${r.status})`);
+      }
+    } catch (err) {
+      setAuthed(false);
+      const msg = String(err?.message || err || "");
+      if (/popup|blocked/i.test(msg)) {
+        setAuthError("Popup blocked — allow popups for this site, or switch to Meteor/HERE wallet, then try again.");
+      } else {
+        setAuthError(msg || "Auth check failed");
+      }
+    }
+  }, []);
 
   const govOk  = (m) => { setGovMsg(m); setTimeout(() => setGovMsg(""), 3500); };
   const govBad = (m) => { setGovErr(m); setTimeout(() => setGovErr(""), 4500); };
@@ -212,13 +226,7 @@ export default function AdminPanel({ onClose }) {
       <div style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20, padding: 40, width: 380, textAlign: "center" }}>
         <Settings size={32} color={t.accent} style={{ marginBottom: 16 }} />
         <div style={{ fontSize: 20, fontWeight: 700, color: t.white, marginBottom: 6 }}>Admin Access</div>
-        {authed === null ? (
-          <>
-            <Loader size={18} color={t.textMuted} style={{ animation: "spin 1s linear infinite", marginBottom: 14 }} />
-            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>Verifying wallet…</div>
-            <Btn onClick={onClose} style={{ width: "100%", justifyContent: "center" }}>Cancel</Btn>
-          </>
-        ) : !connected ? (
+        {!connected ? (
           <>
             <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 20 }}>Connect a wallet on the admin allowlist to continue.</div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -226,12 +234,28 @@ export default function AdminPanel({ onClose }) {
               <Btn primary onClick={showModal} style={{ flex: 1, justifyContent: "center" }}>Connect</Btn>
             </div>
           </>
+        ) : authed === null ? (
+          <>
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>Connected as</div>
+            <div style={{ fontSize: 12, color: t.text, marginBottom: 16, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>{address}</div>
+            <div style={{ fontSize: 12, color: t.textDim, marginBottom: 16, lineHeight: 1.45 }}>
+              Click below to sign a one-time admin proof. Your wallet may pop a window — make sure popups are allowed for this site.
+            </div>
+            {authError && <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 12 }}>{authError}</div>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+              <Btn primary onClick={verifyAdmin} style={{ flex: 1, justifyContent: "center" }}>Verify access</Btn>
+            </div>
+          </>
         ) : (
           <>
             <div style={{ fontSize: 13, color: t.red, marginBottom: 6 }}>Not authorized</div>
             <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 18, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>{address}</div>
             {authError && <div style={{ fontSize: 11, color: t.textDim, marginBottom: 14 }}>{authError}</div>}
-            <Btn onClick={onClose} style={{ width: "100%", justifyContent: "center" }}>Close</Btn>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Close</Btn>
+              <Btn primary onClick={verifyAdmin} style={{ flex: 1, justifyContent: "center" }}>Try again</Btn>
+            </div>
           </>
         )}
       </div>
