@@ -17,6 +17,7 @@ import FollowButton from "@/components/profile/FollowButton";
 import ReferralCard from "@/components/profile/ReferralCard";
 import { apiFetch } from "@/lib/apiFetch";
 import { TipModal } from "@/components/TipModal";
+import QuoteComposerModal from "@/components/feed/QuoteComposerModal";
 
 const BACKEND_BASE = (() => {
   if (typeof window === "undefined") return "";
@@ -195,6 +196,11 @@ export default function ProfilePage() {
     });
     setTipPost(null);
   }, [tipPost, patchPost]);
+  const [quotePost, setQuotePost] = useState(null);
+  const onQuote = useCallback((post) => {
+    if (!viewerAddress) { showModal?.(); return; }
+    setQuotePost(post);
+  }, [viewerAddress, showModal]);
 
   if (!targetKey) {
     return (
@@ -391,6 +397,7 @@ export default function ProfilePage() {
                   viewer={{ wallet_address: viewerAddress }}
                   onLike={()        => onLike(p)}
                   onRepost={()      => onRepost(p)}
+                  onQuote={onQuote}
                   onTip={()         => onTip(p)}
                   onReply={(text)   => onReply(p, text)}
                 />
@@ -464,6 +471,14 @@ export default function ProfilePage() {
           openWallet={() => showModal?.()}
           onClose={() => setTipPost(null)}
           onTipped={onTipped}
+        />
+      )}
+
+      {quotePost && (
+        <QuoteComposerModal
+          post={quotePost}
+          onClose={() => setQuotePost(null)}
+          onPosted={(p) => setPosts((prev) => [p, ...prev])}
         />
       )}
     </AppShell>
