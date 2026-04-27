@@ -4,13 +4,17 @@
 // (Phase 0). ThemeProvider subscribes to useSettings.theme so
 // clicking a preset retints the whole app instantly.
 
-import { useEffect } from "react";
-import { useTheme } from "@/lib/contexts";
+import { useEffect, useState } from "react";
+import { Lock, Crown } from "lucide-react";
+import { useTheme, useWallet, PRO_THEME_PRESETS } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
+import { API_BASE as API } from "@/lib/apiBase";
 
-// Same six presets that tokens.css defines — kept in literals here so
+// Same nine presets that tokens.css defines — kept in literals here so
 // the mini-preview rectangles show the right bg+accent without reading
 // the CSS vars (which would only show the currently applied preset).
+// `pro: true` entries are gated by is_pro on selection; CSS itself
+// doesn't enforce that, the picker does.
 const PRESETS = [
   { key: "default",  label: "Default",  bg: "#080b12", accent: "#3b82f6" },
   { key: "midnight", label: "Midnight", bg: "#05050f", accent: "#6366f1" },
@@ -18,10 +22,15 @@ const PRESETS = [
   { key: "carbon",   label: "Carbon",   bg: "#060606", accent: "#a3a3a3" },
   { key: "ember",    label: "Ember",    bg: "#080503", accent: "#f97316" },
   { key: "ironclaw", label: "IronClaw", bg: "#080303", accent: "#ef4444" },
+  // v1.1.10 — IronShield Pro presets. Locked for non-Pro members.
+  { key: "emerald",  label: "Emerald",  bg: "#03080a", accent: "#10b981", pro: true },
+  { key: "aurora",   label: "Aurora",   bg: "#050310", accent: "#a855f7", pro: true },
+  { key: "gold",     label: "Gold",     bg: "#0a0703", accent: "#f59e0b", pro: true },
 ];
 
 export default function AppearanceTab() {
   const t = useTheme();
+  const { address: walletAddress } = useWallet();
   const theme           = useSettings((s) => s.theme);
   const setTheme        = useSettings((s) => s.setTheme);
   const accentOverride  = useSettings((s) => s.accentOverride);
@@ -32,6 +41,21 @@ export default function AppearanceTab() {
   const setDensity      = useSettings((s) => s.setDensity);
   const reduceMotion    = useSettings((s) => s.reduceMotion);
   const setReduceMotion = useSettings((s) => s.setReduceMotion);
+
+  // v1.1.10 — Pro state for the theme picker. Cosmetic gate; the
+  // serious Pro perks live behind requirePro on real routes. We
+  // hit /api/auth/me (unsigned, x-wallet header) which is rate-limited
+  // server-side; one fetch per /settings open.
+  const [isPro, setIsPro] = useState(false);
+  useEffect(() => {
+    if (!walletAddress) { setIsPro(false); return; }
+    let cancelled = false;
+    fetch(`${API}/api/auth/me`, { headers: { "x-wallet": walletAddress } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (!cancelled) setIsPro(Boolean(j?.isPro)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [walletAddress]);
 
   // Apply custom accent override by setting the CSS var directly. This
   // sits on top of the [data-theme] preset — clearing the override
@@ -63,12 +87,26 @@ export default function AppearanceTab() {
         }}>
           {PRESETS.map((p) => {
             const active = p.key === theme;
+            const locked = !!p.pro && !isPro;
             return (
               <button
                 key={p.key}
                 type="button"
-                onClick={() => setTheme(p.key)}
+                onClick={() => {
+                  if (locked) {
+                    // Route to the upgrade flow rather than letting
+                    // the click silently no-op. Same surface as the
+                    // AppShell upgrade card / requirePro 402 redirect.
+                    if (typeof window !== "undefined") {
+                      window.location.assign("/rewards#pro");
+                    }
+                    return;
+                  }
+                  setTheme(p.key);
+                }}
+                title={locked ? "IronShield Pro theme — click to upgrade" : p.label}
                 style={{
+                  position: "relative",
                   padding: 10,
                   borderRadius: 10,
                   border: `1px solid ${active ? p.accent : t.border}`,
@@ -76,6 +114,7 @@ export default function AppearanceTab() {
                   cursor: "pointer",
                   textAlign: "left",
                   transition: "transform 120ms var(--ease-out)",
+                  opacity: locked ? 0.78 : 1,
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
@@ -96,6 +135,16 @@ export default function AppearanceTab() {
                     background: p.accent,
                     boxShadow: `0 0 12px ${p.accent}aa`,
                   }} />
+                  {locked && (
+                    <div style={{
+                      position: "absolute", inset: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: "rgba(0,0,0,0.45)",
+                      backdropFilter: "blur(2px)",
+                    }}>
+                      <Lock size={18} style={{ color: "#fff", opacity: 0.85 }} />
+                    </div>
+                  )}
                 </div>
                 <div style={{
                   marginTop: 8, fontSize: 12, fontWeight: 600,
@@ -103,6 +152,17 @@ export default function AppearanceTab() {
                   display: "flex", alignItems: "center", gap: 6,
                 }}>
                   {p.label}
+                  {p.pro && (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 3,
+                      padding: "1px 6px", borderRadius: 999,
+                      background: "linear-gradient(135deg, #a855f7, #6366f1)",
+                      color: "#fff",
+                      fontSize: 9, fontWeight: 800, letterSpacing: 0.4,
+                    }}>
+                      <Crown size={9} />PRO
+                    </span>
+                  )}
                   {active && <span style={{ fontSize: 10, color: t.textDim }}>· active</span>}
                 </div>
               </button>

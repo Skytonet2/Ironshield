@@ -27,20 +27,59 @@ function livekitClient() {
 }
 
 // Day 19 — LiveKit Egress. Returns an EgressClient when the room creds
-// AND the S3 destination creds are all set. Without an S3 bucket the
-// egress server has nowhere to upload, so we no-op rather than start an
-// egress that will fail mid-room.
+// AND a usable S3-compatible destination are configured. Without a
+// destination the egress server has nowhere to upload, so we no-op
+// rather than start an egress that will fail mid-room.
+//
+// v1.1.7 — automatic R2 fallback. Setting up egress used to require
+// six LIVEKIT_EGRESS_* env vars. Most deployments already have R2
+// configured for media uploads, and R2 is S3-compatible — so when
+// LIVEKIT_EGRESS_S3_BUCKET isn't set but R2_BUCKET + R2_ACCOUNT_ID +
+// R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY are, we derive the egress
+// destination from the R2 envs. That collapses the egress wiring to
+// "just have R2 set up" for the common case.
+function egressDestination() {
+  // Explicit egress envs win when set (lets ops point egress at a
+  // different bucket from media uploads if they want to).
+  if (process.env.LIVEKIT_EGRESS_S3_BUCKET) {
+    return {
+      bucket:    process.env.LIVEKIT_EGRESS_S3_BUCKET,
+      accessKey: process.env.LIVEKIT_EGRESS_S3_ACCESS_KEY || "",
+      secret:    process.env.LIVEKIT_EGRESS_S3_SECRET     || "",
+      region:    process.env.LIVEKIT_EGRESS_S3_REGION     || "",
+      endpoint:  process.env.LIVEKIT_EGRESS_S3_ENDPOINT   || undefined,
+      publicBase: (process.env.LIVEKIT_EGRESS_PUBLIC_BASE || "").replace(/\/+$/, "") || null,
+    };
+  }
+  // R2 fallback. R2's S3 endpoint shape is documented:
+  // https://<account_id>.r2.cloudflarestorage.com
+  const acct = process.env.R2_ACCOUNT_ID;
+  const bucket = process.env.R2_BUCKET;
+  const ak = process.env.R2_ACCESS_KEY_ID;
+  const sk = process.env.R2_SECRET_ACCESS_KEY;
+  if (!acct || !bucket || !ak || !sk) return null;
+  return {
+    bucket,
+    accessKey: ak,
+    secret:    sk,
+    region:    "auto",
+    endpoint:  `https://${acct}.r2.cloudflarestorage.com`,
+    publicBase: (process.env.R2_PUBLIC_URL_BASE || "").replace(/\/+$/, "") || null,
+  };
+}
+
 function egressClient() {
   const url = process.env.LIVEKIT_URL || "";
   const apiKey = process.env.LIVEKIT_API_KEY || "";
   const apiSecret = process.env.LIVEKIT_API_SECRET || "";
   if (!url || !apiKey || !apiSecret || !EgressClient) return null;
-  if (!process.env.LIVEKIT_EGRESS_S3_BUCKET) return null;
+  if (!egressDestination()) return null;
   return new EgressClient(url, apiKey, apiSecret);
 }
 
 function buildEgressFileOutput(roomName) {
-  const bucket = process.env.LIVEKIT_EGRESS_S3_BUCKET;
+  const dest = egressDestination();
+  if (!dest) return null;
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   // Audio-only rooms → .ogg keeps files small. Frontend treats either
   // extension uniformly via <audio src=…> on the replay page.
@@ -51,20 +90,21 @@ function buildEgressFileOutput(roomName) {
     output: {
       case: "s3",
       value: new S3Upload({
-        accessKey: process.env.LIVEKIT_EGRESS_S3_ACCESS_KEY || "",
-        secret:    process.env.LIVEKIT_EGRESS_S3_SECRET     || "",
-        region:    process.env.LIVEKIT_EGRESS_S3_REGION     || "",
-        bucket,
-        endpoint:  process.env.LIVEKIT_EGRESS_S3_ENDPOINT   || undefined,
-        forcePathStyle: !!process.env.LIVEKIT_EGRESS_S3_ENDPOINT,
+        accessKey: dest.accessKey,
+        secret:    dest.secret,
+        region:    dest.region,
+        bucket:    dest.bucket,
+        endpoint:  dest.endpoint,
+        forcePathStyle: !!dest.endpoint,
       }),
     },
   });
 }
 
 function publicEgressUrl(filepath) {
-  const base = (process.env.LIVEKIT_EGRESS_PUBLIC_BASE || "").replace(/\/+$/, "");
-  return base ? `${base}/${filepath}` : null;
+  const dest = egressDestination();
+  if (!dest?.publicBase) return null;
+  return `${dest.publicBase}/${filepath}`;
 }
 
 const MIN_STAKE_USD = 50; // spec: min 50 $IRONCLAW ≈ $50-equiv for MVP

@@ -9,12 +9,15 @@
 // and enforces the re-auth step upstream.
 
 import { useEffect, useState } from "react";
-import { Shield, Copy, Check, LogOut, RotateCcw, Key, AlertTriangle } from "lucide-react";
+import { Shield, Copy, Check, LogOut, RotateCcw, Key, AlertTriangle, Loader2 } from "lucide-react";
 import { useExportWallet, useLogout, useWallets } from "@privy-io/react-auth";
 import { useTheme, useWallet as useNearWalletCtx } from "@/lib/contexts";
 import { useWallet as useWalletStore } from "@/lib/stores/walletStore";
 import { isPrivyConfigured } from "@/components/auth/PrivyWrapper";
-import { getOrCreateKeypair, exportPublicKey, rotateKeypair, getKeyHistory } from "@/lib/dmCrypto";
+import {
+  getOrCreateKeypair, exportPublicKey, rotateKeypair, getKeyHistory,
+  walletDeriveChallenge, adoptWalletDerivedKeypair,
+} from "@/lib/dmCrypto";
 import { API_BASE as API } from "@/lib/apiBase";
 
 // v1.1.3 — DM key management. Lists the wallet's current encryption
@@ -27,14 +30,45 @@ import { API_BASE as API } from "@/lib/apiBase";
 // peers go to the new key. Old outbound bubbles stay readable too as
 // long as the peer hasn't also rotated their published key.
 function DMKeysSection({ nearAddr, t }) {
+  const nearCtx = useNearWalletCtx();
   const [hist, setHist] = useState([]);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState("");
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [derivePending, setDerivePending] = useState(false);
 
   const refresh = () => setHist(getKeyHistory(nearAddr));
   useEffect(() => { refresh(); }, [nearAddr]);
+
+  const onDeriveFromWallet = async () => {
+    if (!nearAddr || derivePending) return;
+    if (!nearCtx?.selector) {
+      setErr("Wallet selector not available — connect your NEAR wallet first.");
+      return;
+    }
+    setDerivePending(true); setErr("");
+    try {
+      const wallet = await nearCtx.selector.wallet();
+      if (!wallet?.signMessage) throw new Error("Connected wallet doesn't support signMessage.");
+      const challenge = walletDeriveChallenge(nearAddr);
+      const signed = await wallet.signMessage(challenge);
+      const kp = adoptWalletDerivedKeypair(nearAddr, signed);
+      if (!kp) throw new Error("Couldn't derive a keypair from the signature.");
+      const pub = exportPublicKey(kp);
+      const r = await fetch(`${API}/api/profile/dm-pubkey`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-wallet": nearAddr },
+        body: JSON.stringify({ pubkey: pub }),
+      });
+      if (!r.ok) throw new Error(`publish failed (${r.status})`);
+      refresh();
+    } catch (e) {
+      setErr(e.message || "derivation failed");
+    } finally {
+      setDerivePending(false);
+    }
+  };
 
   const onRotate = async () => {
     if (!nearAddr || pending) return;
@@ -81,8 +115,21 @@ function DMKeysSection({ nearAddr, t }) {
 
       {current ? (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 10, color: t.textDim, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 4 }}>
-            Current key fingerprint
+          <div style={{
+            fontSize: 10, color: t.textDim, letterSpacing: 0.6,
+            textTransform: "uppercase", marginBottom: 4,
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <span>Current key fingerprint</span>
+            {current.derived && (
+              <span style={{
+                padding: "1px 6px", borderRadius: 999,
+                background: "rgba(168,85,247,0.15)",
+                color: "#a855f7",
+                fontSize: 9, fontWeight: 700, letterSpacing: 0.4,
+                textTransform: "uppercase",
+              }}>derived</span>
+            )}
           </div>
           <div style={{
             display: "flex", alignItems: "center", gap: 8,
@@ -128,23 +175,49 @@ function DMKeysSection({ nearAddr, t }) {
       )}
 
       {!confirming ? (
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          disabled={pending}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 6,
-            padding: "7px 12px",
-            borderRadius: 8,
-            border: `1px solid ${t.border}`,
-            background: "var(--bg-input)",
-            color: t.text,
-            fontSize: 12, fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <RotateCcw size={12} /> Rotate DM key
-        </button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={pending || derivePending}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 12px",
+              borderRadius: 8,
+              border: `1px solid ${t.border}`,
+              background: "var(--bg-input)",
+              color: t.text,
+              fontSize: 12, fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <RotateCcw size={12} /> Rotate DM key
+          </button>
+          {/* v1.1.9 — derive from wallet. Single signMessage popup
+              gives the user a deterministic key that re-derives on any
+              device with the same wallet. Hidden when the current key
+              is already a derived one (no need to re-derive). */}
+          {!hist.find((h) => h.derived) && (
+            <button
+              type="button"
+              onClick={onDeriveFromWallet}
+              disabled={pending || derivePending}
+              title="Derive a new key from your wallet signature. Multi-device — same wallet on any device re-derives the same key."
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "7px 12px",
+                borderRadius: 8,
+                border: "1px solid rgba(168,85,247,0.4)",
+                background: "rgba(168,85,247,0.08)",
+                color: t.text,
+                fontSize: 12, fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {derivePending ? <><Loader2 size={12} className="animate-spin" /> Signing…</> : <><Key size={12} /> Derive from wallet</>}
+            </button>
+          )}
+        </div>
       ) : (
         <div style={{
           padding: 10,

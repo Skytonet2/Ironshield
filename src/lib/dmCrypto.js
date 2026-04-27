@@ -118,7 +118,8 @@ export function getKeyHistory(wallet) {
     fp: e.fp,
     pk: e.pk,
     createdAt: e.createdAt,
-    legacy: !!e.legacy,
+    legacy:  !!e.legacy,
+    derived: !!e.derived,
   }));
 }
 
@@ -293,6 +294,76 @@ export function rotateKeypair(wallet) {
 
 export function exportPublicKey(kp) {
   return kp ? util.encodeBase64(kp.publicKey) : null;
+}
+
+// v1.1.9 — wallet-derived deterministic keypair.
+//
+// Default flow mints a random Curve25519 keypair on first visit and
+// stores the secret in localStorage. That's recoverable only on the
+// originating device — clearing site data or moving devices wipes
+// it. The derived flow asks the wallet to NEP-413-sign a fixed
+// domain-separated message; we hash the signature to 32 bytes and
+// use that as the secret-key seed. The same wallet on any device
+// can re-derive the same keypair by signing the same message. The
+// outcome is deterministic, the wallet's signing key never leaves
+// the wallet, and the user gets multi-device DM continuity for the
+// cost of one signMessage popup per device.
+//
+// Caveats:
+//  · This adds a NEW keypair to history rather than replacing the
+//    current one — old messages encrypted to the random key still
+//    decrypt, and the user can re-rotate to random later if they
+//    want to.
+//  · Wallet-key compromise = full DM history exposure. Same as
+//    plain wallet-derived storage; not a regression vs the random
+//    flow which has its own XSS exposure.
+//  · The domain string MUST stay stable. Changing it changes the
+//    derived seed and breaks multi-device parity. If we ever need
+//    to roll, treat it as a key rotation event with manual UI.
+
+export const WALLET_DERIVE_DOMAIN = "ironshield-dm-key-v1";
+
+/** Build the fixed message + nonce the wallet signs to derive the
+ *  DM keypair. Same wallet + same message = same signature = same
+ *  derived secret. The nonce is a fixed 32-zero buffer because
+ *  NEP-413 expects 32 bytes and varying it would break determinism. */
+export function walletDeriveChallenge(walletAddress) {
+  return {
+    message:   `${WALLET_DERIVE_DOMAIN}:${(walletAddress || "").toLowerCase()}`,
+    nonce:     new Uint8Array(32), // fixed-zero — determinism is the whole point
+    recipient: "ironshield.near",
+  };
+}
+
+/** Convert a NEP-413 signed-message result into a deterministic
+ *  Curve25519 keypair, append to wallet history, return it.
+ *  signMessage returns the signature as base64; we BLAKE2b-hash the
+ *  raw bytes and slice 32 bytes for the secret-key seed. Idempotent:
+ *  calling twice with the same signature returns the same fingerprint
+ *  (history dedupes). */
+export function adoptWalletDerivedKeypair(wallet, signedMessage) {
+  if (!wallet || !signedMessage?.signature || typeof window === "undefined") return null;
+  let sigBytes;
+  try { sigBytes = util.decodeBase64(signedMessage.signature); }
+  catch { return null; }
+  const hashed = nacl.hash(sigBytes); // BLAKE2b → 64 bytes
+  const seed = hashed.slice(0, 32);
+  const kp = nacl.box.keyPair.fromSecretKey(seed);
+  const fp = fingerprint(kp.publicKey);
+
+  const hist = readHistory(wallet);
+  const dup = hist.find((e) => e.fp === fp);
+  if (dup) return entryToKp(dup);
+
+  const entry = {
+    fp,
+    sk: util.encodeBase64(kp.secretKey),
+    pk: util.encodeBase64(kp.publicKey),
+    createdAt: Date.now(),
+    derived:   true,
+  };
+  writeHistory(wallet, [...hist, entry]);
+  return { publicKey: kp.publicKey, secretKey: kp.secretKey, fp };
 }
 
 // Current ciphertext envelope version. Bumped when the wire format
