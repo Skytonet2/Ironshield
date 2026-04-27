@@ -662,29 +662,24 @@ function RepostMenu({ count, active, onRepost, onQuote, t }) {
       />
       {open && (
         <div role="menu" style={{
-          position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 50,
+          position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 100,
           minWidth: 160,
-          background: "var(--bg-card)",
+          // Use bg-surface (fully opaque, e.g. #0d1220) — the default
+          // bg-card token is rgba(255,255,255,0.03) which leaves the
+          // menu transparent over the next FeedCard.
+          background: "var(--bg-surface)",
           border: `1px solid ${t.border}`, borderRadius: 10,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
           overflow: "hidden",
         }}>
-          <button
-            type="button"
-            onClick={() => { setOpen(false); onRepost?.(); }}
-            style={menuItemStyle(t)}
-          >
+          <MenuItem t={t} onClick={() => { setOpen(false); onRepost?.(); }}>
             <Repeat2 size={14} />
             <span>{active ? "Undo repost" : "Repost"}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOpen(false); onQuote?.(); }}
-            style={menuItemStyle(t)}
-          >
+          </MenuItem>
+          <MenuItem t={t} onClick={() => { setOpen(false); onQuote?.(); }}>
             <Quote size={14} />
             <span>Quote</span>
-          </button>
+          </MenuItem>
         </div>
       )}
     </div>
@@ -698,7 +693,25 @@ function menuItemStyle(t) {
     background: "transparent", border: "none",
     color: t.text, fontSize: 13, textAlign: "left",
     cursor: "pointer",
+    transition: "background 100ms ease",
   };
+}
+
+// Tiny hover-aware menu button. Prevents the user wondering whether
+// the row is interactive — the bg-shift on hover answers it.
+function MenuItem({ t, onClick, children }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ ...menuItemStyle(t), background: hover ? "var(--bg-card-hover)" : "transparent" }}
+    >
+      {children}
+    </button>
+  );
 }
 
 /** Share button — Web Share API on mobile, clipboard fallback. Briefly
