@@ -13,6 +13,7 @@
 // no separate plumbing from each consumer.
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckCircle2, Send, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Flag, Share2, Quote, Copy, Check } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 import useImpression from "@/lib/hooks/useImpression";
@@ -632,59 +633,98 @@ function QuotedEmbed({ quoted, t }) {
   );
 }
 
-/** Repost button with a menu: plain Repost or Quote. Closes on outside click. */
+/** Repost button with a menu: plain Repost or Quote. Closes on outside click.
+ *  The menu is rendered into a portal on document.body so it escapes
+ *  the per-card stacking context that framer-motion's <m.div> creates
+ *  via transform/will-change — without the portal, the next FeedCard
+ *  paints on top of the menu's text. */
 function RepostMenu({ count, active, onRepost, onQuote, t }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const triggerRef = useRef(null);
+
+  // Compute the menu's screen position from the trigger button. Re-measures
+  // on open + on scroll/resize so the dropdown follows the trigger.
+  const place = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, left: r.left });
+  }, []);
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    place();
+    const onScroll = () => place();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, place]);
+
+  // Outside click: include the trigger as well as the portal'd menu in
+  // the "inside" check (the portal child isn't inside triggerRef).
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      const t1 = triggerRef.current, m = menuRef.current;
+      if (t1 && t1.contains(e.target)) return;
+      if (m && m.contains(e.target))   return;
+      setOpen(false);
+    };
     document.addEventListener("click", onDoc);
     return () => document.removeEventListener("click", onDoc);
   }, [open]);
 
-  // If onQuote isn't wired (older callers), fall back to a plain Repost button.
   if (!onQuote) {
     return (
       <Metric Icon={Repeat2} label="Reposts" count={count} onClick={onRepost} active={active} color="var(--green)" t={t} />
     );
   }
+
+  const menu = open && pos && typeof document !== "undefined" && createPortal(
+    <div
+      ref={menuRef}
+      role="menu"
+      style={{
+        position: "fixed", top: pos.top, left: pos.left, zIndex: 9999,
+        minWidth: 160,
+        background: t.bgCardHover || t.bgCard || "#141a2e",
+        border: `1px solid ${t.accent || "rgba(255,255,255,0.18)"}`,
+        borderRadius: 10,
+        boxShadow: "0 16px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,0,0,0.4)",
+        overflow: "hidden",
+      }}
+    >
+      <MenuItem t={t} onClick={() => { setOpen(false); onRepost?.(); }}>
+        <Repeat2 size={14} />
+        <span>{active ? "Undo repost" : "Repost"}</span>
+      </MenuItem>
+      <MenuItem t={t} onClick={() => { setOpen(false); onQuote?.(); }}>
+        <Quote size={14} />
+        <span>Quote</span>
+      </MenuItem>
+    </div>,
+    document.body,
+  );
+
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
-      <Metric
-        Icon={Repeat2}
-        label="Reposts"
-        count={count}
-        onClick={(e) => { e?.stopPropagation?.(); setOpen((v) => !v); }}
-        active={active}
-        color="var(--green)"
-        t={t}
-      />
-      {open && (
-        <div role="menu" style={{
-          position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 100,
-          minWidth: 160,
-          // Theme-aware solid color, slightly brighter than the page bg
-          // so the menu visually elevates instead of blending with the
-          // post below it. CSS-variable bgs were too dim (3% white) or
-          // too close in tone to the body — this pops cleanly.
-          background: t.bgCardHover || t.bgCard || "#141a2e",
-          border: `1px solid ${t.accent || "rgba(255,255,255,0.18)"}`,
-          borderRadius: 10,
-          boxShadow: "0 16px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,0,0,0.4)",
-          overflow: "hidden",
-        }}>
-          <MenuItem t={t} onClick={() => { setOpen(false); onRepost?.(); }}>
-            <Repeat2 size={14} />
-            <span>{active ? "Undo repost" : "Repost"}</span>
-          </MenuItem>
-          <MenuItem t={t} onClick={() => { setOpen(false); onQuote?.(); }}>
-            <Quote size={14} />
-            <span>Quote</span>
-          </MenuItem>
-        </div>
-      )}
-    </div>
+    <>
+      <div ref={triggerRef} style={{ position: "relative", display: "inline-flex" }}>
+        <Metric
+          Icon={Repeat2}
+          label="Reposts"
+          count={count}
+          onClick={(e) => { e?.stopPropagation?.(); setOpen((v) => !v); }}
+          active={active}
+          color="var(--green)"
+          t={t}
+        />
+      </div>
+      {menu}
+    </>
   );
 }
 
