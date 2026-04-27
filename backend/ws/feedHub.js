@@ -79,10 +79,16 @@ const PROD_ORIGINS = new Set(
     "https://ironshield.pages.dev,https://ironshield.near.page"
   ).split(",").map((s) => s.trim()).filter(Boolean)
 );
+// Cloudflare Pages preview-alias subdomains. Same pattern + reasoning
+// as backend/server.js: only CF can mint *.pages.dev subdomains, so
+// the wildcard isn't an open door. Mirrors the REST CORS allowlist
+// so DM presence + delivery work on previews too.
+const PAGES_HOSTNAME = (process.env.CF_PAGES_HOSTNAME || "ironshield.pages.dev").trim();
+const previewRe = new RegExp(`^https://[a-z0-9][a-z0-9-]*\\.${PAGES_HOSTNAME.replace(/\./g, "\\.")}$`);
 
 function originAllowed(origin) {
   if (!origin) return true;
-  return DEV_ORIGINS.has(origin) || PROD_ORIGINS.has(origin);
+  return DEV_ORIGINS.has(origin) || PROD_ORIGINS.has(origin) || previewRe.test(origin);
 }
 
 function attach(server) {
