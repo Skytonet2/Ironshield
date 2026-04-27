@@ -64,6 +64,10 @@ app.use("/api/chat",      require("./routes/chat.route"));
 // dispatches in declaration order — agents.route falls through fine
 // either way, but ordering by specificity reads cleaner).
 app.use("/api/agents/avatar",   require("./routes/avatars.route"));
+// Phase 10 v1 lock — every request to /api/agents/diy returns 403 until
+// Phase 5 unlocks DIY composition. Mounted BEFORE /api/agents so it
+// wins for the /diy subpath without disturbing the rest.
+app.use("/api/agents/diy",      require("./routes/agentsDiy.route"));
 app.use("/api/agents",    require("./routes/agents.route"));
 app.use("/api/skills",    require("./routes/skills.route"));
 app.use("/api/trending",  require("./routes/trending.route"));
@@ -102,6 +106,11 @@ app.use("/api/bridge",        require("./routes/bridge.route"));
 app.use("/api/ai",            require("./routes/ai.route"));
 app.use("/api/market",        require("./routes/market.route"));
 app.use("/api/ironclaw",      require("./routes/ironclaw.route"));
+
+// Phase 10 — Agent Economy
+app.use("/api/missions",      require("./routes/missions.route"));
+app.use("/api/kits",          require("./routes/kits.route"));
+app.use("/api/escalations",   require("./routes/escalations.route"));
 
 // Root
 app.get("/", (req, res) => {
