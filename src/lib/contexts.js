@@ -63,8 +63,18 @@ export const PRESET_ACCENTS = {
   carbon:   "#a3a3a3",  // neutral gray
   ember:    "#f97316",  // orange
   ironclaw: "#ef4444",  // red
+  // v1.1.10 — Pro-only presets. The picker UI gates selection on
+  // is_pro; PRESET_ACCENTS itself stays open so a Pro user keeps
+  // their accent applied after a brief stake drop until the cache
+  // refresh window expires (graceful degradation, not a privilege
+  // escalation — themes are cosmetic, real Pro perks live behind
+  // requirePro on protected routes).
+  emerald:  "#10b981",  // green
+  aurora:   "#a855f7",  // violet w/ cyan glow
+  gold:     "#f59e0b",  // amber
 };
 export const THEME_PRESETS = Object.keys(PRESET_ACCENTS);
+export const PRO_THEME_PRESETS = new Set(["emerald", "aurora", "gold"]);
 
 const accentGlowFor = (hex) => {
   // Convert #RRGGBB → rgba(r,g,b,0.15) for the legacy theme object's

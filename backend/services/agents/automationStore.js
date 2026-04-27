@@ -193,8 +193,26 @@ async function rotateSchedule(automation) {
   return next;
 }
 
+// v1.1 — Day 12.3 AI-evaluated triggers. Worker tick calls these.
+async function findAiTriggers() {
+  const { rows } = await db.query(
+    `SELECT * FROM agent_automations
+        WHERE enabled = TRUE
+          AND trigger->>'type' = 'ai'`
+  );
+  return rows.map(publicRow);
+}
+
+async function advanceAiCursor(automationId, lastId) {
+  await db.query(
+    "UPDATE agent_automations SET ai_last_id=$2, updated_at=NOW() WHERE id=$1 AND ai_last_id < $2",
+    [automationId, lastId]
+  );
+}
+
 module.exports = {
   create, update, findOne, findById, listForAccount, remove,
   due, recordRun, listRuns, rotateSchedule, nextRunAt,
   findByEventChannel, countByOwner,
+  findAiTriggers, advanceAiCursor,
 };

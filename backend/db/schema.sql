@@ -389,6 +389,15 @@ CREATE TABLE IF NOT EXISTS feed_dm_verifications (
 );
 CREATE INDEX IF NOT EXISTS idx_dm_verifications_viewer ON feed_dm_verifications(viewer_wallet);
 
+-- v1.1: AI-evaluated automation triggers (Day 12.3 deferred). The
+-- worker walks new feed_posts since the last id it evaluated for
+-- this rule, calls classify() per item, and fires the action when
+-- match=true. ai_last_id is the cursor; default 0 means "haven't
+-- evaluated anything yet" so the first tick after enable starts
+-- from the most recent posts (worker clamps to a lookback window
+-- to avoid blasting through the whole archive).
+ALTER TABLE agent_automations ADD COLUMN IF NOT EXISTS ai_last_id INTEGER NOT NULL DEFAULT 0;
+
 -- v1.1: group-chat E2E (sender-keys flavor). Opt-in at group creation
 -- — owner mints a 32-byte symmetric key, wraps it via nacl.box to
 -- each member's dm_pubkey, and POSTs the wraps. Encrypted send/list
