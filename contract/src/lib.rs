@@ -14,10 +14,14 @@ mod missions;
 mod web4;
 mod pretoken;
 mod agents;
+mod mission_engine;
+mod kits;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
 pub use agents::{AgentProfile, AgentStats, ActivityEntry, AgentTask, Skill, SkillMetadata, AgentPermissions, AgentFlags, SubAgent, AgentConnection};
+pub use mission_engine::Mission;
+pub use kits::Kit;
 
 pub type PoolId = u32;
 
@@ -209,6 +213,19 @@ pub struct StakingContract {
     /// stay off-chain in the backend connection store; this map only
     /// holds the public side so the binding is auditable. Prefix b"X".
     pub agent_connections: UnorderedMap<AccountId, Vec<AgentConnection>>,
+
+    // ── Phase 10: agent-economy missions + kits ───────────────────────
+    /// Structured missions with on-chain escrow. Verbose payload
+    /// (template, crew DAG, audit log) lives off-chain in Postgres;
+    /// only lifecycle + escrow live here. Prefix b"B".
+    pub missions:         UnorderedMap<u64, Mission>,
+    /// Monotonic mission id so the orchestrator + frontend can
+    /// reference missions without ambiguity.
+    pub next_mission_id:  u64,
+    /// Curated Kit catalog keyed by slug. Bundled-skill ids and preset
+    /// schema live off-chain; on-chain row is the integrity anchor.
+    /// Prefix b"k" (lowercase) — distinct from b"K" (skills).
+    pub kits:             UnorderedMap<String, Kit>,
 }
 
 #[near]
@@ -282,6 +299,11 @@ impl StakingContract {
 
             // Phase 8 — external-framework connections. Prefix b"X".
             agent_connections:   UnorderedMap::new(b"X"),
+
+            // Phase 10 — economy missions + kits. Prefixes b"B" and b"k".
+            missions:            UnorderedMap::new(b"B"),
+            next_mission_id:     0,
+            kits:                UnorderedMap::new(b"k"),
         }
     }
 }
