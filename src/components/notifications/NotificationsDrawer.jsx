@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { useNotifications } from "@/lib/hooks/useNotifications";
+import FollowButton from "@/components/profile/FollowButton";
 
 const TYPE_META = {
   like:    { Icon: Heart,         color: "#ef4444", label: "liked" },
@@ -249,6 +250,18 @@ function Row({ n, t }) {
           {timeAgo(n.created_at)}
         </div>
       </div>
+
+      {/* Inline follow-back affordance — clicking the button does
+          NOT navigate (stopPropagation on the wrapper), so users can
+          act from the drawer without losing their place. */}
+      {n.type === "follow" && n.actor_wallet && (
+        <div
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+          style={{ flexShrink: 0, alignSelf: "center" }}
+        >
+          <FollowButton targetWallet={n.actor_wallet} />
+        </div>
+      )}
     </a>
   );
 }
