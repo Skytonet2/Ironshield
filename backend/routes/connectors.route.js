@@ -24,6 +24,8 @@ const credentialStore = require("../connectors/credentialStore");
 const whatsappWebhook = require("../connectors/whatsapp/webhook");
 const xOauth        = require("../connectors/x/oauth");
 const facebookOauth = require("../connectors/facebook/oauth");
+const emailGoogleOauth    = require("../connectors/email/oauth-google");
+const emailMicrosoftOauth = require("../connectors/email/oauth-microsoft");
 
 // Public registry — no auth. Frontend uses this to render the "available
 // connectors" tab and decide which connect dialog to show.
@@ -59,6 +61,15 @@ router.post("/x/oauth/start",        requireWallet, xOauth.start);
 router.get( "/x/oauth/callback",                    xOauth.callback);
 router.post("/facebook/oauth/start", requireWallet, facebookOauth.start);
 router.get( "/facebook/oauth/callback",             facebookOauth.callback);
+
+// Email is multi-provider: each provider gets its own start+callback
+// pair that ultimately persists into the same `email` connector row
+// (with provider:'google' | 'microsoft'). The connector itself
+// dispatches XOAUTH2 vs password auth based on payload.provider.
+router.post("/email/oauth/google/start",       requireWallet, emailGoogleOauth.start);
+router.get( "/email/oauth/google/callback",                   emailGoogleOauth.callback);
+router.post("/email/oauth/microsoft/start",    requireWallet, emailMicrosoftOauth.start);
+router.get( "/email/oauth/microsoft/callback",                emailMicrosoftOauth.callback);
 
 // Connect — store creds for a connector. Payload shape is connector-
 // specific; we don't enforce schema here. The connector's invoke()

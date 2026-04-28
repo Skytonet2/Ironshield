@@ -23,6 +23,8 @@ const PUBLIC = new Set([
   // via the signed cookie set during /start, not the wallet middleware.
   "get /x/oauth/callback",
   "get /facebook/oauth/callback",
+  "get /email/oauth/google/callback",
+  "get /email/oauth/microsoft/callback",
 ]);
 
 test("connectors.route — public surface stays public, everything else is wallet-guarded", () => {

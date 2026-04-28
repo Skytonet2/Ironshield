@@ -70,6 +70,41 @@ export default function ConnectDialog({ connectorName, onClose, onConnected }) {
           </div>
         )}
 
+        {Array.isArray(meta.oauth_providers) && meta.oauth_providers.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {meta.oauth_providers.map((p) => (
+              <button
+                type="button"
+                key={p.provider}
+                onClick={async () => {
+                  setBusy(true); setErr(null);
+                  try {
+                    const r = await apiFetch(
+                      `/api/connectors/${encodeURIComponent(connectorName)}/oauth/${p.provider}/start`,
+                      { method: "POST" }
+                    );
+                    const j = await r.json();
+                    if (!r.ok || !j.url) throw new Error(j.error || `oauth start failed (${r.status})`);
+                    window.location.href = j.url;
+                  } catch (e) {
+                    setErr(e.message); setBusy(false);
+                  }
+                }}
+                style={{
+                  ...oauthBtnStyle,
+                  borderColor: p.color,
+                  color: p.color,
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+            <div style={dividerStyle}>
+              <span>or use an app password</span>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {meta.fields.map((f) => {
             const isSecret = f.secret;
@@ -189,4 +224,25 @@ const submitBtnStyle = {
   border: "1px solid var(--accent-border)", padding: "8px 16px", borderRadius: 8,
   fontSize: 12.5, fontWeight: 700, cursor: "pointer",
   display: "inline-flex", alignItems: "center", gap: 6,
+};
+const oauthBtnStyle = {
+  background: "var(--bg-card)",
+  border: "1px solid var(--border)",
+  padding: "10px 14px",
+  borderRadius: 8,
+  fontSize: 12.5,
+  fontWeight: 700,
+  cursor: "pointer",
+  width: "100%",
+  textAlign: "center",
+};
+const dividerStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  margin: "4px 0",
+  fontSize: 10.5,
+  color: "var(--text-3)",
+  textTransform: "uppercase",
+  letterSpacing: 1,
 };

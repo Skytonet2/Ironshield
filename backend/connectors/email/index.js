@@ -37,22 +37,40 @@ async function _creds(wallet) {
   return row.payload;
 }
 
+/** Build the auth block nodemailer / imapflow need from the stored
+ *  payload. OAuth providers (provider: 'google' | 'microsoft') get
+ *  XOAUTH2; everyone else gets plain user/pass. The access_token must
+ *  be the freshly-refreshed one — connectorRefresh ensures that. */
+function _smtpAuth(payload) {
+  if (payload.provider === "google" || payload.provider === "microsoft") {
+    return { type: "OAuth2", user: payload.user || payload.smtp?.user, accessToken: payload.access_token };
+  }
+  return { user: payload.smtp?.user, pass: payload.smtp?.pass };
+}
+function _imapAuth(payload) {
+  if (payload.provider === "google" || payload.provider === "microsoft") {
+    return { user: payload.user || payload.imap?.user, accessToken: payload.access_token };
+  }
+  return { user: payload.imap?.user, pass: payload.imap?.pass };
+}
+
 async function send({ wallet, to, subject, text, html, replyTo }) {
   if (!to || !subject || !(text || html)) {
     throw new Error("send: { to, subject, text|html } required");
   }
-  const { smtp } = await _creds(wallet);
+  const payload = await _creds(wallet);
+  const { smtp } = payload;
   if (!smtp?.host) throw new Error("send: smtp config missing in credentials");
   const nm = _lazy("nodemailer");
   const transporter = nm.createTransport({
     host: smtp.host,
     port: smtp.port || 587,
     secure: smtp.secure ?? (smtp.port === 465),
-    auth: { user: smtp.user, pass: smtp.pass },
+    auth: _smtpAuth(payload),
   });
   try {
     return await transporter.sendMail({
-      from: smtp.user,
+      from: payload.user || smtp.user,
       to: Array.isArray(to) ? to.join(", ") : to,
       subject,
       text,
@@ -65,14 +83,15 @@ async function send({ wallet, to, subject, text, html, replyTo }) {
 }
 
 async function listInbox({ wallet, mailbox = "INBOX", limit = 20, since }) {
-  const { imap } = await _creds(wallet);
+  const payload = await _creds(wallet);
+  const { imap } = payload;
   if (!imap?.host) throw new Error("list_inbox: imap config missing in credentials");
   const { ImapFlow } = _lazy("imapflow");
   const client = new ImapFlow({
     host: imap.host,
     port: imap.port || 993,
     secure: imap.secure ?? true,
-    auth: { user: imap.user, pass: imap.pass },
+    auth: _imapAuth(payload),
     logger: false,
   });
   const out = [];
@@ -105,14 +124,15 @@ async function listInbox({ wallet, mailbox = "INBOX", limit = 20, since }) {
 
 async function getThread({ wallet, mailbox = "INBOX", uid }) {
   if (!uid) throw new Error("get_thread: { uid } required");
-  const { imap } = await _creds(wallet);
+  const payload = await _creds(wallet);
+  const { imap } = payload;
   const { ImapFlow } = _lazy("imapflow");
   const { simpleParser } = _lazy("mailparser");
   const client = new ImapFlow({
     host: imap.host,
     port: imap.port || 993,
     secure: imap.secure ?? true,
-    auth: { user: imap.user, pass: imap.pass },
+    auth: _imapAuth(payload),
     logger: false,
   });
   await client.connect();
@@ -139,6 +159,27 @@ async function getThread({ wallet, mailbox = "INBOX", uid }) {
   }
 }
 
+/** Refresh — called by connectorRefresh worker. Dispatches by provider.
+ *  Password-auth (BYO) rows have no refresh path; we throw a structured
+ *  error so the worker logs and skips. */
+async function refresh({ wallet }) {
+  const row = await credentialStore.getDecrypted({ wallet, connector: "email" });
+  if (!row?.payload) throw new Error("email refresh: no row on file");
+  const { provider } = row.payload;
+  if (provider === "google") {
+    const g = require("./oauth-google");
+    return g.refresh({ payload: row.payload });
+  }
+  if (provider === "microsoft") {
+    const m = require("./oauth-microsoft");
+    return m.refresh({ payload: row.payload });
+  }
+  // BYO password creds don't expire — nothing to refresh.
+  const err = new Error(`email refresh: provider '${provider || "byo"}' has no automated refresh`);
+  err.code = "EMAIL_NO_REFRESH";
+  throw err;
+}
+
 async function invoke(action, ctx = {}) {
   const params = ctx.params || {};
   const wallet = ctx.wallet;
@@ -160,4 +201,5 @@ module.exports = {
   rate_limits: { per_minute: 10, per_hour: 100, scope: "wallet" },
   auth_method: "byo_account",
   invoke,
+  refresh,
 };

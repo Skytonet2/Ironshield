@@ -36,9 +36,14 @@ export const CONNECTOR_META = {
   },
   email: {
     label:    "Email",
-    blurb:    "Send via SMTP, read via IMAP. Use an app password (not your main login).",
+    blurb:    "Send via SMTP, read via IMAP. Sign in with Google or Microsoft, or supply an app password for any other provider.",
     color:    "#A855F7",
+    // hybrid: dialog renders OAuth buttons at the top + BYO form below.
     flow:     "form",
+    oauth_providers: [
+      { provider: "google",    label: "Sign in with Google",    color: "#EA4335" },
+      { provider: "microsoft", label: "Sign in with Microsoft", color: "#0078D4" },
+    ],
     fields:   [
       { key: "smtp.host",   label: "SMTP host",     placeholder: "smtp.gmail.com",   required: true },
       { key: "smtp.port",   label: "SMTP port",     placeholder: "587",              required: true, type: "number" },
