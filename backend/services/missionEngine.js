@@ -26,6 +26,7 @@
 
 const crypto = require("node:crypto");
 const db = require("../db/client");
+const eventBus = require("./eventBus");
 
 const STATUS_OPEN      = "open";
 const STATUS_CLAIMED   = "claimed";
@@ -326,7 +327,22 @@ async function appendAuditStep({
         agent_wallet,
       ],
     );
-    return rows[0];
+    const inserted = rows[0];
+    // Fan out so the SSE stream can push to live consumers without
+    // polling. Best-effort — emit failures must never tank a write.
+    try {
+      eventBus.emit("mission.audit.appended", {
+        mission_on_chain_id,
+        step_seq:     inserted.step_seq,
+        skill_id,
+        role,
+        action_type,
+        payload_hash: inserted.payload_hash,
+        prev_hash:    inserted.prev_hash,
+        created_at:   inserted.created_at,
+      });
+    } catch { /* never throw out of a successful write */ }
+    return inserted;
   });
 }
 

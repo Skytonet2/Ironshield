@@ -13,6 +13,7 @@
 //   GET  /api/missions/:id                full row + audit log + escalations
 //   GET  /api/missions/:id/audit          just the audit chain
 //   GET  /api/missions/:id/audit/root     the latest payload_hash
+//   GET  /api/missions/:id/stream         SSE: live audit + escalation events
 //   POST /api/missions/:id/record-create  off-chain bootstrap after create_mission
 //   POST /api/missions/:id/audit          append a step to the audit log
 //   POST /api/missions/:id/run-crew       run a sequential crew (auth-gated)
@@ -23,6 +24,8 @@ const requireWallet      = require("../middleware/requireWallet");
 const missionEngine      = require("../services/missionEngine");
 const crewOrchestrator   = require("../services/crewOrchestrator");
 const tgEscalation       = require("../services/tgEscalation");
+const eventBus           = require("../services/eventBus");
+const db                 = require("../db/client");
 
 router.get("/", async (req, res) => {
   try {
@@ -89,6 +92,119 @@ router.get("/:id/audit/root", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// ─── SSE: live mission stream ────────────────────────────────────────
+//
+// Streams new audit-log entries and escalation lifecycle changes for a
+// single mission as they happen. Reads piggyback on the existing
+// public read-side endpoints, so no auth is required here either —
+// the data is the same shape `GET /:id` already returns.
+//
+// Wire format:
+//   event: snapshot              (sent once on connect)
+//   data: { audit: [...], escalations: [...] }
+//
+//   event: audit.appended        (every new audit_log row for this mission)
+//   data: { mission_on_chain_id, step_seq, action_type, payload_hash, ... }
+//
+//   event: escalation.created    (every new mission_escalations row)
+//   data: { mission_on_chain_id, escalation_id, action_type, status, channel, ... }
+//
+//   event: escalation.resolved   (status flip on an existing escalation)
+//   data: { mission_on_chain_id, escalation_id, status, decided_at, ... }
+//
+// A `:keepalive` SSE comment is sent every 30 s so corporate proxies
+// don't cull the connection. Subscriptions are torn down when the
+// client closes the connection or `req.on('close')` fires.
+//
+// Handler is exported as a named function so it's exercised directly
+// with mocked req/res + injected deps in tests — no Express server
+// needed. Production callers go through the route registration below.
+function sseFrame(eventName, data) {
+  // SSE wire format: each event is "event: name\ndata: <line>\n\n".
+  // Multi-line data fields are encoded as multiple `data:` lines but
+  // we serialise to JSON which has no line breaks, so a single line
+  // is always sufficient.
+  return `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+async function streamHandler(req, res, deps = {}) {
+  const me  = deps.missionEngine || missionEngine;
+  const dbc = deps.db            || db;
+  const bus = deps.eventBus      || eventBus;
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "id must be numeric" });
+  }
+  const mission = await me.getMission(id);
+  if (!mission) {
+    return res.status(404).json({ error: "Mission not found" });
+  }
+
+  // Kick the connection into SSE mode. flushHeaders() is a no-op on
+  // mocks; on the real Node http response it forces the headers out
+  // before the first body write so the client knows it's an SSE stream.
+  res.statusCode = 200;
+  res.setHeader("Content-Type",  "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection",    "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx response buffering
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  // Initial snapshot: matches what GET /:id would return for audit +
+  // escalations. Lets the frontend bootstrap without a separate fetch.
+  const audit       = await me.getAuditLog(id);
+  const { rows: escalations } = await dbc.query(
+    `SELECT id, step_seq, action_type, status, channel, decided_by_wallet,
+            decided_at, created_at, expires_at
+       FROM mission_escalations
+      WHERE mission_on_chain_id = $1
+      ORDER BY created_at DESC`,
+    [id],
+  );
+  res.write(sseFrame("snapshot", { audit, escalations }));
+
+  // Filter every bus event by mission id so a chatty mission elsewhere
+  // doesn't fan out to other listeners. Track (channel, listener)
+  // pairs so cleanup works both against the real eventBus wrapper
+  // (which returns its own unsubscribe) and against a raw
+  // EventEmitter (whose `.on` returns the emitter itself, not an unsub).
+  const matches = (payload) => Number(payload?.mission_on_chain_id) === id;
+  const subs = [];
+  const wireUp = (channel, eventName) => {
+    const listener = (payload) => {
+      if (!matches(payload)) return;
+      try { res.write(sseFrame(eventName, payload)); } catch { /* client gone */ }
+    };
+    bus.on(channel, listener);
+    subs.push({ channel, listener });
+  };
+  wireUp("mission.audit.appended",      "audit.appended");
+  wireUp("mission.escalation.created",  "escalation.created");
+  wireUp("mission.escalation.resolved", "escalation.resolved");
+
+  // Keepalive against idle-connection killers (heroku, nginx default
+  // is 60s). Comment lines are ignored by EventSource.
+  const keepalive = setInterval(() => {
+    try { res.write(":keepalive\n\n"); } catch { /* client gone */ }
+  }, 30_000);
+  if (keepalive.unref) keepalive.unref();
+
+  const cleanup = () => {
+    clearInterval(keepalive);
+    for (const { channel, listener } of subs) {
+      if (typeof bus.off === "function") bus.off(channel, listener);
+      else if (typeof bus.removeListener === "function") bus.removeListener(channel, listener);
+    }
+  };
+  // req.on('close') fires whether the client disconnects cleanly or
+  // the response was ended on our side — covers both paths.
+  if (typeof req.on === "function") req.on("close", cleanup);
+  return cleanup; // exposed for direct test invocation
+}
+
+router.get("/:id/stream", (req, res) => streamHandler(req, res));
 
 // Frontend bootstrap: posters call this right after their create_mission
 // tx lands so the off-chain mirror is populated before the indexer
@@ -220,3 +336,5 @@ router.post("/:id/mirror", async (req, res) => {
 
 module.exports = router;
 module.exports.runCrewHandler = runCrewHandler;
+module.exports.streamHandler  = streamHandler;
+module.exports.sseFrame       = sseFrame;

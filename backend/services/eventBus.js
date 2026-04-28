@@ -34,6 +34,15 @@ function on(channel, handler) {
   return () => bus.off(channel, handler);
 }
 
+/** Direct unsubscribe by (channel, handler) pair. Most callers should
+ *  use the unsubscribe function returned by `on()`, but long-lived
+ *  consumers (e.g. SSE handlers) that track many subscriptions find
+ *  it more convenient to call `off()` explicitly during teardown. */
+function off(channel, handler) {
+  if (!channel || typeof handler !== "function") return;
+  bus.off(channel, handler);
+}
+
 function once(channel, handler) {
   if (!channel || typeof handler !== "function") return () => {};
   bus.once(channel, handler);
@@ -44,4 +53,4 @@ function listenerCount(channel) {
   return bus.listenerCount(channel);
 }
 
-module.exports = { emit, on, once, listenerCount };
+module.exports = { emit, on, off, once, listenerCount };
