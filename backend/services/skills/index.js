@@ -31,6 +31,10 @@ const outreachDm      = require("./outreach_dm");
 const negotiator      = require("./negotiator");
 const verifierListing = require("./verifier_listing");
 const verifierScam    = require("./verifier_scam");
+// Phase 10 Tier 4 — Freelancer Hunter bundle.
+const scoutX          = require("./scout_x");
+const scoutTg         = require("./scout_tg");
+const pitchGen        = require("./pitch_gen");
 
 const REGISTRY = {};
 function register(mod) {
@@ -47,6 +51,9 @@ register(outreachDm);
 register(negotiator);
 register(verifierListing);
 register(verifierScam);
+register(scoutX);
+register(scoutTg);
+register(pitchGen);
 
 /** Resolve a SkillMetadata.category to an executable shape:
  *    "builtin:<id>" → { kind: "builtin", key }     (registered above)
