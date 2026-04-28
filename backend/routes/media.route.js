@@ -216,7 +216,19 @@ function r2Configured() {
 function signR2Put({ accountId, accessKeyId, secretKey, bucket, key, body, contentType }) {
   const region = "auto";
   const service = "s3";
-  const host = `${accountId}.r2.cloudflarestorage.com`;
+  // Jurisdiction-aware host. R2 buckets created in EU or FedRAMP
+  // jurisdictions live behind a different S3 endpoint:
+  //   default → <account>.r2.cloudflarestorage.com
+  //   EU      → <account>.eu.r2.cloudflarestorage.com
+  //   FedRAMP → <account>.fedramp.r2.cloudflarestorage.com
+  // Hitting the default endpoint for an EU bucket returns NoSuchBucket
+  // because the lookup is namespaced per jurisdiction. R2_JURISDICTION
+  // is set to "eu" (or "fedramp") when the bucket lives outside the
+  // default region; empty/unset preserves the previous behavior.
+  const jur = String(process.env.R2_JURISDICTION || "").trim().toLowerCase();
+  const host = jur
+    ? `${accountId}.${jur}.r2.cloudflarestorage.com`
+    : `${accountId}.r2.cloudflarestorage.com`;
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, ""); // YYYYMMDDTHHMMSSZ
   const dateStamp = amzDate.slice(0, 8);
