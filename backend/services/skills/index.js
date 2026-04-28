@@ -24,6 +24,11 @@ const dailyBriefing = require("./daily_briefing");
 const summariseUrl  = require("./summarise_url");
 const httpRunner    = require("./http_runner");
 
+// Phase 10 Tier 3 — Wallet Watch Kit.
+const watchBalance    = require("./watch_balance");
+const detectDrain     = require("./detect_drain");
+const classifyAlert   = require("./classify_alert");
+const alertOwner      = require("./alert_owner");
 // Phase 10 Tier 4 — Realtor / Car Sales bundle.
 const scoutFb         = require("./scout_fb");
 const scoutJiji       = require("./scout_jiji");
@@ -47,7 +52,12 @@ function register(mod) {
 register(airdropScan);
 register(dailyBriefing);
 register(summariseUrl);
-// Tier 4 — first wave (Realtor Kit dependencies).
+// Tier 3 — Wallet Watch Kit.
+register(watchBalance);
+register(detectDrain);
+register(classifyAlert);
+register(alertOwner);
+// Tier 4 — first wave (Realtor / Car Sales / Freelancer Hunter / Background Checker).
 register(scoutFb);
 register(scoutJiji);
 register(outreachDm);

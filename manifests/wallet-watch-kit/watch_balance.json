@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "category": "scout",
+  "vertical_tags": ["security"],
+  "prompt_fragment": "You are the Scout for the Wallet Watch Kit. Each tick, read the watched NEAR account's balance via the JsonRpcProvider view_account query. Return only the structured balance reading; downstream verifier decides whether the change matters.",
+  "tool_manifest": [
+    {
+      "name": "watch_balance",
+      "runtime_category": "builtin:watch_balance",
+      "description": "Reads NEAR account balance and reports delta vs. prev_balance_yocto."
+    }
+  ],
+  "required_connectors": [],
+  "io_schema": {
+    "type": "object",
+    "required": ["address"],
+    "properties": {
+      "address":            { "type": "string", "description": "NEAR account to watch" },
+      "prev_balance_yocto": { "type": ["string", "null"], "description": "Previous balance in yoctoNEAR; null on first poll" },
+      "rpc_url":            { "type": "string", "description": "Override RPC endpoint (defaults to NEAR_RPC_URL env)" }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "address":            { "type": "string" },
+        "balance_yocto":      { "type": "string" },
+        "prev_balance_yocto": { "type": ["string", "null"] },
+        "delta_yocto":        { "type": ["string", "null"], "description": "prev - current; positive means outflow" },
+        "polled_at":          { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "status": "curated"
+}

@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "category": "verifier",
+  "vertical_tags": ["security"],
+  "prompt_fragment": "You are the Verifier for the Wallet Watch Kit. Given a balance reading and optional recent destination list, classify whether the change looks like a drain. Pure heuristic — no LLM judgement: absolute outflow vs. threshold, percentage drop, novel destinations. Emit a structured verdict the Reporter can format.",
+  "tool_manifest": [
+    {
+      "name": "detect_drain",
+      "runtime_category": "builtin:detect_drain",
+      "description": "Heuristic drain classifier over balance delta + optional recent destinations."
+    }
+  ],
+  "required_connectors": [],
+  "io_schema": {
+    "type": "object",
+    "required": ["balance_yocto", "prev_balance_yocto"],
+    "properties": {
+      "balance_yocto":         { "type": "string" },
+      "prev_balance_yocto":    { "type": "string" },
+      "alert_threshold_yocto": { "type": "string", "description": "Absolute outflow that always trips the alarm; default 1 NEAR" },
+      "recent_destinations":   { "type": "array", "items": { "type": "string" } },
+      "known_destinations":    { "type": "array", "items": { "type": "string" } }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "is_drain":       { "type": "boolean" },
+        "severity":       { "type": "string", "enum": ["low", "medium", "high"] },
+        "outflow_yocto":  { "type": "string" },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string", "enum": ["threshold_exceeded", "balance_drop_pct", "new_destination"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "status": "curated"
+}
