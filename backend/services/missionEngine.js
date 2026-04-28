@@ -122,8 +122,15 @@ async function recordCreated({
 
 /** Orchestrator path: apply an indexed mission_<status> event to the
  *  off-chain row. Validates state transitions so a misordered event
- *  feed can't corrupt the mirror. */
-async function mirrorEvent(event) {
+ *  feed can't corrupt the mirror.
+ *
+ *  options.allowSkip — when true, the canTransition guard is bypassed.
+ *  Used by the indexer when it's catching up after downtime and the
+ *  on-chain state has advanced past one or more intermediate steps
+ *  (e.g., DB still shows "open" but chain is already "approved"). The
+ *  HTTP /mirror route does NOT pass this — it keeps the strict guard
+ *  so a misbehaving caller can't corrupt state. */
+async function mirrorEvent(event, options = {}) {
   if (!event || event.on_chain_id == null) throw new Error("on_chain_id required");
   const current = await getMission(event.on_chain_id);
   if (!current) {
@@ -131,7 +138,7 @@ async function mirrorEvent(event) {
       `mirrorEvent: unknown mission ${event.on_chain_id} — indexer must catch the create event first`,
     );
   }
-  if (event.status && !canTransition(current.status, event.status)) {
+  if (event.status && !options.allowSkip && !canTransition(current.status, event.status)) {
     throw new Error(
       `Illegal transition ${current.status} → ${event.status} for mission ${event.on_chain_id}`,
     );
@@ -164,6 +171,69 @@ async function mirrorEvent(event) {
                claimed_at, submitted_at, review_deadline, finalized_at`;
   const { rows } = await db.query(sql, params);
   return rows[0];
+}
+
+/** Indexer path: insert the off-chain mirror row from on-chain mission
+ *  data when no frontend bootstrap has run yet. Uses '{}' as a
+ *  placeholder for inputs_json — the on-chain inputs_hash is the
+ *  integrity anchor; the verbose JSON is a UX nicety the frontend can
+ *  backfill later. ON CONFLICT DO NOTHING so the frontend's
+ *  recordCreated wins if it fired first.
+ *
+ *  Status + timestamps are taken from the on-chain Mission record so
+ *  that an indexer catching up after downtime lands a row already in
+ *  the correct terminal state. */
+async function recordCreatedFromChain({
+  on_chain_id,
+  template_slug = null,
+  poster_wallet,
+  kit_slug = null,
+  inputs_hash,
+  escrow_yocto,
+  platform_fee_bps = 500,
+  status = "open",
+  claimant_wallet = null,
+  audit_root = null,
+  created_at = null,
+  claimed_at = null,
+  submitted_at = null,
+  review_deadline = null,
+  finalized_at = null,
+}) {
+  if (on_chain_id == null) throw new Error("on_chain_id required");
+  if (!poster_wallet) throw new Error("poster_wallet required");
+  if (!inputs_hash) throw new Error("inputs_hash required");
+  if (escrow_yocto == null) throw new Error("escrow_yocto required");
+
+  const sql = `
+    INSERT INTO missions
+      (on_chain_id, template_slug, poster_wallet, kit_slug, inputs_json,
+       inputs_hash, escrow_yocto, platform_fee_bps, status,
+       claimant_wallet, audit_root, created_at, claimed_at,
+       submitted_at, review_deadline, finalized_at, indexed_at)
+    VALUES ($1, $2, $3, $4, '{}'::jsonb, $5, $6, $7, $8,
+            $9, $10, COALESCE($11, NOW()), $12,
+            $13, $14, $15, NOW())
+    ON CONFLICT (on_chain_id) DO NOTHING
+    RETURNING on_chain_id, status, created_at`;
+  const { rows } = await db.query(sql, [
+    on_chain_id,
+    template_slug,
+    poster_wallet,
+    kit_slug,
+    inputs_hash,
+    String(escrow_yocto),
+    platform_fee_bps,
+    status,
+    claimant_wallet,
+    audit_root,
+    created_at,
+    claimed_at,
+    submitted_at,
+    review_deadline,
+    finalized_at,
+  ]);
+  return rows[0] || (await getMission(on_chain_id));
 }
 
 async function getMission(on_chain_id) {
@@ -298,6 +368,7 @@ module.exports = {
   hashPayload,
   stableStringify,
   recordCreated,
+  recordCreatedFromChain,
   mirrorEvent,
   getMission,
   listMissions,
