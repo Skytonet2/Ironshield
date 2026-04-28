@@ -1,0 +1,76 @@
+{
+  "$schema": "../kits.schema.json",
+  "slug": "realtor",
+  "title": "Realtor Agent",
+  "vertical": "realestate",
+  "description": "Scouts apartment / house listings across Facebook Groups + jiji.ng, scores each for scam likelihood, drafts a negotiation message, and ships outreach via the user's preferred channel. Best-effort across fragile sources — graceful degradation when any one scout is dormant.",
+  "hero_image_url": null,
+  "example_missions": [
+    "Find 3 unfurnished 2-bedroom apartments in Lekki under ₦3M/yr",
+    "Scout 5 plots of land in Ibadan under ₦15M with verified titles"
+  ],
+  "required_connectors": ["facebook", "jiji"],
+  "optional_connectors":  ["whatsapp", "tg", "x", "email"],
+  "bundled_skills": [
+    "builtin:scout_fb",
+    "builtin:scout_jiji",
+    "builtin:outreach_dm",
+    "builtin:negotiator",
+    "builtin:verifier_listing"
+  ],
+  "preset_config_schema": {
+    "type": "object",
+    "required": ["query", "location", "price_range", "type"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 2,
+        "description": "Free-text query — e.g. '2-bedroom apartment'"
+      },
+      "location": {
+        "type": "string",
+        "description": "Nigerian city / state. Used by Jiji filter and FB Group selection."
+      },
+      "price_range": {
+        "type": "object",
+        "required": ["min", "max", "currency"],
+        "properties": {
+          "min": { "type": "number", "minimum": 0 },
+          "max": { "type": "number", "minimum": 0 },
+          "currency": { "type": "string", "default": "NGN" }
+        }
+      },
+      "type": {
+        "type": "string",
+        "enum": ["rent", "sale"],
+        "description": "Rental or outright sale"
+      },
+      "language": {
+        "type": "string",
+        "default": "English",
+        "description": "Outreach + negotiation language"
+      },
+      "tone": {
+        "type": "string",
+        "default": "warm-professional",
+        "enum": ["warm-professional", "casual", "blunt"]
+      },
+      "fb_group_ids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Optional: Facebook Group IDs the user is a member of. Leave empty to skip FB scout."
+      }
+    }
+  },
+  "default_pricing": {
+    "model": "per_mission",
+    "amount_yocto": "1000000000000000000000000",
+    "token": "NEAR"
+  },
+  "revenue_split_bps": {
+    "kit_curator": 1500,
+    "agent_owner": 7500,
+    "platform":     1000
+  },
+  "status": "beta"
+}

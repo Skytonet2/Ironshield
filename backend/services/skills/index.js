@@ -24,6 +24,13 @@ const dailyBriefing = require("./daily_briefing");
 const summariseUrl  = require("./summarise_url");
 const httpRunner    = require("./http_runner");
 
+// Phase 10 Tier 4 — Realtor / Car Sales bundle.
+const scoutFb         = require("./scout_fb");
+const scoutJiji       = require("./scout_jiji");
+const outreachDm      = require("./outreach_dm");
+const negotiator      = require("./negotiator");
+const verifierListing = require("./verifier_listing");
+
 const REGISTRY = {};
 function register(mod) {
   if (!mod?.id) throw new Error("skill module must export `id`");
@@ -32,6 +39,12 @@ function register(mod) {
 register(airdropScan);
 register(dailyBriefing);
 register(summariseUrl);
+// Tier 4 — first wave (Realtor Kit dependencies).
+register(scoutFb);
+register(scoutJiji);
+register(outreachDm);
+register(negotiator);
+register(verifierListing);
 
 /** Resolve a SkillMetadata.category to an executable shape:
  *    "builtin:<id>" → { kind: "builtin", key }     (registered above)
