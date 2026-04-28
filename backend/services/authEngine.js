@@ -26,6 +26,7 @@
 // `freezeEscalation`, `resolveEscalation`) hit Postgres.
 
 const db = require("../db/client");
+const eventBus = require("./eventBus");
 
 const POLICY_AUTO              = "auto";
 const POLICY_NOTIFY            = "notify";
@@ -172,7 +173,19 @@ async function freezeEscalation({
       expires_at,
     ],
   );
-  return rows[0];
+  const row = rows[0];
+  try {
+    eventBus.emit("mission.escalation.created", {
+      mission_on_chain_id,
+      escalation_id: row.id,
+      step_seq:      row.step_seq,
+      action_type:   row.action_type,
+      status:        row.status,
+      channel:       row.channel,
+      created_at:    row.created_at,
+    });
+  } catch { /* best-effort */ }
+  return row;
 }
 
 /** Resolve a pending escalation. Called by the TG callback handler,
@@ -193,7 +206,22 @@ async function resolveEscalation(escalation_id, decision, decided_by_wallet, not
                 decided_by_wallet, decided_at, channel`,
     [escalation_id, decision, decided_by_wallet || null, note || null],
   );
-  return rows[0] || null;
+  const row = rows[0] || null;
+  if (row) {
+    try {
+      eventBus.emit("mission.escalation.resolved", {
+        mission_on_chain_id: row.mission_on_chain_id,
+        escalation_id:       row.id,
+        step_seq:            row.step_seq,
+        action_type:         row.action_type,
+        status:              row.status,
+        channel:             row.channel,
+        decided_by_wallet:   row.decided_by_wallet,
+        decided_at:          row.decided_at,
+      });
+    } catch { /* best-effort */ }
+  }
+  return row;
 }
 
 async function getEscalation(escalation_id) {
