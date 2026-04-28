@@ -111,6 +111,9 @@ app.use("/api/ironclaw",      require("./routes/ironclaw.route"));
 app.use("/api/missions",      require("./routes/missions.route"));
 app.use("/api/kits",          require("./routes/kits.route"));
 app.use("/api/escalations",   require("./routes/escalations.route"));
+// Phase 10 Tier 2 — IronGuide concierge + kit deployments
+app.use("/api/ironguide",     require("./routes/ironguide.route"));
+app.use("/api/kit-deployments", require("./routes/kitDeployments.route"));
 
 // Root
 app.get("/", (req, res) => {

@@ -1352,3 +1352,61 @@ CREATE TABLE IF NOT EXISTS reputation_cache (
 );
 CREATE INDEX IF NOT EXISTS idx_reputation_cache_score
   ON reputation_cache (subject_type, score DESC);
+
+-- ╔═════════════════════════════════════════════════════════════════════╗
+-- ║  Phase 10 Tier 2 — IronGuide concierge                              ║
+-- ║   - ironguide_sessions  (free concierge interview state)            ║
+-- ║   - kit_requests        (gap log when no Kit fits the user)         ║
+-- ╚═════════════════════════════════════════════════════════════════════╝
+
+-- ── IronGuide sessions ────────────────────────────────────────────────
+-- One row per onboarding interview. Channel is 'web' or 'tg'. Subject
+-- key (wallet for web, tg_id for tg) is unique per channel so a single
+-- user gets one in-progress interview at a time per surface. Conversation
+-- state is the message history; classified_json is the structured
+-- vertical/geo/budget/language signal extracted from the answers.
+CREATE TABLE IF NOT EXISTS ironguide_sessions (
+  id                       BIGSERIAL    PRIMARY KEY,
+  channel                  TEXT         NOT NULL CHECK (channel IN ('web','tg')),
+  subject_wallet           TEXT,
+  subject_tg_id            BIGINT,
+  ironclaw_thread_id       TEXT,
+  status                   TEXT         NOT NULL DEFAULT 'active'
+                                        CHECK (status IN ('active','recommended','deployed','abandoned')),
+  messages_json            JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  classified_json          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  recommended_kit_id       TEXT         REFERENCES agent_kits(slug),
+  recommended_presets_json JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  created_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ironguide_sessions_wallet
+  ON ironguide_sessions (subject_wallet)
+  WHERE subject_wallet IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ironguide_sessions_tg
+  ON ironguide_sessions (subject_tg_id)
+  WHERE subject_tg_id IS NOT NULL;
+-- Defensive idempotent column adds in case an older shape exists.
+ALTER TABLE ironguide_sessions
+  ADD COLUMN IF NOT EXISTS recommended_kit_id TEXT REFERENCES agent_kits(slug);
+ALTER TABLE ironguide_sessions
+  ADD COLUMN IF NOT EXISTS recommended_presets_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- ── Kit requests (gap log) ────────────────────────────────────────────
+-- When IronGuide can't recommend any existing Kit for the classified
+-- profile, it logs the gap here so the curation team can decide whether
+-- to author a new Kit. status='open' until a curator triages.
+CREATE TABLE IF NOT EXISTS kit_requests (
+  id                  BIGSERIAL    PRIMARY KEY,
+  ironguide_session_id BIGINT      REFERENCES ironguide_sessions(id) ON DELETE SET NULL,
+  classified_json     JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  summary             TEXT,
+  channel             TEXT,
+  subject_wallet      TEXT,
+  subject_tg_id       BIGINT,
+  status              TEXT         NOT NULL DEFAULT 'open'
+                                   CHECK (status IN ('open','triaged','authored','dismissed')),
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kit_requests_status
+  ON kit_requests (status, created_at DESC);
