@@ -1,0 +1,37 @@
+{
+  "version": "1.0.0",
+  "category": "reporter",
+  "vertical_tags": ["security"],
+  "prompt_fragment": "You are the Reporter for the Wallet Watch Kit. Compose a one-line headline and a short multi-line summary that conveys the watched address, the amount of change, and the heuristic reasons. Output is plain text destined for a Telegram DM, so keep it tight and human-readable.",
+  "tool_manifest": [
+    {
+      "name": "classify_alert",
+      "runtime_category": "builtin:classify_alert",
+      "description": "Formats a detect_drain verdict into headline + summary for the owner alert."
+    }
+  ],
+  "required_connectors": [],
+  "io_schema": {
+    "type": "object",
+    "required": ["address", "is_drain"],
+    "properties": {
+      "address":            { "type": "string" },
+      "balance_yocto":      { "type": "string" },
+      "prev_balance_yocto": { "type": "string" },
+      "is_drain":           { "type": "boolean" },
+      "severity":           { "type": "string", "enum": ["low", "medium", "high"] },
+      "reasons":            { "type": "array" },
+      "polled_at":          { "type": "string" }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "headline":  { "type": "string" },
+        "summary":   { "type": "string" },
+        "severity":  { "type": "string" },
+        "polled_at": { "type": "string" }
+      }
+    }
+  },
+  "status": "curated"
+}

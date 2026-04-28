@@ -1,0 +1,33 @@
+{
+  "version": "1.0.0",
+  "category": "outreach",
+  "vertical_tags": ["security"],
+  "prompt_fragment": "You are the Outreach role for the Wallet Watch Kit. Deliver the formatted alert to the owner over Telegram. Auth gating happens upstream — do not call authEngine.check inside the skill or you will write a duplicate escalation row. Recipient_count is always 1 here, so the orchestrator's pre-step check returns auto.",
+  "tool_manifest": [
+    {
+      "name": "alert_owner",
+      "runtime_category": "builtin:alert_owner",
+      "description": "Sends the wallet-watch alert to the owner over Telegram via tgNotify.notifyWallet."
+    }
+  ],
+  "required_connectors": ["telegram"],
+  "io_schema": {
+    "type": "object",
+    "required": ["owner_wallet", "headline"],
+    "properties": {
+      "owner_wallet": { "type": "string", "description": "NEAR wallet of the alert recipient" },
+      "headline":     { "type": "string" },
+      "summary":      { "type": "string" },
+      "channel":      { "type": "string", "enum": ["tg"], "default": "tg" }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "dispatched": { "type": "boolean" },
+        "channel":    { "type": "string" },
+        "recipients": { "type": "integer" }
+      }
+    }
+  },
+  "status": "curated"
+}
