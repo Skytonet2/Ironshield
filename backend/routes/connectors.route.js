@@ -22,6 +22,8 @@ const requireWallet = require("../middleware/requireWallet");
 const connectors = require("../connectors");
 const credentialStore = require("../connectors/credentialStore");
 const whatsappWebhook = require("../connectors/whatsapp/webhook");
+const xOauth        = require("../connectors/x/oauth");
+const facebookOauth = require("../connectors/facebook/oauth");
 
 // Public registry — no auth. Frontend uses this to render the "available
 // connectors" tab and decide which connect dialog to show.
@@ -49,6 +51,14 @@ router.post("/whatsapp/webhook",
   whatsappWebhook.verifySignature,
   whatsappWebhook.handleEvent
 );
+
+// OAuth flows — start needs the wallet (to bind the cookie); callback
+// is a top-level GET from the provider, so it auths via the signed
+// cookie set during start. Each connector implements its own pair.
+router.post("/x/oauth/start",        requireWallet, xOauth.start);
+router.get( "/x/oauth/callback",                    xOauth.callback);
+router.post("/facebook/oauth/start", requireWallet, facebookOauth.start);
+router.get( "/facebook/oauth/callback",             facebookOauth.callback);
 
 // Connect — store creds for a connector. Payload shape is connector-
 // specific; we don't enforce schema here. The connector's invoke()

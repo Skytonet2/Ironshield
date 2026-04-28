@@ -5,7 +5,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ArrowRight } from "lucide-react";
+import { Plug, CheckCircle2, AlertCircle, Loader2, Trash2, ArrowRight, X as XIcon } from "lucide-react";
 import { API_BASE } from "@/lib/apiBase";
 import { apiFetch } from "@/lib/apiFetch";
 import { CONNECTOR_META } from "@/components/connectors/connectorMeta";
@@ -17,6 +17,7 @@ export default function ConnectorsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [active, setActive] = useState(null); // connector name being connected
+  const [banner, setBanner] = useState(null); // { kind: "ok"|"err", connector, message }
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -42,6 +43,39 @@ export default function ConnectorsPage() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Pick up OAuth callback signals (?connected=x or ?error=...&connector=x).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const connected = sp.get("connected");
+    const err = sp.get("error");
+    const c = sp.get("connector");
+    if (connected) {
+      setBanner({ kind: "ok", connector: connected, message: `Connected to ${CONNECTOR_META[connected]?.label || connected}.` });
+      // Strip the query so a refresh doesn't re-fire the banner.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("connected");
+      window.history.replaceState({}, "", url.toString());
+    } else if (err) {
+      setBanner({ kind: "err", connector: c, message: `Could not connect ${CONNECTOR_META[c]?.label || c}: ${err}` });
+      const url = new URL(window.location.href);
+      url.searchParams.delete("error");
+      url.searchParams.delete("connector");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+
+  async function startOauth(name) {
+    try {
+      const r = await apiFetch(`/api/connectors/${encodeURIComponent(name)}/oauth/start`, { method: "POST" });
+      const j = await r.json();
+      if (!r.ok || !j.url) throw new Error(j.error || `oauth start failed (${r.status})`);
+      window.location.href = j.url;
+    } catch (e) {
+      setBanner({ kind: "err", connector: name, message: e.message });
+    }
+  }
 
   const connectedSet = useMemo(
     () => new Set(mine.map((m) => m.connector_name)),
@@ -89,6 +123,18 @@ export default function ConnectorsPage() {
         )}
         {error && <div style={errorStyle}>{error}</div>}
 
+        {banner && (
+          <div style={banner.kind === "ok" ? bannerOkStyle : bannerErrStyle}>
+            {banner.kind === "ok"
+              ? <CheckCircle2 size={14} />
+              : <AlertCircle  size={14} />}
+            <span style={{ flex: 1 }}>{banner.message}</span>
+            <button type="button" onClick={() => setBanner(null)} style={bannerDismissStyle} aria-label="Dismiss">
+              <XIcon size={12} />
+            </button>
+          </div>
+        )}
+
         {!loading && !error && (
           <div style={gridStyle}>
             {registry.map((c) => (
@@ -97,7 +143,7 @@ export default function ConnectorsPage() {
                 conn={c}
                 connected={connectedSet.has(c.name)}
                 connection={mine.find((m) => m.connector_name === c.name)}
-                onConnect={() => setActive(c.name)}
+                onConnect={(flow) => flow === "oauth" ? startOauth(c.name) : setActive(c.name)}
                 onDisconnect={() => disconnect(c.name)}
               />
             ))}
@@ -130,8 +176,6 @@ function ConnectorCard({ conn, connected, connection, onConnect, onDisconnect })
     cta = <span style={pillStyle}>Platform-managed</span>;
   } else if (meta.flow === "none") {
     cta = <span style={pillStyle}>No account needed</span>;
-  } else if (meta.flow === "oauth-soon") {
-    cta = <span style={{ ...pillStyle, color: "var(--text-3)" }}>OAuth flow — coming soon</span>;
   } else if (connected) {
     cta = (
       <button onClick={onDisconnect} style={disconnectBtnStyle}>
@@ -140,8 +184,8 @@ function ConnectorCard({ conn, connected, connection, onConnect, onDisconnect })
     );
   } else {
     cta = (
-      <button onClick={onConnect} style={connectBtnStyle}>
-        <ArrowRight size={12} /> Connect
+      <button onClick={() => onConnect(meta.flow)} style={connectBtnStyle}>
+        <ArrowRight size={12} /> Connect{meta.flow === "oauth" ? " with OAuth" : ""}
       </button>
     );
   }
@@ -229,3 +273,19 @@ const errorStyle = {
   color: "var(--red)", fontSize: 12,
 };
 const linkStyle = { color: "var(--accent)", textDecoration: "none", fontWeight: 700 };
+const bannerOkStyle = {
+  display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", marginBottom: 14,
+  borderRadius: 10,
+  background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.3)",
+  color: "var(--green, #10B981)", fontSize: 12.5,
+};
+const bannerErrStyle = {
+  display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", marginBottom: 14,
+  borderRadius: 10,
+  background: "rgba(255,77,77,0.08)", border: "1px solid rgba(255,77,77,0.3)",
+  color: "var(--red)", fontSize: 12.5,
+};
+const bannerDismissStyle = {
+  background: "transparent", border: "none", color: "inherit", cursor: "pointer",
+  padding: 4, borderRadius: 4, opacity: 0.7,
+};

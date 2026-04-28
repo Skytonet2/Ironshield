@@ -19,6 +19,10 @@ const PUBLIC = new Set([
   "get /",
   "get /whatsapp/webhook",
   "post /whatsapp/webhook",
+  // OAuth callbacks are top-level GETs from the provider — they auth
+  // via the signed cookie set during /start, not the wallet middleware.
+  "get /x/oauth/callback",
+  "get /facebook/oauth/callback",
 ]);
 
 test("connectors.route — public surface stays public, everything else is wallet-guarded", () => {

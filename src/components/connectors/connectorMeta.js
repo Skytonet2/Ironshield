@@ -15,16 +15,16 @@ export const CONNECTOR_META = {
   },
   x: {
     label:    "X (Twitter)",
-    blurb:    "Search, post, DM, and monitor mentions.",
+    blurb:    "Search, post, DM, and monitor mentions. Connect via X's OAuth — we never see your password.",
     color:    "#1DA1F2",
-    flow:     "oauth-soon",
+    flow:     "oauth",
     fields:   [],
   },
   facebook: {
     label:    "Facebook",
-    blurb:    "Read public Groups + send Page DMs (24h customer-care window).",
+    blurb:    "Read public Groups + send Page DMs (24h customer-care window). Connect via Facebook Login.",
     color:    "#1877F2",
-    flow:     "oauth-soon",
+    flow:     "oauth",
     fields:   [],
   },
   jiji: {
