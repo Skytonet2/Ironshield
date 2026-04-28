@@ -35,6 +35,9 @@ const verifierScam    = require("./verifier_scam");
 const scoutX          = require("./scout_x");
 const scoutTg         = require("./scout_tg");
 const pitchGen        = require("./pitch_gen");
+// Phase 10 Tier 4 — Background Checker bundle.
+const scamDetect      = require("./scam_detect");
+const reportGen       = require("./report_gen");
 
 const REGISTRY = {};
 function register(mod) {
@@ -54,6 +57,8 @@ register(verifierScam);
 register(scoutX);
 register(scoutTg);
 register(pitchGen);
+register(scamDetect);
+register(reportGen);
 
 /** Resolve a SkillMetadata.category to an executable shape:
  *    "builtin:<id>" → { kind: "builtin", key }     (registered above)
