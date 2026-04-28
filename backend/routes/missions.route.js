@@ -315,6 +315,37 @@ async function runCrewHandler(req, res, deps = {}) {
 }
 router.post("/:id/run-crew", requireWallet, (req, res) => runCrewHandler(req, res));
 
+// Kit-driven runtime: plan steps from agent_kits.bundled_skill_ids,
+// then call crewOrchestrator. Same auth model as /run-crew (poster
+// or claimant only) but the caller doesn't supply steps[].
+async function runKitHandler(req, res, deps = {}) {
+  const me = deps.missionEngine || missionEngine;
+  const kr = deps.kitRunner     || require("../services/kitRunner");
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "id must be numeric" });
+    const mission = await me.getMission(id);
+    if (!mission) return res.status(404).json({ error: "Mission not found" });
+    const wallet = String(req.wallet || "").toLowerCase();
+    const allowed = [mission.poster_wallet, mission.claimant_wallet]
+      .filter(Boolean).map((w) => w.toLowerCase());
+    if (!allowed.includes(wallet)) {
+      return res.status(403).json({ error: "Only poster or claimant may run a Kit" });
+    }
+    const run = await kr.runKit({ mission_id: id });
+    return res.json({ ok: true, run });
+  } catch (e) {
+    const status =
+      e.code === "MISSION_NOT_FOUND" ? 404 :
+      e.code === "MISSION_NOT_KIT"   ? 400 :
+      e.code === "KIT_NOT_FOUND"     ? 404 :
+      400;
+    return res.status(status).json({ error: e.message, code: e.code });
+  }
+}
+router.post("/:id/run-kit", requireWallet, (req, res) => runKitHandler(req, res));
+module.exports.runKitHandler = runKitHandler;
+
 // Indexer / orchestrator pushes contract events into the off-chain
 // mirror. Gated by an env shared secret since this isn't user-facing.
 router.post("/:id/mirror", async (req, res) => {
