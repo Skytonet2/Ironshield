@@ -75,8 +75,9 @@ async function invoke(name, action, ctx = {}) {
 function loadBuiltins() {
   const candidates = [
     "./tg",
+    "./x",
     // Additional connectors register themselves as their commits land.
-    // "./x", "./facebook", "./jiji", "./email", "./whatsapp", "./linkedin",
+    // "./facebook", "./jiji", "./email", "./whatsapp", "./linkedin",
   ];
   for (const path of candidates) {
     try {
