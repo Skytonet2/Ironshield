@@ -1,7 +1,13 @@
-// Parses docs/skills-catalog.md into structured JSON for rendering at
-// /docs/skills-catalog. Run after editing the markdown:
-//   node scripts/build-skills-catalog.mjs
-// Re-commit src/data/skillsCatalog.json alongside the markdown change.
+// Parses docs/skills-catalog*.md into structured JSON for rendering
+// under /docs/skills-catalog and /docs/skills-catalog-v2.
+//
+// Usage:
+//   node scripts/build-skills-catalog.mjs            # build all volumes
+//   node scripts/build-skills-catalog.mjs v1         # build only v1
+//   node scripts/build-skills-catalog.mjs v2         # build only v2
+//
+// Re-commit the regenerated src/data/skillsCatalog{,V2}.json
+// alongside any markdown change.
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -9,9 +15,31 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const SRC  = resolve(ROOT, "docs/skills-catalog.md");
-const OUT  = resolve(ROOT, "src/data/skillsCatalog.json");
 
+const VOLUMES = {
+  v1: {
+    src: resolve(ROOT, "docs/skills-catalog.md"),
+    out: resolve(ROOT, "src/data/skillsCatalog.json"),
+  },
+  v2: {
+    src: resolve(ROOT, "docs/skills-catalog-v2.md"),
+    out: resolve(ROOT, "src/data/skillsCatalogV2.json"),
+  },
+};
+
+const arg = process.argv[2];
+const volumesToBuild = arg ? [arg] : Object.keys(VOLUMES);
+
+for (const volume of volumesToBuild) {
+  const cfg = VOLUMES[volume];
+  if (!cfg) {
+    console.error(`unknown volume: ${volume}`);
+    process.exit(1);
+  }
+  buildVolume(cfg.src, cfg.out, volume);
+}
+
+function buildVolume(SRC, OUT, label) {
 const md = readFileSync(SRC, "utf8");
 
 // --- pull preamble (before the first category heading) -----------------
@@ -126,5 +154,6 @@ out.meta.total = totalEntries;
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(out, null, 2) + "\n");
 
-console.log(`wrote ${OUT}`);
+console.log(`[${label}] wrote ${OUT}`);
 console.log(`  ${out.categories.length} categories, ${totalEntries} skills`);
+}

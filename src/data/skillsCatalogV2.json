@@ -1,0 +1,4167 @@
+{
+  "meta": {
+    "title": "IronShield Skills Catalog (v2 — 200 more skills)",
+    "blurb": "Volume 2 of the IronShield Skills SDK backlog. v1 covered the platform's unique primitives (NewsCoin, IronFeed, governance, rooms, DMs). v2 covers the broader automation surface area a skill can reach today via the agent runtime — DeFi yield, NFTs, multi-DAO ops, dev tools, sales workflows, document handling, and more. None of these duplicate v1.",
+    "total": 200
+  },
+  "categories": [
+    {
+      "num": 1,
+      "name": "DeFi yield & staking",
+      "count": 15,
+      "skills": [
+        {
+          "slug": "validator-picker",
+          "pitch": "Recommends a 3-validator NEAR delegation portfolio scored on commission, uptime, slashing history, and decentralization (avoid concentration in a single nodeprovider). Different from v1 governance — focused on yield, not voting.",
+          "inputs": "`{ stake_near: number, max_commission_pct?: number, prefer_decentralized?: bool }`",
+          "outputs": "`{ portfolio: [{ validator, weight, est_apy }], rationale: string }`",
+          "pricing": "1 NEAR per recommendation.",
+          "categories": [
+            "defi",
+            "staking",
+            "near"
+          ],
+          "tags": [
+            "validator",
+            "near",
+            "staking",
+            "apy"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "uses NEAR validators RPC + public uptime data."
+          }
+        },
+        {
+          "slug": "lending-rate-arbitrage",
+          "pitch": "Sweeps stablecoin supply rates across NEAR-side + Aurora-side lending markets; surfaces the best risk-adjusted venue for a given size. Optionally fires the move via 1-click bridge.",
+          "inputs": "`{ asset: \"USDC\"|\"USDT\"|\"DAI\", size_usd: number, max_protocol_age_days?: number }`",
+          "outputs": "`{ best_venue, current_rate, alternatives: [{ venue, rate, tvl }] }`",
+          "pricing": "0.3 NEAR per scan, or 4 NEAR/month for daily.",
+          "categories": [
+            "defi",
+            "lending",
+            "arbitrage"
+          ],
+          "tags": [
+            "lending",
+            "rates",
+            "arb"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a lending-protocol rate aggregator integration (DefiLlama yields API)."
+          }
+        },
+        {
+          "slug": "autocompounder",
+          "pitch": "Auto-claims and re-stakes LP rewards on a schedule, gas-aware (won't fire if claim cost > N% of rewards). Logs APY uplift vs. unclaimed baseline.",
+          "inputs": "`{ position_id: string, gas_threshold_pct: number }`",
+          "outputs": "`{ compounds: [{ at, claimed, restaked, gas }], realized_apy_uplift_pct }`",
+          "pricing": "5 NEAR setup, 0.2 NEAR per compound.",
+          "categories": [
+            "defi",
+            "automation",
+            "staking"
+          ],
+          "tags": [
+            "autocompound",
+            "lp",
+            "automation"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "automation cron + claim/stake txs via wallet proxy."
+          }
+        },
+        {
+          "slug": "liquid-staking-router",
+          "pitch": "For a given size, finds the best liquid-staking entry route (direct mint vs. secondary buy) factoring discount-to-NAV and slippage. Stops \"I bought stNEAR at a 1.5% premium and didn't notice.\"",
+          "inputs": "`{ stake_near: number, lst: \"stNEAR\"|\"linear\"|\"meta-pool\" }`",
+          "outputs": "`{ best_route, savings_bps_vs_naive }`",
+          "pricing": "0.2 NEAR per call.",
+          "categories": [
+            "defi",
+            "staking",
+            "routing"
+          ],
+          "tags": [
+            "lst",
+            "route",
+            "near"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "Ref + LST mint contract reads."
+          }
+        },
+        {
+          "slug": "staking-tax-tracker",
+          "pitch": "Logs every staking-reward receipt with USD basis at receipt time across all your validators / LST positions / lending markets. The thing your accountant will actually thank you for.",
+          "inputs": "`{ wallet?: string, year: number }`",
+          "outputs": "`{ events: [{ at, source, amount, usd_basis }], total_usd }`",
+          "pricing": "3 NEAR per export.",
+          "categories": [
+            "defi",
+            "tax",
+            "staking"
+          ],
+          "tags": [
+            "tax",
+            "staking",
+            "basis"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC reward events + price feed."
+          }
+        },
+        {
+          "slug": "staking-portfolio-rebalancer",
+          "pitch": "Rebalances across LSTs (stNEAR / LiNEAR / meta-pool) and direct stakes to target weights. Different from v1's NewsCoin rebalancer — focuses on yield-bearing assets, not story tokens.",
+          "inputs": "`{ targets: [{ asset, weight_pct }], drift_threshold_pct: number }`",
+          "outputs": "`{ trades_executed: int, new_weights }`",
+          "pricing": "5 NEAR setup, 0.5 NEAR per rebalance.",
+          "categories": [
+            "defi",
+            "staking",
+            "rebalance"
+          ],
+          "tags": [
+            "lst",
+            "rebalance",
+            "weights"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "Ref swaps + automation cron."
+          }
+        },
+        {
+          "slug": "il-hedger",
+          "pitch": "For an LP position, recommends an offsetting short (perp or borrow-and-sell) sized to neutralize first-order IL exposure. Optional auto-execute with size cap.",
+          "inputs": "`{ pool: string, your_share: number, max_hedge_usd?: number }`",
+          "outputs": "`{ recommended_short, hedge_size_usd, projected_il_reduction_bps }`",
+          "pricing": "1 NEAR per recommendation, 5 NEAR setup for auto-execute.",
+          "categories": [
+            "defi",
+            "risk",
+            "lp"
+          ],
+          "tags": [
+            "il",
+            "hedge",
+            "lp"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a perp-DEX integration (Aurora-side) for auto-execute. Recommendation-only works today."
+          }
+        },
+        {
+          "slug": "farm-decay-predictor",
+          "pitch": "Predicts when a yield farm's emissions decay below your hurdle rate (commit a number); auto-exits when triggered. Specific to ramp-down farms (most yield comes early; many users overstay).",
+          "inputs": "`{ farm_id: string, hurdle_apy_pct: number }`",
+          "outputs": "`{ predicted_exit_at, current_apy, projected_apy_at_exit }`",
+          "pricing": "4 NEAR setup, 0.2 NEAR per fire.",
+          "categories": [
+            "defi",
+            "prediction",
+            "automation"
+          ],
+          "tags": [
+            "farm",
+            "decay",
+            "exit"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "emissions schedule + RPC reads."
+          }
+        },
+        {
+          "slug": "delegate-rewards-claimer",
+          "pitch": "Claims staking rewards across multiple validators on one cron. Threshold-gated to skip dust. Different from v1's NewsCoin creator-fee claimer — for native staking, not token economics.",
+          "inputs": "`{ min_claim_near: number, cadence: \"weekly\"|\"on-threshold\" }`",
+          "outputs": "`{ claims: [{ validator, amount, tx_hash }], total_claimed }`",
+          "pricing": "3 NEAR setup, 0.1 NEAR per claim.",
+          "categories": [
+            "defi",
+            "staking",
+            "automation"
+          ],
+          "tags": [
+            "claim",
+            "validators",
+            "automation"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "validator contract `withdraw_all` + cron."
+          }
+        },
+        {
+          "slug": "unbonding-period-tracker",
+          "pitch": "Single-card view of every unbonding/cooldown timer across your chains and protocols (NEAR validator unstake, Aave cooldown, etc.). Pings you on the day funds become withdrawable so they don't sit idle.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ unbondings: [{ source, amount, available_at }], next_event_at }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "defi",
+            "tracker",
+            "staking"
+          ],
+          "tags": [
+            "unbond",
+            "cooldown",
+            "timer"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC reads per protocol."
+          }
+        },
+        {
+          "slug": "bridge-yield-finder",
+          "pitch": "For a chosen asset, finds chains where the same asset earns higher yield, factoring 1-click bridge fees + lockup risk. Surfaces actual after-cost APY.",
+          "inputs": "`{ asset: string, size_usd: number, min_lockup_acceptable_days?: number }`",
+          "outputs": "`{ destinations: [{ chain, gross_apy, after_bridge_apy, breakeven_days }] }`",
+          "pricing": "0.5 NEAR per scan.",
+          "categories": [
+            "defi",
+            "bridge",
+            "yield"
+          ],
+          "tags": [
+            "yield",
+            "bridge",
+            "cross-chain"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs DefiLlama yields API for off-NEAR yields."
+          }
+        },
+        {
+          "slug": "vesting-cliff-tracker",
+          "pitch": "Tracks vesting unlocks (yours + watched tokens) and projects supply-impact on price. Differs from generic unlock calendars by quantifying expected sell pressure from prior cohort behavior.",
+          "inputs": "`{ tokens: string[] }`",
+          "outputs": "`{ schedule: [{ token, at, amount, projected_pressure_bps }] }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "defi",
+            "tracker",
+            "analytics"
+          ],
+          "tags": [
+            "vesting",
+            "unlock",
+            "supply"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a token-unlocks data source (Token Unlocks API or self-curated table)."
+          }
+        },
+        {
+          "slug": "yield-curve-analyzer",
+          "pitch": "Visualizes the cross-protocol yield curve for an asset (e.g. USDC: 4% on Aave, 7% on Burrow, 11% on a farm) and flags anomalies (curve inversions, fat-tail rates) that usually mean risk.",
+          "inputs": "`{ asset: string }`",
+          "outputs": "`{ curve: [{ venue, apy, tvl, age_days }], anomalies: string[] }`",
+          "pricing": "0.5 NEAR per call.",
+          "categories": [
+            "defi",
+            "analytics"
+          ],
+          "tags": [
+            "yield-curve",
+            "anomaly"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "DefiLlama yields API."
+          }
+        },
+        {
+          "slug": "stablecoin-yield-allocator",
+          "pitch": "Allocates a stablecoin bag across yield venues by risk-adjusted return (target volatility cap + concentration limits). Rebalances quarterly. The \"park your stables\" service.",
+          "inputs": "`{ size_usd: number, max_per_venue_pct: number, risk_cap: \"conservative\"|\"balanced\"|\"hot\" }`",
+          "outputs": "`{ allocation: [{ venue, weight_pct, projected_apy }] }`",
+          "pricing": "8 NEAR setup, 1 NEAR per rebalance.",
+          "categories": [
+            "defi",
+            "stables",
+            "automation"
+          ],
+          "tags": [
+            "stables",
+            "allocation",
+            "yield"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "DefiLlama yields API + automation cron."
+          }
+        },
+        {
+          "slug": "restaking-mapper",
+          "pitch": "Maps your restaked positions across protocols (EigenLayer/Karak/Symbiotic via Aurora) and the AVS/services they secure, with combined slashing exposure. Surfaces \"you're stacking 3x slashing risk\" before it bites.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ positions: [{ protocol, asset, secured_avs, slash_exposure_usd }], combined_risk_grade }`",
+          "pricing": "1 NEAR per scan.",
+          "categories": [
+            "defi",
+            "risk",
+            "restaking"
+          ],
+          "tags": [
+            "restake",
+            "slash",
+            "eigenlayer"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs restaking-protocol contract reads (Aurora EVM)."
+          }
+        }
+      ]
+    },
+    {
+      "num": 2,
+      "name": "NFT tooling",
+      "count": 14,
+      "skills": [
+        {
+          "slug": "nft-floor-sweeper",
+          "pitch": "Sweeps N items at the floor of a chosen collection within budget, with optional rarity floor (don't grab a 1/1 by accident). Protects against floor manipulation by capping fill velocity.",
+          "inputs": "`{ collection: string, budget_near: number, count: number, min_rarity_pct?: number }`",
+          "outputs": "`{ swept: [{ token_id, price, tx_hash }], spent }`",
+          "pricing": "5 NEAR setup, 0.3 NEAR per item swept.",
+          "categories": [
+            "nft",
+            "automation",
+            "trading"
+          ],
+          "tags": [
+            "sweep",
+            "floor",
+            "nft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs Paras/Mintbase API for NEAR NFTs (or OpenSea for EVM via bridge)."
+          }
+        },
+        {
+          "slug": "nft-rarity-scorer",
+          "pitch": "Scores an NFT 0–100 on rarity within its collection (trait-rarity composite) and ranks vs. its current ask price. Catches under-priced rares and over-priced commons.",
+          "inputs": "`{ collection: string, token_id: string }`",
+          "outputs": "`{ rarity_score, percentile, ask_vs_predicted_bps }`",
+          "pricing": "0.1 NEAR per score.",
+          "categories": [
+            "nft",
+            "analytics"
+          ],
+          "tags": [
+            "rarity",
+            "score",
+            "nft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs collection-metadata index (Paras/Mintbase)."
+          }
+        },
+        {
+          "slug": "nft-mint-drop-alert",
+          "pitch": "Alerts on mint windows for watched collections via on-chain detection (new collection contract from a creator you watch) — earlier than calendar-based alerts.",
+          "inputs": "`{ creators: string[], chains?: string[] }`",
+          "outputs": "`{ alerts: [{ creator, collection, mint_at }] }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "nft",
+            "alerts",
+            "discovery"
+          ],
+          "tags": [
+            "mint",
+            "drop",
+            "alert"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC + creator address watch."
+          }
+        },
+        {
+          "slug": "nft-portfolio-valuer",
+          "pitch": "Daily MTM your NFT bag using floor + last-sale + recent-comp weighted estimate. Different from generic floor multiplication — handles rare items separately.",
+          "inputs": "`{ wallet?: string, exclude_collections?: string[] }`",
+          "outputs": "`{ total_usd, per_collection: [{ collection, count, mtm }] }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "nft",
+            "portfolio",
+            "analytics"
+          ],
+          "tags": [
+            "mtm",
+            "valuation",
+            "nft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Paras/Mintbase + sales-history index."
+          }
+        },
+        {
+          "slug": "nft-royalty-tracker",
+          "pitch": "Tracks creator royalties earned across marketplaces (where enforced), broken down by collection, marketplace, and time window. Helps creators benchmark which marketplaces actually pay.",
+          "inputs": "`{ creator_wallet?: string, period: \"monthly\"|\"yearly\" }`",
+          "outputs": "`{ royalties_received_usd, by_marketplace, paid_pct }`",
+          "pricing": "2 NEAR/month for creators.",
+          "categories": [
+            "nft",
+            "creator",
+            "analytics"
+          ],
+          "tags": [
+            "royalty",
+            "creator",
+            "nft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs marketplace event ingestion."
+          }
+        },
+        {
+          "slug": "nft-listing-optimizer",
+          "pitch": "Recommends list price + duration based on collection liquidity (depth at floor, average days-to-sale, recent comp velocity). Stops you parking at the floor for 90 days when 2% above sells in 3.",
+          "inputs": "`{ collection: string, token_id: string }`",
+          "outputs": "`{ recommended_price, recommended_duration_days, confidence }`",
+          "pricing": "0.3 NEAR per recommendation.",
+          "categories": [
+            "nft",
+            "pricing",
+            "creator"
+          ],
+          "tags": [
+            "listing",
+            "price",
+            "optimize"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "sales index + listing-history data."
+          }
+        },
+        {
+          "slug": "nft-bid-ladder",
+          "pitch": "Places tiered bids on a collection at floor / floor-5% / floor-10% with auto-renewal. Different from sniping — passive accumulation strategy for collections you'll hold.",
+          "inputs": "`{ collection: string, ladder: { pct: number, count: number }[], total_budget_near: number }`",
+          "outputs": "`{ bids_placed, fills: [{ token_id, price }] }`",
+          "pricing": "4 NEAR setup, 0.2 NEAR per fill.",
+          "categories": [
+            "nft",
+            "automation",
+            "trading"
+          ],
+          "tags": [
+            "bid",
+            "ladder",
+            "accumulation"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Paras bid endpoint + cron."
+          }
+        },
+        {
+          "slug": "nft-trait-arb",
+          "pitch": "Finds NFTs whose ask price is below their trait-floor (the floor for items sharing their rare trait). Often a lazy lister or a trait-floor mover from a recent sale.",
+          "inputs": "`{ collection: string, min_edge_pct: number }`",
+          "outputs": "`{ opportunities: [{ token_id, ask, trait_floor, edge_pct }] }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "nft",
+            "arbitrage",
+            "discovery"
+          ],
+          "tags": [
+            "trait-arb",
+            "nft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "trait-floor index per collection."
+          }
+        },
+        {
+          "slug": "nft-airdrop-eligibility",
+          "pitch": "Cross-references your NFT holdings against ongoing holder-airdrops you may be eligible for (NEAR + bridged EVM). One-tap claim where supported.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ eligible_for: [{ project, claim_link, est_value_usd }] }`",
+          "pricing": "Free (funnel skill).",
+          "categories": [
+            "nft",
+            "airdrops",
+            "discovery"
+          ],
+          "tags": [
+            "airdrop",
+            "holder",
+            "claim"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a curated airdrop registry."
+          }
+        },
+        {
+          "slug": "nft-loan-finder",
+          "pitch": "Finds NFT-collateralized loan offers against pieces in your bag (LTV, APR, duration ranking). Doesn't take the loan — just lays out options when you want liquidity without selling.",
+          "inputs": "`{ wallet?: string, min_loan_usd?: number }`",
+          "outputs": "`{ offers: [{ token_id, lender, ltv, apr, duration }] }`",
+          "pricing": "0.5 NEAR per scan.",
+          "categories": [
+            "nft",
+            "lending",
+            "discovery"
+          ],
+          "tags": [
+            "loan",
+            "nft",
+            "ltv"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "NFT-lending protocol integration (Bend/Drops via Aurora)."
+          }
+        },
+        {
+          "slug": "nft-derivative-position-monitor",
+          "pitch": "Tracks P2P NFT derivative exposures: rentals, fractional, options. Stops the \"I forgot I rented out my NFT\" surprise on day 30.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ positions: [{ kind, item, counterparty, expires_at, status }] }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "nft",
+            "tracker",
+            "derivatives"
+          ],
+          "tags": [
+            "rental",
+            "fractional",
+            "options"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "protocol-specific reads (Sologenic / NFTfi / Floor)."
+          }
+        },
+        {
+          "slug": "nft-wash-trade-detector",
+          "pitch": "Flags wash-traded volume on a collection before you buy in (round-trip trades between a small set of wallets, flat-price trades, suspicious gas patterns).",
+          "inputs": "`{ collection: string }`",
+          "outputs": "`{ wash_volume_pct, suspicious_wallets: string[], real_volume_estimate_usd }`",
+          "pricing": "0.5 NEAR per call.",
+          "categories": [
+            "nft",
+            "security",
+            "analytics"
+          ],
+          "tags": [
+            "wash-trade",
+            "detect",
+            "nft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "sales-history data + graph analysis."
+          }
+        },
+        {
+          "slug": "nft-mint-calendar-digest",
+          "pitch": "Daily DM/TG digest of upcoming mints across your watched chains, ranked by team-prior + community signals. Different from `nft-mint-drop-alert` — calendar-based + curated, not real-time on-chain.",
+          "inputs": "`{ chains: string[], delivery: \"dm\"|\"tg\" }`",
+          "outputs": "`{ digest_message_id, mints_listed: int }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "nft",
+            "digest",
+            "discovery"
+          ],
+          "tags": [
+            "mint",
+            "calendar",
+            "digest"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "curated mint-calendar source."
+          }
+        },
+        {
+          "slug": "nft-staking-aggregator",
+          "pitch": "Aggregates yields across NFT-staking programs you're eligible for (or could be, if you bought-in). Surfaces the \"stake to earn $X token\" landscape per chain.",
+          "inputs": "`{ wallet?: string, max_buy_in_usd?: number }`",
+          "outputs": "`{ programs: [{ collection, program, apy_in_token, est_apy_usd }] }`",
+          "pricing": "0.5 NEAR per scan.",
+          "categories": [
+            "nft",
+            "staking",
+            "analytics"
+          ],
+          "tags": [
+            "stake",
+            "nft",
+            "yield"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "staking-program registry per chain."
+          }
+        }
+      ]
+    },
+    {
+      "num": 3,
+      "name": "Multi-DAO operations",
+      "count": 14,
+      "skills": [
+        {
+          "slug": "dao-vote-aggregator",
+          "pitch": "Single dashboard of pending votes across every DAO you hold tokens in (NEAR + Aurora + Snapshot-based EVM). One screen, every deadline.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ pending: [{ dao, proposal_title, deadline, your_power }] }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "dao",
+            "governance",
+            "aggregator"
+          ],
+          "tags": [
+            "multi-dao",
+            "votes",
+            "dashboard"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Snapshot.org GraphQL + Tally.xyz API for EVM DAOs."
+          }
+        },
+        {
+          "slug": "dao-treasury-monitor",
+          "pitch": "Daily delta on every watched DAO treasury (inflow/outflow/composition). Catches \"the treasury moved $5M to a new wallet\" before it hits the news.",
+          "inputs": "`{ daos: string[], delivery: \"dm\"|\"tg\" }`",
+          "outputs": "`{ alerts: [{ dao, kind, amount, tx }] }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "dao",
+            "treasury",
+            "monitoring"
+          ],
+          "tags": [
+            "treasury",
+            "dao",
+            "monitor"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC reads on multisig/treasury contracts."
+          }
+        },
+        {
+          "slug": "dao-delegate-cross-finder",
+          "pitch": "Finds a delegate active across multiple DAOs whose vote pattern aligns with your stated values. Different from v1's IronShield-only delegate finder — cross-DAO scope.",
+          "inputs": "`{ daos: string[], values_profile?: object }`",
+          "outputs": "`{ candidates: [{ delegate, alignment_pct, daos_active_in }] }`",
+          "pricing": "1 NEAR per call.",
+          "categories": [
+            "dao",
+            "governance",
+            "discovery"
+          ],
+          "tags": [
+            "delegate",
+            "cross-dao"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Snapshot/Tally vote history."
+          }
+        },
+        {
+          "slug": "dao-snapshot-tracker",
+          "pitch": "Tracks Snapshot proposals you're eligible to vote on (token-gated by holding). One-click vote where Snapshot supports it.",
+          "inputs": "`{ wallet?: string, daos?: string[] }`",
+          "outputs": "`{ eligible_proposals: [{ dao, title, deadline }] }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "dao",
+            "snapshot",
+            "tracker"
+          ],
+          "tags": [
+            "snapshot",
+            "gas-less",
+            "vote"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Snapshot GraphQL."
+          }
+        },
+        {
+          "slug": "dao-auto-vote-by-policy",
+          "pitch": "Auto-casts your vote per a stated policy on standardized proposal types (e.g. \"always for sub-$50k grants under approved budget\", \"always against new-token issuance\"). Reviewed by you weekly.",
+          "inputs": "`{ policies: [{ when, vote }] }`",
+          "outputs": "`{ votes_cast: [{ dao, proposal, vote, reason }] }`",
+          "pricing": "6 NEAR/month.",
+          "categories": [
+            "dao",
+            "automation",
+            "governance"
+          ],
+          "tags": [
+            "autovote",
+            "policy"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "same Snapshot/Tally; vote signing via wallet proxy."
+          }
+        },
+        {
+          "slug": "dao-grant-tracker",
+          "pitch": "Tracks outstanding grant payments across DAOs you've contracted with. The \"I delivered the work, where's the wire\" service.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ pending: [{ dao, grant_id, amount, expected_at }], overdue: int }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "dao",
+            "tracker",
+            "payments"
+          ],
+          "tags": [
+            "grant",
+            "payment",
+            "tracker"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "varies per DAO; some have RetroFunding/Charm registries."
+          }
+        },
+        {
+          "slug": "dao-quorum-aggregator",
+          "pitch": "Lists every cross-DAO proposal short of quorum within 24h of close. Different from v1's IronShield-only quorum-watcher.",
+          "inputs": "`{ daos: string[] }`",
+          "outputs": "`{ short_of_quorum: [{ dao, proposal, gap, deadline }] }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "dao",
+            "governance",
+            "alerts"
+          ],
+          "tags": [
+            "quorum",
+            "deadline"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Snapshot/Tally."
+          }
+        },
+        {
+          "slug": "dao-meeting-aggregator",
+          "pitch": "Aggregates working-group calls and forum discussions across DAOs into your calendar. Discord/Telegram/forum events into one ICS.",
+          "inputs": "`{ daos: string[] }`",
+          "outputs": "`{ ics_url, events_count }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "dao",
+            "calendar"
+          ],
+          "tags": [
+            "meeting",
+            "dao",
+            "calendar"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs forum/Discord scrape integration; ICS serve route."
+          }
+        },
+        {
+          "slug": "dao-bounty-finder",
+          "pitch": "Lists open bounties across DAOs matching your skills. Cross-DAO version of v1's mission-finder.",
+          "inputs": "`{ skills: string[], min_payout_usd?: number }`",
+          "outputs": "`{ bounties: [{ dao, title, payout, deadline }] }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "dao",
+            "bounty",
+            "discovery"
+          ],
+          "tags": [
+            "bounty",
+            "work",
+            "dao"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Dework/Charmverse/RetroFunding APIs."
+          }
+        },
+        {
+          "slug": "dao-token-claim-aggregator",
+          "pitch": "Claims retro/airdrops/rewards across DAOs on schedule. Threshold-gated to skip dust. Saves the gas-vs-value math.",
+          "inputs": "`{ wallet?: string, min_claim_usd: number }`",
+          "outputs": "`{ claims: [{ dao, amount, tx_hash }] }`",
+          "pricing": "4 NEAR setup, 0.3 NEAR per claim.",
+          "categories": [
+            "dao",
+            "automation",
+            "payments"
+          ],
+          "tags": [
+            "claim",
+            "airdrop",
+            "dao"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "claim-contract registry per DAO."
+          }
+        },
+        {
+          "slug": "dao-onchain-ops-runner",
+          "pitch": "Executes batched cross-DAO operations (vote on N proposals + claim on M + delegate K) in minimum-tx form, factoring per-chain gas.",
+          "inputs": "`{ ops: object[] }`",
+          "outputs": "`{ tx_hashes: string[], total_gas_paid }`",
+          "pricing": "1 NEAR per batch.",
+          "categories": [
+            "dao",
+            "automation",
+            "gas"
+          ],
+          "tags": [
+            "batch",
+            "ops",
+            "gas"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "multicall contract per chain."
+          }
+        },
+        {
+          "slug": "dao-vote-conflict-detector",
+          "pitch": "Flags when two DAOs you're in voted opposite ways on related questions (e.g. \"DAO A funded project X, DAO B funded its competitor Y\"). Useful for accountability or just understanding the field.",
+          "inputs": "`{ daos: string[] }`",
+          "outputs": "`{ conflicts: [{ dao_a, dao_b, topic, summary }] }`",
+          "pricing": "1 NEAR per scan.",
+          "categories": [
+            "dao",
+            "analytics"
+          ],
+          "tags": [
+            "conflict",
+            "cross-dao"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Snapshot/Tally + LLM clustering."
+          }
+        },
+        {
+          "slug": "dao-discussion-summarizer",
+          "pitch": "Daily summary of forum threads in DAOs you watch (Discourse/Commonwealth). Beats refreshing 8 forums to see what's brewing pre-proposal.",
+          "inputs": "`{ daos: string[], delivery: \"dm\"|\"tg\" }`",
+          "outputs": "`{ digest_message_id, threads_covered: int }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "dao",
+            "digest",
+            "discourse"
+          ],
+          "tags": [
+            "forum",
+            "summary",
+            "dao"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Discourse/Commonwealth API."
+          }
+        },
+        {
+          "slug": "dao-voter-power-tracker",
+          "pitch": "Tracks your effective voting power per DAO over time (token balance + delegations received + lock multipliers). Stops the \"wait, I had more votes last month\" surprise.",
+          "inputs": "`{ wallet?: string, daos: string[] }`",
+          "outputs": "`{ power_per_dao: [{ dao, current, history }] }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "dao",
+            "tracker"
+          ],
+          "tags": [
+            "voting-power",
+            "delegation",
+            "history"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Snapshot/Tally + RPC."
+          }
+        }
+      ]
+    },
+    {
+      "num": 4,
+      "name": "Tax, accounting & reporting",
+      "count": 15,
+      "skills": [
+        {
+          "slug": "tax-fifo-calculator",
+          "pitch": "Calculates realized gains FIFO across your full wallet history including DeFi positions and bridges. Different from v1's NewsCoin-only tax export — full multi-chain scope.",
+          "inputs": "`{ wallets: string[], year: number }`",
+          "outputs": "`{ realized_total, per_asset: [{ asset, gain, loss }], download_url }`",
+          "pricing": "8 NEAR per export.",
+          "categories": [
+            "tax",
+            "accounting",
+            "multi-chain"
+          ],
+          "tags": [
+            "fifo",
+            "tax",
+            "full"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "multi-chain price index + bridge-event mapper."
+          }
+        },
+        {
+          "slug": "tax-jurisdiction-helper",
+          "pitch": "Explains crypto tax rules for the user's stated jurisdiction (US/UK/EU/AU/SG) with citations to actual regs. Updated when guidance changes.",
+          "inputs": "`{ jurisdiction: string, scenario?: string }`",
+          "outputs": "`{ summary, citations: string[], advice_disclaimer: string }`",
+          "pricing": "1 NEAR per query.",
+          "categories": [
+            "tax",
+            "compliance",
+            "education"
+          ],
+          "tags": [
+            "jurisdiction",
+            "tax",
+            "rules"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM with curated citation set."
+          }
+        },
+        {
+          "slug": "tax-staking-income-classifier",
+          "pitch": "Classifies staking income vs capital gain per jurisdiction. Critical for jurisdictions where staking is income at receipt vs cap-gain at sale (most are the former).",
+          "inputs": "`{ jurisdiction: string, year: number }`",
+          "outputs": "`{ income_total, basis_table, jurisdictional_notes }`",
+          "pricing": "3 NEAR per report.",
+          "categories": [
+            "tax",
+            "staking",
+            "compliance"
+          ],
+          "tags": [
+            "staking",
+            "income",
+            "classify"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "wallet history + LLM classifier."
+          }
+        },
+        {
+          "slug": "tax-loss-harvester",
+          "pitch": "Finds unrealized loss positions ripe for tax-loss-harvest before year-end, with wash-sale advisor (e.g. don't rebuy same token within 30d in US).",
+          "inputs": "`{ wallet?: string, jurisdiction: string }`",
+          "outputs": "`{ harvest_candidates: [{ asset, unrealized_loss, harvest_advice }] }`",
+          "pricing": "1 NEAR per scan.",
+          "categories": [
+            "tax",
+            "optimization"
+          ],
+          "tags": [
+            "harvest",
+            "loss",
+            "tax"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "`/api/trading/positions` + price feed."
+          }
+        },
+        {
+          "slug": "tax-airdrop-cost-basis",
+          "pitch": "Computes USD basis at receipt for every airdrop you've received, using closest-trade pricing. The thing every tax tool gets wrong by 10–30%.",
+          "inputs": "`{ wallet?: string, year: number }`",
+          "outputs": "`{ airdrops: [{ token, received_at, amount, basis_usd }] }`",
+          "pricing": "2 NEAR per export.",
+          "categories": [
+            "tax",
+            "airdrops"
+          ],
+          "tags": [
+            "airdrop",
+            "basis",
+            "tax"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC + price feed."
+          }
+        },
+        {
+          "slug": "tax-form-prefill",
+          "pitch": "Pre-fills US Form 8949 / UK SA108 / EU equivalents from on-chain data. Doesn't file — produces the populated PDF.",
+          "inputs": "`{ jurisdiction: \"US\"|\"UK\"|\"DE\"|\"FR\", year: number }`",
+          "outputs": "`{ download_url, page_count }`",
+          "pricing": "10 NEAR per filing pack.",
+          "categories": [
+            "tax",
+            "compliance",
+            "export"
+          ],
+          "tags": [
+            "form",
+            "prefill",
+            "tax"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs PDF templates + form-fill library."
+          }
+        },
+        {
+          "slug": "accounting-multi-wallet-consolidate",
+          "pitch": "Consolidates trades across N wallets into one ledger, marking internal transfers (not taxable). Solves the \"I have 4 wallets and Koinly thinks every transfer is a sale\" problem.",
+          "inputs": "`{ wallets: string[], year: number }`",
+          "outputs": "`{ ledger_url, internal_transfers_excluded: int }`",
+          "pricing": "5 NEAR per consolidation.",
+          "categories": [
+            "accounting",
+            "multi-wallet"
+          ],
+          "tags": [
+            "consolidate",
+            "ledger",
+            "multi-wallet"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC + transfer-intent detection."
+          }
+        },
+        {
+          "slug": "accounting-internal-transfer-detector",
+          "pitch": "Auto-flags transfers between your own wallets across chains so they're excluded from gains. Differs from `accounting-multi-wallet-consolidate` — runs continuously, exposes a flag table.",
+          "inputs": "`{ wallets: string[] }`",
+          "outputs": "`{ flagged_transfers: [{ tx, src, dst, amount }] }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "accounting",
+            "multi-wallet",
+            "automation"
+          ],
+          "tags": [
+            "internal",
+            "transfer",
+            "flag"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC + cluster heuristic."
+          }
+        },
+        {
+          "slug": "accounting-defi-position-resolver",
+          "pitch": "Turns LP/lending/staking positions into clean balance-sheet rows (asset, lot, basis, current value). Most accounting tools choke here; this skill specializes.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ rows: [{ position, basis, mtm, kind }] }`",
+          "pricing": "4 NEAR per export.",
+          "categories": [
+            "accounting",
+            "defi"
+          ],
+          "tags": [
+            "defi",
+            "balance-sheet",
+            "resolver"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "protocol-specific accounting adapters."
+          }
+        },
+        {
+          "slug": "accounting-cost-basis-mover",
+          "pitch": "Transfers cost basis when consolidating wallets (move tokens from A → B without inheriting \"fresh basis at transfer time\" the way naive tools do).",
+          "inputs": "`{ from_wallet: string, to_wallet: string, asset: string }`",
+          "outputs": "`{ basis_transferred, lots_moved: int }`",
+          "pricing": "1 NEAR per move.",
+          "categories": [
+            "accounting",
+            "multi-wallet"
+          ],
+          "tags": [
+            "basis",
+            "transfer",
+            "accounting"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "internal-transfer ledger update."
+          }
+        },
+        {
+          "slug": "accounting-koinly-export",
+          "pitch": "Exports a structured CSV ready for Koinly/CoinTracker/CoinTracking import — column-perfect, internal-transfer flagged. Different from v1's NewsCoin-only export — full scope.",
+          "inputs": "`{ wallets: string[], year: number, target: \"koinly\"|\"cointracker\"|\"cointracking\" }`",
+          "outputs": "`{ download_url }`",
+          "pricing": "4 NEAR per export.",
+          "categories": [
+            "accounting",
+            "tax",
+            "export"
+          ],
+          "tags": [
+            "koinly",
+            "csv",
+            "export"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "wallet history + CSV writer."
+          }
+        },
+        {
+          "slug": "accounting-quarterly-report",
+          "pitch": "Quarterly P&L summary for your accountant: realized gains, staking income, fees paid, fiat on/off-ramps. The thing they ask for instead of a 4,000-row CSV.",
+          "inputs": "`{ wallets: string[], quarter: \"Q1-2026\" }`",
+          "outputs": "`{ report_pdf_url }`",
+          "pricing": "3 NEAR per report.",
+          "categories": [
+            "accounting",
+            "reporting"
+          ],
+          "tags": [
+            "quarterly",
+            "p&l",
+            "accountant"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "wallet history + PDF render."
+          }
+        },
+        {
+          "slug": "accounting-mtm-summary",
+          "pitch": "Period mark-to-market summary with realized + unrealized split. Useful for accrual-style internal reporting (funds, businesses holding crypto).",
+          "inputs": "`{ wallets: string[], period_start: ISO, period_end: ISO }`",
+          "outputs": "`{ realized, unrealized, by_asset }`",
+          "pricing": "3 NEAR per summary.",
+          "categories": [
+            "accounting",
+            "reporting"
+          ],
+          "tags": [
+            "mtm",
+            "accrual",
+            "period"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "wallet history + price feed."
+          }
+        },
+        {
+          "slug": "tax-gift-tracker",
+          "pitch": "Tracks crypto you've received as a gift or sent as one (most jurisdictions tax these differently from sales). Logs USD basis + sender/recipient for proper handling.",
+          "inputs": "`{ wallet?: string, year: number }`",
+          "outputs": "`{ gifts_received, gifts_given, jurisdiction_notes }`",
+          "pricing": "2 NEAR per export.",
+          "categories": [
+            "tax",
+            "gifts"
+          ],
+          "tags": [
+            "gift",
+            "tax",
+            "basis"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC + price feed + manual flagging."
+          }
+        },
+        {
+          "slug": "accounting-fee-budget",
+          "pitch": "Sets a monthly fee budget across gas + bridge + DEX fees; alerts when you're 80% through. The \"I had no idea I spent $400 on gas this month\" prevention.",
+          "inputs": "`{ monthly_budget_usd: number, alert_threshold_pct?: number }`",
+          "outputs": "`{ spent_usd, remaining_usd, projection }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "accounting",
+            "fees"
+          ],
+          "tags": [
+            "fee-budget",
+            "alert"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "`/api/trading/fees` + RPC gas reads."
+          }
+        }
+      ]
+    },
+    {
+      "num": 5,
+      "name": "Research & due diligence",
+      "count": 16,
+      "skills": [
+        {
+          "slug": "token-deep-dive",
+          "pitch": "Multi-page report on a token: tokenomics, holder distribution, vesting, audits, team, comps. Saves the 6-hour-due-diligence afternoon.",
+          "inputs": "`{ token: string, depth?: \"quick\"|\"standard\"|\"deep\" }`",
+          "outputs": "`{ report_url, key_findings: string[5] }`",
+          "pricing": "3 NEAR per quick, 8 NEAR per deep.",
+          "categories": [
+            "research",
+            "due-diligence"
+          ],
+          "tags": [
+            "deep-dive",
+            "dd",
+            "research"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "RPC + GitHub + DefiLlama + LLM synthesis."
+          }
+        },
+        {
+          "slug": "team-background-check",
+          "pitch": "Public-info background on a team (LinkedIn handles, prior projects, doxxed history). No private data — just consolidated public footprint.",
+          "inputs": "`{ team_handles: string[] }`",
+          "outputs": "`{ profiles: [{ handle, prior_projects, red_flags? }] }`",
+          "pricing": "1 NEAR per name.",
+          "categories": [
+            "research",
+            "due-diligence"
+          ],
+          "tags": [
+            "team",
+            "background",
+            "dd"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "public-data scraper / search API."
+          }
+        },
+        {
+          "slug": "funding-history-tracker",
+          "pitch": "Investment rounds, lead investors, terms (where public) for a project. Updated as new rounds close.",
+          "inputs": "`{ project: string }`",
+          "outputs": "`{ rounds: [{ round, amount, lead, terms }] }`",
+          "pricing": "0.5 NEAR per query.",
+          "categories": [
+            "research",
+            "funding"
+          ],
+          "tags": [
+            "funding",
+            "vc",
+            "rounds"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Crunchbase / RootData API."
+          }
+        },
+        {
+          "slug": "audit-status-checker",
+          "pitch": "Checks if a contract has audits, parses severities from public reports, and grades audit-firm rigor. Different from v1's `risk-token-scorer` — focused on audit pedigree, not on-chain metrics.",
+          "inputs": "`{ contract: string, chain: string }`",
+          "outputs": "`{ audits: [{ firm, date, critical, high, medium }], audit_grade: \"A-F\" }`",
+          "pricing": "0.5 NEAR per check.",
+          "categories": [
+            "research",
+            "security"
+          ],
+          "tags": [
+            "audit",
+            "security",
+            "dd"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "DeFiSafety / audit-aggregator API."
+          }
+        },
+        {
+          "slug": "code-similarity-checker",
+          "pitch": "Flags if a contract is mostly forked from another (with a diff). Saves the \"this is the next OHM\" rabbit hole — most aren't.",
+          "inputs": "`{ contract: string, chain: string }`",
+          "outputs": "`{ best_match, similarity_pct, diff_summary }`",
+          "pricing": "1 NEAR per check.",
+          "categories": [
+            "research",
+            "security"
+          ],
+          "tags": [
+            "fork",
+            "similarity",
+            "code"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Etherscan source + similarity index."
+          }
+        },
+        {
+          "slug": "tokenomics-modeler",
+          "pitch": "Projects supply over time given emissions schedule + lockups + burns. One chart that tells you whether the inflation kills it.",
+          "inputs": "`{ token: string, horizon_months: number }`",
+          "outputs": "`{ chart_url, peak_supply_at, breakeven_emission }`",
+          "pricing": "2 NEAR per model.",
+          "categories": [
+            "research",
+            "tokenomics"
+          ],
+          "tags": [
+            "tokenomics",
+            "supply",
+            "model"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "emissions data per token (curated or Token Unlocks)."
+          }
+        },
+        {
+          "slug": "holder-distribution-analyzer",
+          "pitch": "Gini coefficient + top-100 concentration over time for a token. Trend matters more than snapshot.",
+          "inputs": "`{ token: string, lookback_days?: number }`",
+          "outputs": "`{ gini_now, gini_trend, top100_pct }`",
+          "pricing": "0.5 NEAR per analysis.",
+          "categories": [
+            "research",
+            "analytics"
+          ],
+          "tags": [
+            "gini",
+            "holders",
+            "distribution"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "chain explorer holder snapshots."
+          }
+        },
+        {
+          "slug": "narrative-strength-tracker",
+          "pitch": "Tracks how a project's stated narrative holds up vs. market positioning over time. Catches \"this is the AI x DePIN play\" projects whose narrative shifted four times.",
+          "inputs": "`{ project: string, lookback_days?: number }`",
+          "outputs": "`{ stated_narratives: string[], drift_score, evidence: string[] }`",
+          "pricing": "1 NEAR per check.",
+          "categories": [
+            "research",
+            "narrative"
+          ],
+          "tags": [
+            "narrative",
+            "drift"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "historical web/social snapshots."
+          }
+        },
+        {
+          "slug": "competitive-landscape",
+          "pitch": "Peer-comp report for a token in its category (TVL, mcap, fees, growth) with a ranked table. Stops the \"is this overvalued?\" guess.",
+          "inputs": "`{ token: string }`",
+          "outputs": "`{ category, peers: [{ token, mcap, tvl, fees_30d }], rank }`",
+          "pricing": "1 NEAR per report.",
+          "categories": [
+            "research",
+            "competitive"
+          ],
+          "tags": [
+            "comps",
+            "peers",
+            "mcap"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "DefiLlama + CoinGecko."
+          }
+        },
+        {
+          "slug": "whale-onboarding-detector",
+          "pitch": "Detects first-time whale buys (>$1M positions) in a token. Specifically the \"this address has never held this asset before\" filter — different from generic whale-watch.",
+          "inputs": "`{ tokens: string[], threshold_usd: number }`",
+          "outputs": "`{ events: [{ token, wallet, amount_usd, at }] }`",
+          "pricing": "5 NEAR/month.",
+          "categories": [
+            "research",
+            "whales",
+            "alerts"
+          ],
+          "tags": [
+            "whale",
+            "onboarding",
+            "first-buy"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "chain indexer with first-time-holder flag."
+          }
+        },
+        {
+          "slug": "vc-unlock-tracker",
+          "pitch": "VC investor unlock schedules and their on-chain movement after unlocks (sold immediately? held? swapped to stables?). Builds a profile of VC behavior per fund.",
+          "inputs": "`{ fund_or_wallet: string }`",
+          "outputs": "`{ unlocks: [{ token, at, amount, post_movement }] }`",
+          "pricing": "2 NEAR per profile.",
+          "categories": [
+            "research",
+            "vc",
+            "unlocks"
+          ],
+          "tags": [
+            "vc",
+            "unlock",
+            "fund"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Token Unlocks + fund-wallet registry."
+          }
+        },
+        {
+          "slug": "social-volume-tracker",
+          "pitch": "Tracks social mentions volume on a token over time across X (via Nitter), IronFeed, Telegram public groups. Shows the conversation curve.",
+          "inputs": "`{ token: string, lookback_days?: number }`",
+          "outputs": "`{ daily_mentions: [{ date, count, platform_split }] }`",
+          "pricing": "0.5 NEAR per query.",
+          "categories": [
+            "research",
+            "social",
+            "analytics"
+          ],
+          "tags": [
+            "social",
+            "mentions",
+            "volume"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Nitter/IronFeed search; TG public-group ingestion."
+          }
+        },
+        {
+          "slug": "dev-activity-monitor",
+          "pitch": "Repo commits, contributors, releases for a project. Flags abandoned-dev signals (no pushes in 60 days, lone-contributor risk).",
+          "inputs": "`{ github_org_or_repo: string }`",
+          "outputs": "`{ commits_30d, active_contribs, last_release_at, abandonment_risk }`",
+          "pricing": "0.3 NEAR per check.",
+          "categories": [
+            "research",
+            "dev"
+          ],
+          "tags": [
+            "github",
+            "dev",
+            "activity"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "GitHub API (free tier OK)."
+          }
+        },
+        {
+          "slug": "project-roadmap-tracker",
+          "pitch": "Tracks stated roadmap milestones vs. delivered. The \"promised mainnet Q2, still on testnet in Q4\" accountability check.",
+          "inputs": "`{ project: string }`",
+          "outputs": "`{ milestones: [{ promised_at, delivered_at?, status }] }`",
+          "pricing": "1 NEAR per check.",
+          "categories": [
+            "research",
+            "accountability"
+          ],
+          "tags": [
+            "roadmap",
+            "milestone",
+            "deliver"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "historic roadmap snapshots + LLM matching."
+          }
+        },
+        {
+          "slug": "governance-activity-monitor",
+          "pitch": "Proposal volume + participation rate for a DAO over time. Healthy DAOs grow; declining ones quietly die in the forum.",
+          "inputs": "`{ dao: string, lookback_days?: number }`",
+          "outputs": "`{ proposals_per_week, participation_pct, trend }`",
+          "pricing": "0.5 NEAR per check.",
+          "categories": [
+            "research",
+            "dao",
+            "analytics"
+          ],
+          "tags": [
+            "gov",
+            "participation",
+            "health"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Snapshot/Tally + RPC."
+          }
+        },
+        {
+          "slug": "runway-estimator",
+          "pitch": "Estimates a project's treasury runway from on-chain treasury + monthly spend rate. Critical for funding-cycle DD.",
+          "inputs": "`{ project_treasury: string }`",
+          "outputs": "`{ treasury_usd, monthly_burn_usd, runway_months }`",
+          "pricing": "0.5 NEAR per estimate.",
+          "categories": [
+            "research",
+            "treasury"
+          ],
+          "tags": [
+            "runway",
+            "treasury",
+            "burn"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC + price feed."
+          }
+        }
+      ]
+    },
+    {
+      "num": 6,
+      "name": "Developer tools",
+      "count": 16,
+      "skills": [
+        {
+          "slug": "rpc-health-monitor",
+          "pitch": "Monitors RPC endpoint uptime + p99 response time across chains; alerts on degradation. Stops your skill silently failing because Aurora-RPC is flaky.",
+          "inputs": "`{ endpoints: [{ chain, url }] }`",
+          "outputs": "`{ status: [{ url, uptime_pct, p99_ms }] }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "dev",
+            "monitoring"
+          ],
+          "tags": [
+            "rpc",
+            "uptime",
+            "monitor"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "direct HTTP probes."
+          }
+        },
+        {
+          "slug": "gas-oracle",
+          "pitch": "Current gas across N chains with 1h/24h percentile. One-call API for skill authors who need to size txs.",
+          "inputs": "`{ chains: string[] }`",
+          "outputs": "`{ rates: [{ chain, gwei_now, p50_24h, p95_24h }] }`",
+          "pricing": "Free (utility).",
+          "categories": [
+            "dev",
+            "gas",
+            "utility"
+          ],
+          "tags": [
+            "gas",
+            "oracle"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "eth_gasPrice / NEAR fee endpoint."
+          }
+        },
+        {
+          "slug": "gas-price-history",
+          "pitch": "Gas history chart for picking off-peak windows on EVM chains. Cheaper than trial-and-error.",
+          "inputs": "`{ chain: string, lookback_days: number }`",
+          "outputs": "`{ chart_url, off_peak_windows_utc: string[] }`",
+          "pricing": "0.1 NEAR per chart.",
+          "categories": [
+            "dev",
+            "gas",
+            "analytics"
+          ],
+          "tags": [
+            "gas",
+            "history",
+            "off-peak"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a gas-history archiver (Blocknative API or custom)."
+          }
+        },
+        {
+          "slug": "abi-explorer",
+          "pitch": "Explore a contract's ABI with sample calldata for each function. Beats Etherscan's read/write-contract page for skill authors who need to understand a contract fast.",
+          "inputs": "`{ contract: string, chain: string }`",
+          "outputs": "`{ functions: [{ name, sig, sample_call }] }`",
+          "pricing": "0.1 NEAR per query.",
+          "categories": [
+            "dev",
+            "contracts"
+          ],
+          "tags": [
+            "abi",
+            "explore",
+            "dev"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Etherscan ABI API."
+          }
+        },
+        {
+          "slug": "contract-verify-helper",
+          "pitch": "Verifies source on Etherscan/NEAR explorer with one call. Different from manual upload — accepts a GitHub URL + commit and figures out flatten/imports.",
+          "inputs": "`{ contract: string, chain: string, repo_url: string, commit?: string }`",
+          "outputs": "`{ verified: bool, explorer_url }`",
+          "pricing": "1 NEAR per verification.",
+          "categories": [
+            "dev",
+            "contracts"
+          ],
+          "tags": [
+            "verify",
+            "etherscan",
+            "dev"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Etherscan verification API + repo fetch."
+          }
+        },
+        {
+          "slug": "tx-replay-debugger",
+          "pitch": "Replays a tx on a fork and shows stack trace + revert reason. The \"why did my tx fail?\" debugger that beats reading raw revert bytes.",
+          "inputs": "`{ tx_hash: string, chain: string }`",
+          "outputs": "`{ revert_reason, stack_trace, gas_used }`",
+          "pricing": "0.5 NEAR per replay.",
+          "categories": [
+            "dev",
+            "debug"
+          ],
+          "tags": [
+            "debug",
+            "replay",
+            "revert"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Tenderly API or self-hosted Anvil fork."
+          }
+        },
+        {
+          "slug": "event-log-decoder",
+          "pitch": "Decodes raw event logs into named fields given the contract ABI. Replaces \"Topic 0x123… data 0x456…\" with \"Transfer(from=alice, to=bob, value=100)\".",
+          "inputs": "`{ tx_hash: string, chain: string }`",
+          "outputs": "`{ events: [{ name, args }] }`",
+          "pricing": "0.1 NEAR per decode.",
+          "categories": [
+            "dev",
+            "events"
+          ],
+          "tags": [
+            "events",
+            "decode",
+            "log"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Etherscan ABI + decoder lib."
+          }
+        },
+        {
+          "slug": "bytecode-diff",
+          "pitch": "Diffs two contracts' bytecode. Useful post-upgrade audit (\"what actually changed?\") and fork-detection.",
+          "inputs": "`{ contract_a: string, contract_b: string, chain: string }`",
+          "outputs": "`{ diff_pct, changed_function_selectors: string[] }`",
+          "pricing": "0.3 NEAR per diff.",
+          "categories": [
+            "dev",
+            "audit"
+          ],
+          "tags": [
+            "bytecode",
+            "diff"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "RPC `eth_getCode` + selector indexer."
+          }
+        },
+        {
+          "slug": "deploy-cost-estimator",
+          "pitch": "Estimates deploy cost for a contract on N chains given current gas. Helps multi-chain devs budget the launch.",
+          "inputs": "`{ contract_bytes_size: number, chains: string[] }`",
+          "outputs": "`{ estimates: [{ chain, gas_units, cost_usd }] }`",
+          "pricing": "0.1 NEAR per estimate.",
+          "categories": [
+            "dev",
+            "gas"
+          ],
+          "tags": [
+            "deploy",
+            "cost",
+            "multi-chain"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "eth_estimateGas + price feed."
+          }
+        },
+        {
+          "slug": "contract-storage-explorer",
+          "pitch": "Reads storage slots of a verified contract with field-level decoding. Lets you inspect contracts that don't expose getters for everything.",
+          "inputs": "`{ contract: string, chain: string, slot_or_field: string }`",
+          "outputs": "`{ value, decoded_as }`",
+          "pricing": "0.2 NEAR per read.",
+          "categories": [
+            "dev",
+            "contracts"
+          ],
+          "tags": [
+            "storage",
+            "slot",
+            "debug"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Etherscan storage layout + RPC `eth_getStorageAt`."
+          }
+        },
+        {
+          "slug": "wallet-creator",
+          "pitch": "Creates a deterministic NEAR sub-account or EVM keystore offline (no internet round-trip for keygen). For devs setting up test accounts in CI.",
+          "inputs": "`{ kind: \"near\"|\"evm\", seed: string }`",
+          "outputs": "`{ address, encrypted_keystore }`",
+          "pricing": "Free.",
+          "categories": [
+            "dev",
+            "wallet"
+          ],
+          "tags": [
+            "keygen",
+            "wallet",
+            "deterministic"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "pure crypto in skill runtime."
+          }
+        },
+        {
+          "slug": "signature-verifier",
+          "pitch": "Verifies EIP-191 / NEP-413 / EIP-712 signatures with one API surface. Reusable across many skills that need to verify auth payloads.",
+          "inputs": "`{ kind: \"eip-191\"|\"nep-413\"|\"eip-712\", message: string, signature: string, address: string }`",
+          "outputs": "`{ valid: bool, recovered_address?: string }`",
+          "pricing": "Free.",
+          "categories": [
+            "dev",
+            "crypto",
+            "utility"
+          ],
+          "tags": [
+            "signature",
+            "verify",
+            "crypto"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "pure crypto."
+          }
+        },
+        {
+          "slug": "merkle-proof-generator",
+          "pitch": "Generates a merkle proof for an airdrop list. Useful when you're building an airdrop contract and need proofs at distribute time.",
+          "inputs": "`{ leaves: string[], target: string }`",
+          "outputs": "`{ root, proof: string[] }`",
+          "pricing": "0.1 NEAR per proof.",
+          "categories": [
+            "dev",
+            "crypto",
+            "airdrops"
+          ],
+          "tags": [
+            "merkle",
+            "proof",
+            "airdrop"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "pure crypto."
+          }
+        },
+        {
+          "slug": "mempool-watcher",
+          "pitch": "Watches a mempool for pending txs matching a pattern (function selector, target contract). Useful for MEV or just observing what's coming.",
+          "inputs": "`{ chain: string, pattern: object }`",
+          "outputs": "`{ matched_txs: [{ hash, from, to, calldata }] }`",
+          "pricing": "6 NEAR/month.",
+          "categories": [
+            "dev",
+            "mempool"
+          ],
+          "tags": [
+            "mempool",
+            "watch",
+            "mev"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Bloxroute/Blocknative mempool feed (not on NEAR; useful for Aurora EVM)."
+          }
+        },
+        {
+          "slug": "ens-bulk-resolver",
+          "pitch": "Bulk-resolves ENS / NEAR named accounts to addresses (and reverse). Handy for any skill that takes user input as \"name.eth\" and needs the address.",
+          "inputs": "`{ names: string[] }`",
+          "outputs": "`{ resolved: [{ name, address }], failed: string[] }`",
+          "pricing": "0.05 NEAR per name.",
+          "categories": [
+            "dev",
+            "identity",
+            "utility"
+          ],
+          "tags": [
+            "ens",
+            "near",
+            "resolve"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC reads."
+          }
+        },
+        {
+          "slug": "contract-test-runner",
+          "pitch": "Runs a hardhat/forge test suite via webhook against a target branch. Skill authors get green/red without leaving their dev workflow.",
+          "inputs": "`{ repo_url: string, branch: string, framework: \"hardhat\"|\"forge\" }`",
+          "outputs": "`{ passed: int, failed: int, log_url }`",
+          "pricing": "1 NEAR per run.",
+          "categories": [
+            "dev",
+            "testing",
+            "ci"
+          ],
+          "tags": [
+            "test",
+            "ci",
+            "hardhat"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a sandboxed runner (the skills runtime is too short for real CI; this is a scheduled longer-running automation)."
+          }
+        }
+      ]
+    },
+    {
+      "num": 7,
+      "name": "Data sync & integrations",
+      "count": 14,
+      "skills": [
+        {
+          "slug": "notion-sync",
+          "pitch": "Pushes posts/holdings/missions/governance state into a Notion database. Treats Notion like an external view of your IronShield activity.",
+          "inputs": "`{ notion_token: string, database_id: string, source: \"posts\"|\"holdings\"|\"missions\" }`",
+          "outputs": "`{ synced_count, last_synced_at }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "integration",
+            "notion"
+          ],
+          "tags": [
+            "notion",
+            "sync"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs Notion integration token; standard public API."
+          }
+        },
+        {
+          "slug": "airtable-sync",
+          "pitch": "Same as notion-sync but for Airtable. Different schema model — Airtable's typed columns are friendlier for filter views.",
+          "inputs": "`{ airtable_token: string, base_id: string, table: string, source: string }`",
+          "outputs": "`{ synced_count }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "integration",
+            "airtable"
+          ],
+          "tags": [
+            "airtable",
+            "sync"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Airtable API."
+          }
+        },
+        {
+          "slug": "google-sheets-sync",
+          "pitch": "Appends rows to a Google Sheet via service-account webhook. The \"I want my finance team to see this in Sheets\" surface.",
+          "inputs": "`{ sheet_id: string, sa_email: string, source: string }`",
+          "outputs": "`{ rows_appended }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "integration",
+            "sheets"
+          ],
+          "tags": [
+            "sheets",
+            "sync"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Google Sheets API; needs SA setup helper."
+          }
+        },
+        {
+          "slug": "slack-notifier",
+          "pitch": "Pushes alerts to a Slack channel via incoming webhook. For ops teams running an IronShield-driven workflow.",
+          "inputs": "`{ webhook_url: string, events: string[] }`",
+          "outputs": "`{ sent_count }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "integration",
+            "slack"
+          ],
+          "tags": [
+            "slack",
+            "alerts"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "incoming webhook (just an HTTP POST)."
+          }
+        },
+        {
+          "slug": "discord-notifier",
+          "pitch": "Pushes alerts to a Discord channel via webhook. Same shape as slack-notifier but mapped to Discord embeds.",
+          "inputs": "`{ webhook_url: string, events: string[] }`",
+          "outputs": "`{ sent_count }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "integration",
+            "discord"
+          ],
+          "tags": [
+            "discord",
+            "alerts"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "webhook POST."
+          }
+        },
+        {
+          "slug": "zapier-bridge",
+          "pitch": "Webhook out to Zapier with chosen IronShield events. Lets non-devs wire 4,000+ Zapier-connected apps to IronShield triggers.",
+          "inputs": "`{ zap_url: string, event_filters: string[] }`",
+          "outputs": "`{ delivered_count }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "integration",
+            "zapier"
+          ],
+          "tags": [
+            "zapier",
+            "bridge"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "webhook POST."
+          }
+        },
+        {
+          "slug": "make-bridge",
+          "pitch": "Same as zapier-bridge but for Make.com. Slightly different event shape; commonly cheaper per-op for high-volume users.",
+          "inputs": "`{ scenario_url: string, event_filters: string[] }`",
+          "outputs": "`{ delivered_count }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "integration",
+            "make"
+          ],
+          "tags": [
+            "make",
+            "bridge"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "webhook POST."
+          }
+        },
+        {
+          "slug": "csv-batch-export",
+          "pitch": "Schedules CSV exports of any queryable surface (positions, posts, missions, votes). Drops to S3/R2 or emails a signed URL.",
+          "inputs": "`{ source: string, cadence: \"daily\"|\"weekly\", destination: \"url\"|\"email\" }`",
+          "outputs": "`{ last_export_url }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "integration",
+            "export"
+          ],
+          "tags": [
+            "csv",
+            "export",
+            "schedule"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs R2 signed-URL helper (R2 is wired; helper is small)."
+          }
+        },
+        {
+          "slug": "webhook-debouncer",
+          "pitch": "Debounces noisy webhooks before downstream consumers. e.g. \"no more than 1 alert per minute, but always emit the latest state.\"",
+          "inputs": "`{ source_event: string, dest_url: string, debounce_ms: number }`",
+          "outputs": "`{ debounced_count }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "integration",
+            "utility"
+          ],
+          "tags": [
+            "debounce",
+            "webhook"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "pure middleware in the skill runtime."
+          }
+        },
+        {
+          "slug": "webhook-router",
+          "pitch": "Routes webhooks by predicate to multiple destinations. \"If event.kind == 'sniper-fire', send to Slack; else Discord.\"",
+          "inputs": "`{ rules: [{ predicate, dest_url }] }`",
+          "outputs": "`{ routed_count_by_dest }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "integration",
+            "routing"
+          ],
+          "tags": [
+            "router",
+            "webhook",
+            "predicate"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "pure middleware."
+          }
+        },
+        {
+          "slug": "cron-scheduler-pro",
+          "pitch": "Advanced cron with jitter + retry policies + dead-letter queue. The default automation cron is fine for \"daily at 9am\"; this is for \"hourly on weekdays with 30s jitter, exponential retry on failure.\"",
+          "inputs": "`{ cron: string, jitter_ms?: number, retry_policy?: object }`",
+          "outputs": "`{ schedule_id }`",
+          "pricing": "3 NEAR/month per scheduled task.",
+          "categories": [
+            "integration",
+            "automation",
+            "scheduler"
+          ],
+          "tags": [
+            "cron",
+            "jitter",
+            "retry"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "extends `agent_automations` with new fields."
+          }
+        },
+        {
+          "slug": "data-pipeline-monitor",
+          "pitch": "Monitors your sync skills' health + latency (last successful run, lag, error rate). The \"is my Notion sync still working\" dashboard.",
+          "inputs": "`{ wallet?: string }`",
+          "outputs": "`{ pipelines: [{ skill, last_success_at, lag_ms, error_rate }] }`",
+          "pricing": "Free for skill owners.",
+          "categories": [
+            "integration",
+            "monitoring"
+          ],
+          "tags": [
+            "pipeline",
+            "health",
+            "observability"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "`agent_automation_runs` table reads."
+          }
+        },
+        {
+          "slug": "obsidian-vault-sync",
+          "pitch": "Syncs your IronShield notes (DM threads, post drafts, mission notes) to a local Obsidian vault as Markdown. For users who run their second-brain locally.",
+          "inputs": "`{ vault_path_token: string, source: string }`",
+          "outputs": "`{ files_written, last_sync_at }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "integration",
+            "obsidian"
+          ],
+          "tags": [
+            "obsidian",
+            "vault",
+            "sync"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs an Obsidian Sync-compatible HTTP endpoint or local agent."
+          }
+        },
+        {
+          "slug": "s3-archiver",
+          "pitch": "Archives your IronShield content (posts, DMs you can decrypt, mission audit logs) to your own S3/R2 bucket on a schedule. Personal data sovereignty without leaving the platform.",
+          "inputs": "`{ s3_bucket: string, s3_creds: object, source: string, cadence: \"daily\"|\"weekly\" }`",
+          "outputs": "`{ archived_size_mb, last_archive_at }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "integration",
+            "archive",
+            "sovereignty"
+          ],
+          "tags": [
+            "s3",
+            "archive",
+            "backup"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "S3 PUT + cron."
+          }
+        }
+      ]
+    },
+    {
+      "num": 8,
+      "name": "Compliance & risk reporting",
+      "count": 12,
+      "skills": [
+        {
+          "slug": "sanctions-screen",
+          "pitch": "Checks an address against OFAC/UN sanctions lists. Required if you're moving money cross-border or running a regulated venue.",
+          "inputs": "`{ address: string }`",
+          "outputs": "`{ flagged: bool, source_lists: string[] }`",
+          "pricing": "0.1 NEAR per check.",
+          "categories": [
+            "compliance",
+            "sanctions"
+          ],
+          "tags": [
+            "ofac",
+            "sanctions",
+            "screen"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs Chainalysis Sanctions API or self-hosted list."
+          }
+        },
+        {
+          "slug": "aml-flag-explainer",
+          "pitch": "Explains why an address received a risk flag from public scoring (Chainalysis/TRM). Decodes \"high-risk\" into \"received funds from Tornado Cash 3 hops back\".",
+          "inputs": "`{ address: string }`",
+          "outputs": "`{ score, factors: string[], hop_distance_to_known_bad: int }`",
+          "pricing": "0.5 NEAR per check.",
+          "categories": [
+            "compliance",
+            "aml"
+          ],
+          "tags": [
+            "aml",
+            "risk",
+            "explain"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Chainalysis/TRM API (paid)."
+          }
+        },
+        {
+          "slug": "jurisdiction-guide",
+          "pitch": "High-level guidance on crypto rules for a stated jurisdiction (covers MiCA, IRS, MAS, FCA). Different from `tax-jurisdiction-helper` — broader regulatory scope, not just tax.",
+          "inputs": "`{ jurisdiction: string, topic: \"trading\"|\"staking\"|\"defi\"|\"nft\"|\"otc\" }`",
+          "outputs": "`{ rules_summary, regulator_links }`",
+          "pricing": "1 NEAR per query.",
+          "categories": [
+            "compliance",
+            "regulatory"
+          ],
+          "tags": [
+            "jurisdiction",
+            "regulatory"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM with curated citation set."
+          }
+        },
+        {
+          "slug": "kyc-readiness-bundle",
+          "pitch": "Assembles docs + addresses for KYC flow at exchanges. Pre-flight checklist so you don't get stuck mid-flow at Coinbase/Kraken.",
+          "inputs": "`{ exchange: string }`",
+          "outputs": "`{ checklist: string[], pre_filled_addresses: string[] }`",
+          "pricing": "0.5 NEAR per bundle.",
+          "categories": [
+            "compliance",
+            "kyc"
+          ],
+          "tags": [
+            "kyc",
+            "exchange",
+            "prep"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "curated per-exchange checklists."
+          }
+        },
+        {
+          "slug": "proof-of-reserves-reader",
+          "pitch": "Verifies an exchange's PoR attestation against on-chain. Reads the Merkle root, checks address inclusion, surfaces freshness.",
+          "inputs": "`{ exchange: string, your_user_id_hash?: string }`",
+          "outputs": "`{ por_fresh: bool, merkle_root, included: bool? }`",
+          "pricing": "1 NEAR per check.",
+          "categories": [
+            "compliance",
+            "por"
+          ],
+          "tags": [
+            "por",
+            "merkle",
+            "exchange"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "exchange-specific PoR endpoint integrations."
+          }
+        },
+        {
+          "slug": "proof-of-funds-generator",
+          "pitch": "Generates a signed proof-of-funds for a counterparty without exposing your full wallet. NEP-413 attestation + selective balance disclosure.",
+          "inputs": "`{ wallet?: string, min_balance_usd: number }`",
+          "outputs": "`{ proof_url, expires_at }`",
+          "pricing": "2 NEAR per proof.",
+          "categories": [
+            "compliance",
+            "pof"
+          ],
+          "tags": [
+            "pof",
+            "proof",
+            "otc"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "NEP-413 signing + balance read."
+          }
+        },
+        {
+          "slug": "report-suspicious-activity",
+          "pitch": "Assists filing reports against a flagged address (FinCEN SAR-style or platform abuse channels). Doesn't file directly — drafts the report and queues for your review.",
+          "inputs": "`{ flagged_address: string, evidence: string[] }`",
+          "outputs": "`{ report_draft_url }`",
+          "pricing": "1 NEAR per draft.",
+          "categories": [
+            "compliance",
+            "reporting"
+          ],
+          "tags": [
+            "sar",
+            "report",
+            "flag"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "varies by jurisdiction; usually output is just a doc, not actual filing."
+          }
+        },
+        {
+          "slug": "chain-of-custody-logger",
+          "pitch": "Logs transfer events with attestations for compliance (when did asset X enter wallet Y, who confirmed). Useful for audit trails of escrowed/restricted-token holdings.",
+          "inputs": "`{ wallet: string, attestation_signers: string[] }`",
+          "outputs": "`{ log_url, events_logged: int }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "compliance",
+            "audit"
+          ],
+          "tags": [
+            "custody",
+            "log",
+            "audit"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC + signed attestation storage."
+          }
+        },
+        {
+          "slug": "beneficial-owner-mapper",
+          "pitch": "Maps related addresses for a known entity (cluster heuristic + public attribution data). Useful for OTC counterparty verification.",
+          "inputs": "`{ seed_address: string }`",
+          "outputs": "`{ cluster: string[], confidence_per_address: object }`",
+          "pricing": "2 NEAR per map.",
+          "categories": [
+            "compliance",
+            "forensics"
+          ],
+          "tags": [
+            "cluster",
+            "owner",
+            "identity"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "TRM/Chainalysis or self-hosted heuristic."
+          }
+        },
+        {
+          "slug": "regulatory-update-digest",
+          "pitch": "Weekly digest of crypto regulatory updates by jurisdiction. Different from generic crypto-news — strictly regulatory: SEC actions, MiCA tweaks, FATF guidance.",
+          "inputs": "`{ jurisdictions: string[], delivery: \"dm\"|\"tg\" }`",
+          "outputs": "`{ digest_message_id }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "compliance",
+            "digest"
+          ],
+          "tags": [
+            "regulatory",
+            "digest",
+            "news"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "curated regulatory news feed."
+          }
+        },
+        {
+          "slug": "tax-residency-detector",
+          "pitch": "Flags potential tax-residency triggers based on your activity patterns (where you sign, where you withdraw to). Useful for digital nomads and frequent travelers risking unintended residency.",
+          "inputs": "`{ wallet?: string, lookback_days?: number }`",
+          "outputs": "`{ jurisdiction_signals: [{ jurisdiction, signal_count, advice }] }`",
+          "pricing": "2 NEAR per scan.",
+          "categories": [
+            "compliance",
+            "tax",
+            "residency"
+          ],
+          "tags": [
+            "residency",
+            "tax",
+            "nomad"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on geolocation signals (IP if logged) + LLM advice."
+          }
+        },
+        {
+          "slug": "travel-rule-helper",
+          "pitch": "For transfers above the FATF Travel Rule threshold, drafts the required originator/beneficiary metadata package per destination VASP's format.",
+          "inputs": "`{ tx: object, destination_vasp: string }`",
+          "outputs": "`{ travel_rule_payload, format: \"ivms101\" }`",
+          "pricing": "1 NEAR per package.",
+          "categories": [
+            "compliance",
+            "travel-rule"
+          ],
+          "tags": [
+            "travel-rule",
+            "fatf",
+            "vasp"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "VASP directory + IVMS101 schema."
+          }
+        }
+      ]
+    },
+    {
+      "num": 9,
+      "name": "Cross-chain identity & reputation",
+      "count": 10,
+      "skills": [
+        {
+          "slug": "address-cluster-prover",
+          "pitch": "Prove your control of N addresses with one signed payload. The \"yes, this NEAR account, that EVM address, and that SOL wallet are all me\" attestation.",
+          "inputs": "`{ addresses: [{ chain, address }] }`",
+          "outputs": "`{ proof_url, signed_messages: object }`",
+          "pricing": "0.5 NEAR per proof.",
+          "categories": [
+            "identity",
+            "cross-chain"
+          ],
+          "tags": [
+            "cluster",
+            "prove",
+            "identity"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "multi-chain signing (each chain's auth scheme)."
+          }
+        },
+        {
+          "slug": "ens-near-link",
+          "pitch": "Links an ENS name to your NEAR account with reverse lookup. Lets `vitalik.eth` map cleanly to a NEAR named account for cross-chain UX.",
+          "inputs": "`{ ens_name: string, near_account: string }`",
+          "outputs": "`{ link_tx_evm, link_tx_near }`",
+          "pricing": "1 NEAR per link.",
+          "categories": [
+            "identity",
+            "ens",
+            "near"
+          ],
+          "tags": [
+            "ens",
+            "near",
+            "link"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs an on-chain registry (lightweight contract)."
+          }
+        },
+        {
+          "slug": "cross-chain-resume-builder",
+          "pitch": "Builds a portable rep résumé across chains: commits, voting, donations, NFT-holder badges. Output as a shareable JSON-LD profile.",
+          "inputs": "`{ wallets: [{ chain, address }] }`",
+          "outputs": "`{ resume_url, schema: \"json-ld\" }`",
+          "pricing": "1 NEAR per build.",
+          "categories": [
+            "identity",
+            "reputation"
+          ],
+          "tags": [
+            "resume",
+            "profile",
+            "rep"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "composite reads + storage for the JSON-LD doc."
+          }
+        },
+        {
+          "slug": "gitcoin-passport-aggregator",
+          "pitch": "Aggregates your Gitcoin Passport stamps with on-chain rep into a single composite score. For DAOs implementing reputation-weighted voting.",
+          "inputs": "`{ wallet: string }`",
+          "outputs": "`{ passport_score, on_chain_score, composite }`",
+          "pricing": "0.3 NEAR per query.",
+          "categories": [
+            "identity",
+            "reputation"
+          ],
+          "tags": [
+            "passport",
+            "gitcoin",
+            "rep"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Gitcoin Passport API."
+          }
+        },
+        {
+          "slug": "social-handle-prover",
+          "pitch": "Cryptographically attests you own X/GitHub/Telegram handles. Posts a signed nonce to the handle, indexes the proof on-chain.",
+          "inputs": "`{ handles: [{ platform, handle }] }`",
+          "outputs": "`{ proofs: [{ platform, handle, proof_url }] }`",
+          "pricing": "0.5 NEAR per handle.",
+          "categories": [
+            "identity",
+            "social"
+          ],
+          "tags": [
+            "handle",
+            "social",
+            "prove"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Nitter/GitHub API for nonce verification."
+          }
+        },
+        {
+          "slug": "recovery-circle-coordinator",
+          "pitch": "Sets up a social-recovery circle across N friends' wallets. Coordinates the M-of-N approval flow when you trigger recovery.",
+          "inputs": "`{ trustees: string[], threshold_m: number }`",
+          "outputs": "`{ circle_id, attestations_collected }`",
+          "pricing": "5 NEAR setup, free for activations.",
+          "categories": [
+            "identity",
+            "recovery"
+          ],
+          "tags": [
+            "recovery",
+            "social",
+            "multisig"
+          ],
+          "status": {
+            "kind": "red",
+            "reason": "needs first-class social-recovery contract (no native primitive on NEAR; this is a substantial new platform feature)."
+          }
+        },
+        {
+          "slug": "attestation-issuer",
+          "pitch": "Issues EAS-style attestations about a counterparty (\"Alice paid me on time\", \"Bob delivered the work\"). Builds the trust graph one signed claim at a time.",
+          "inputs": "`{ subject: string, schema: string, data: object }`",
+          "outputs": "`{ attestation_uid, tx_hash }`",
+          "pricing": "0.3 NEAR per attestation.",
+          "categories": [
+            "identity",
+            "attestation"
+          ],
+          "tags": [
+            "eas",
+            "attest",
+            "claim"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "EAS contract on Aurora EVM (or NEAR-native equivalent)."
+          }
+        },
+        {
+          "slug": "reputation-graph-builder",
+          "pitch": "Builds a graph of trust attestations among your contacts; surfaces shortest-trust-path between you and an unknown counterparty.",
+          "inputs": "`{ wallet?: string, target?: string }`",
+          "outputs": "`{ graph, shortest_path?: string[] }`",
+          "pricing": "1 NEAR per build.",
+          "categories": [
+            "identity",
+            "graph",
+            "rep"
+          ],
+          "tags": [
+            "graph",
+            "trust",
+            "rep"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on `attestation-issuer` data."
+          }
+        },
+        {
+          "slug": "multichain-handle-resolver",
+          "pitch": "Resolves `name.eth` / `name.near` / `name.sol` to canonical address per chain. Different from v1's address-validator and the dev-tools `ens-bulk-resolver` — this is identity-focused, returns canonical chain bindings.",
+          "inputs": "`{ name: string, target_chains?: string[] }`",
+          "outputs": "`{ resolutions: [{ chain, address, confidence }] }`",
+          "pricing": "0.05 NEAR per call.",
+          "categories": [
+            "identity",
+            "resolver"
+          ],
+          "tags": [
+            "resolve",
+            "multichain",
+            "name"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "RPC reads."
+          }
+        },
+        {
+          "slug": "lens-farcaster-mirror",
+          "pitch": "Mirrors your IronFeed posts to Lens/Farcaster with attribution. Cross-publishes once, hits three audiences.",
+          "inputs": "`{ lens_handle?: string, fc_fid?: number }`",
+          "outputs": "`{ mirrored_count }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "identity",
+            "social",
+            "automation"
+          ],
+          "tags": [
+            "lens",
+            "farcaster",
+            "mirror"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Lens/Farcaster client integrations."
+          }
+        }
+      ]
+    },
+    {
+      "num": 10,
+      "name": "AI agent collaboration",
+      "count": 14,
+      "skills": [
+        {
+          "slug": "agent-team-coordinator",
+          "pitch": "Coordinates N agents on a multi-step task with role split (researcher / writer / reviewer / publisher). Stops one agent doing everything badly.",
+          "inputs": "`{ task: string, roles: [{ role, agent_account }] }`",
+          "outputs": "`{ deliverable, role_outputs: object }`",
+          "pricing": "2 NEAR per coordination.",
+          "categories": [
+            "agents",
+            "coordination"
+          ],
+          "tags": [
+            "multi-agent",
+            "team",
+            "role"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "chains existing `agents.sandbox` calls."
+          }
+        },
+        {
+          "slug": "skill-of-skills",
+          "pitch": "Meta-skill that picks + sequences other skills for an open-ended goal (e.g. \"do my morning ritual\" → daily-brief + weekly-recap + watchlist + pump-radar). Executes the sequence and merges outputs.",
+          "inputs": "`{ goal: string, constraints?: object }`",
+          "outputs": "`{ chosen_skills: string[], result }`",
+          "pricing": "1 NEAR per invocation.",
+          "categories": [
+            "agents",
+            "meta"
+          ],
+          "tags": [
+            "meta",
+            "sequence",
+            "goal"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "`/api/skills/registry` + planner LLM."
+          }
+        },
+        {
+          "slug": "agent-debate",
+          "pitch": "Two agents debate a question (one pro, one con), return the synthesized answer. Useful when you suspect single-agent answers lean too confident.",
+          "inputs": "`{ question: string, n_rounds?: number }`",
+          "outputs": "`{ pro_argument, con_argument, synthesis }`",
+          "pricing": "0.5 NEAR per debate.",
+          "categories": [
+            "agents",
+            "reasoning"
+          ],
+          "tags": [
+            "debate",
+            "reason",
+            "multi-agent"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "two `ctx.agent` calls."
+          }
+        },
+        {
+          "slug": "agent-peer-review",
+          "pitch": "A second agent reviews the first agent's output before delivery (fact-check, style, completeness). Catches the obvious misses without your eyes.",
+          "inputs": "`{ first_agent_output: string, review_criteria?: string[] }`",
+          "outputs": "`{ approved: bool, edits: string[], rewritten?: string }`",
+          "pricing": "0.3 NEAR per review.",
+          "categories": [
+            "agents",
+            "quality"
+          ],
+          "tags": [
+            "review",
+            "peer",
+            "quality"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "second `ctx.agent` call."
+          }
+        },
+        {
+          "slug": "agent-handoff",
+          "pitch": "Hands off state between agents preserving context (compressed memory + active goals). Different from team-coordinator — sequential, not parallel.",
+          "inputs": "`{ from_agent: string, to_agent: string, state: object }`",
+          "outputs": "`{ resumed_at }`",
+          "pricing": "0.2 NEAR per handoff.",
+          "categories": [
+            "agents",
+            "state"
+          ],
+          "tags": [
+            "handoff",
+            "sequential",
+            "context"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "`agent_connections` switch + state passing."
+          }
+        },
+        {
+          "slug": "agent-failover",
+          "pitch": "Auto-swaps to backup agent on primary error (rate-limit, timeout, refusal). Keeps your skill running when OpenClaw is having a bad day.",
+          "inputs": "`{ primary: string, backup: string, error_kinds?: string[] }`",
+          "outputs": "`{ swap_count, primary_uptime_pct }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "agents",
+            "reliability"
+          ],
+          "tags": [
+            "failover",
+            "backup",
+            "reliability"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "wraps `ctx.agent` with retry+swap."
+          }
+        },
+        {
+          "slug": "agent-budget-manager",
+          "pitch": "Distributes an LLM-call budget across agents/skills with priority weights. Stops one runaway skill from burning through your monthly token quota.",
+          "inputs": "`{ monthly_budget_calls: number, priorities: [{ skill, weight }] }`",
+          "outputs": "`{ allocations, remaining_budget }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "agents",
+            "budget"
+          ],
+          "tags": [
+            "budget",
+            "quota",
+            "priority"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs middleware in skill runtime to enforce."
+          }
+        },
+        {
+          "slug": "agent-history-summarizer",
+          "pitch": "Compacts long agent threads to keep context budget manageable. Critical for skills running long-lived sessions where context blows past the window.",
+          "inputs": "`{ thread_id: string, target_token_budget: number }`",
+          "outputs": "`{ summary, original_token_count, compacted_token_count }`",
+          "pricing": "0.2 NEAR per compaction.",
+          "categories": [
+            "agents",
+            "context"
+          ],
+          "tags": [
+            "compact",
+            "history",
+            "context"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "`ctx.agent` summarization."
+          }
+        },
+        {
+          "slug": "agent-shared-memory",
+          "pitch": "Read/write shared key-value store across your agents. The \"agent A knows what agent B did yesterday\" surface.",
+          "inputs": "`{ key: string, value?: any, op: \"get\"|\"set\" }`",
+          "outputs": "`{ value? }`",
+          "pricing": "Free for skill authors.",
+          "categories": [
+            "agents",
+            "state"
+          ],
+          "tags": [
+            "shared",
+            "memory",
+            "kv"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs an `agent_kv` table; small add."
+          }
+        },
+        {
+          "slug": "agent-task-marketplace",
+          "pitch": "Posts tasks for any agent (yours or others) to claim and execute against a payout. Different from missions — agent-only, smaller scope, automatic claim+settlement.",
+          "inputs": "`{ task: string, payout_near: number, deadline?: ISO }`",
+          "outputs": "`{ task_id, claimant?, result? }`",
+          "pricing": "0.5 NEAR + payout.",
+          "categories": [
+            "agents",
+            "marketplace"
+          ],
+          "tags": [
+            "task",
+            "market",
+            "agent"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "extends missions table for agent-as-claimant."
+          }
+        },
+        {
+          "slug": "agent-test-harness",
+          "pitch": "Runs a skill against synthetic inputs, scores outputs vs expected. The \"is my skill still doing what I built it for after the model upgrade\" check.",
+          "inputs": "`{ skill_id: string, test_cases: object[] }`",
+          "outputs": "`{ passed, failed, regression: bool }`",
+          "pricing": "1 NEAR per test run.",
+          "categories": [
+            "agents",
+            "testing",
+            "quality"
+          ],
+          "tags": [
+            "test",
+            "harness",
+            "regression"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "`/api/skills/run` with structured cases."
+          }
+        },
+        {
+          "slug": "agent-skill-recorder",
+          "pitch": "Records agent + user interactions to fine-tune a future skill. The \"I keep doing the same 6-step thing manually\" → \"let's make a skill from it\" path.",
+          "inputs": "`{ session_label: string }`",
+          "outputs": "`{ recording_id, n_interactions }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "agents",
+            "skill-creation"
+          ],
+          "tags": [
+            "record",
+            "distill",
+            "skill-creator"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs an `agent_recordings` table; downstream tooling for distillation."
+          }
+        },
+        {
+          "slug": "agent-cost-attribution",
+          "pitch": "Per-skill, per-call cost attribution across your agents (LLM tokens, RPC calls, third-party API spend). The \"where is my agent budget actually going\" answer.",
+          "inputs": "`{ wallet?: string, period: \"daily\"|\"monthly\" }`",
+          "outputs": "`{ attribution: [{ skill, calls, cost_usd, share_pct }] }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "agents",
+            "cost",
+            "analytics"
+          ],
+          "tags": [
+            "cost",
+            "attribution",
+            "budget"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs LLM-call accounting hooks in the runtime."
+          }
+        },
+        {
+          "slug": "agent-output-validator",
+          "pitch": "Validates an agent's output against a schema (JSON Schema or Zod). Stops malformed outputs from breaking downstream skills in a chain. Runs synchronously before delivery.",
+          "inputs": "`{ schema: object, output: any }`",
+          "outputs": "`{ valid: bool, errors: string[] }`",
+          "pricing": "Free for skill authors.",
+          "categories": [
+            "agents",
+            "validation",
+            "quality"
+          ],
+          "tags": [
+            "schema",
+            "validate",
+            "output"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "pure JS validation in skill runtime."
+          }
+        }
+      ]
+    },
+    {
+      "num": 11,
+      "name": "Community management",
+      "count": 12,
+      "skills": [
+        {
+          "slug": "community-onboarding-flow",
+          "pitch": "Multi-step onboarding for a project's new members (verify holding → join group → take quiz → get role). Different from v1's IronShield onboarding — for project owners running their own community.",
+          "inputs": "`{ project_token: string, steps: object[] }`",
+          "outputs": "`{ onboarded_count, drop_off_per_step }`",
+          "pricing": "8 NEAR/month per project.",
+          "categories": [
+            "community",
+            "onboarding"
+          ],
+          "tags": [
+            "onboard",
+            "flow",
+            "community"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite of token-gate + groups + quiz."
+          }
+        },
+        {
+          "slug": "community-churn-predictor",
+          "pitch": "Flags members at risk of leaving (engagement decay pattern) with tailored re-engagement actions. Recovery cheaper than acquisition.",
+          "inputs": "`{ project_token: string }`",
+          "outputs": "`{ at_risk: [{ member, last_activity, recommended_action }] }`",
+          "pricing": "6 NEAR/month.",
+          "categories": [
+            "community",
+            "analytics"
+          ],
+          "tags": [
+            "churn",
+            "retention",
+            "predict"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "feed/dm/rooms engagement reads."
+          }
+        },
+        {
+          "slug": "community-mod-queue",
+          "pitch": "Moderation queue across feed/rooms/dm-groups for a project (flagged by users, by AI, by rules). Different from `room-moderator` which is single-room — this is project-wide.",
+          "inputs": "`{ project_id: string, rule_set: string[] }`",
+          "outputs": "`{ pending: int, actioned_today: int }`",
+          "pricing": "6 NEAR/month.",
+          "categories": [
+            "community",
+            "moderation"
+          ],
+          "tags": [
+            "mod",
+            "queue",
+            "project"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite of feed + rooms + dm reads."
+          }
+        },
+        {
+          "slug": "community-faq-bot",
+          "pitch": "Auto-answers common questions in a group from a curated FAQ. Ramps from the curated set into \"frequent asks\" detection over time.",
+          "inputs": "`{ group_id: string, faq: { q, a }[] }`",
+          "outputs": "`{ answered_count, ungrounded_q_count }`",
+          "pricing": "4 NEAR/month per group.",
+          "categories": [
+            "community",
+            "support"
+          ],
+          "tags": [
+            "faq",
+            "bot",
+            "support"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "DM groups + LLM lookup."
+          }
+        },
+        {
+          "slug": "community-event-orchestrator",
+          "pitch": "Schedules + reminds + recaps a community event (room or external). The full lifecycle, not just the calendar.",
+          "inputs": "`{ event: { title, when, kind } }`",
+          "outputs": "`{ schedule_post_id, reminder_pings, recap_post_id }`",
+          "pricing": "2 NEAR per event.",
+          "categories": [
+            "community",
+            "events"
+          ],
+          "tags": [
+            "event",
+            "lifecycle",
+            "orchestrate"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite of rooms + posts + DMs."
+          }
+        },
+        {
+          "slug": "community-contribution-tracker",
+          "pitch": "Tracks each member's contributions for rewards: posts, replies, room participation, missions completed. Output drives `community-superfan-rewarder`-style payouts.",
+          "inputs": "`{ project_id: string, period: \"weekly\"|\"monthly\" }`",
+          "outputs": "`{ leaderboard: [{ member, score, breakdown }] }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "community",
+            "analytics",
+            "rewards"
+          ],
+          "tags": [
+            "contribution",
+            "leaderboard"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite reads."
+          }
+        },
+        {
+          "slug": "community-segment-builder",
+          "pitch": "Segments members by activity/cohort for targeted outreach. The \"DM all my Vanguard holders who haven't voted in 30 days\" filter.",
+          "inputs": "`{ project_id: string, predicate: object }`",
+          "outputs": "`{ segment_size, sample: string[] }`",
+          "pricing": "1 NEAR per segment.",
+          "categories": [
+            "community",
+            "analytics"
+          ],
+          "tags": [
+            "segment",
+            "cohort",
+            "filter"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite reads."
+          }
+        },
+        {
+          "slug": "community-survey-runner",
+          "pitch": "Runs polls/surveys across DMs and rooms; analyzes results. Beats third-party tools because the audience is your verified IronShield identity.",
+          "inputs": "`{ questions: object[], audience: object }`",
+          "outputs": "`{ responses, summary }`",
+          "pricing": "2 NEAR per survey.",
+          "categories": [
+            "community",
+            "surveys"
+          ],
+          "tags": [
+            "survey",
+            "poll",
+            "analyze"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs lightweight survey table; results-collection works via DMs."
+          }
+        },
+        {
+          "slug": "community-rep-graph",
+          "pitch": "Builds a reputation graph for moderation decisions (\"this user has 50 trust-signals from senior members\"). Lets mods escalate based on social proof.",
+          "inputs": "`{ project_id: string }`",
+          "outputs": "`{ graph_url, top_trusted: string[] }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "community",
+            "moderation",
+            "rep"
+          ],
+          "tags": [
+            "rep",
+            "graph",
+            "mod"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on attestation data."
+          }
+        },
+        {
+          "slug": "community-language-router",
+          "pitch": "Routes messages to language-specific subgroups (auto-detect → fork into the right channel). Stops the \"everyone-in-one-Telegram-mess\" failure mode.",
+          "inputs": "`{ source_group: string, lang_groups: { lang, group_id }[] }`",
+          "outputs": "`{ routed_count_per_lang }`",
+          "pricing": "3 NEAR/month per group.",
+          "categories": [
+            "community",
+            "i18n",
+            "routing"
+          ],
+          "tags": [
+            "lang",
+            "route",
+            "i18n"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs bot-as-member in source group; LLM for detection."
+          }
+        },
+        {
+          "slug": "community-handoff-tracker",
+          "pitch": "Tracks open user issues being handed between mods (state, assignee, last update). The \"support ticket\" surface for Discord/Telegram-style communities.",
+          "inputs": "`{ project_id: string }`",
+          "outputs": "`{ open_tickets: int, mean_resolution_hours }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "community",
+            "support"
+          ],
+          "tags": [
+            "handoff",
+            "ticket",
+            "mod"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a `community_tickets` table."
+          }
+        },
+        {
+          "slug": "community-rules-explainer",
+          "pitch": "Auto-explains rule violations with cited rule text when a mod kicks/mutes. Stops the \"but why did I get kicked?\" follow-up DMs.",
+          "inputs": "`{ rule_set: string[], violation_message_id: string }`",
+          "outputs": "`{ explanation_dm_id }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "community",
+            "moderation",
+            "support"
+          ],
+          "tags": [
+            "rules",
+            "explain",
+            "dm"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM + DM send."
+          }
+        }
+      ]
+    },
+    {
+      "num": 12,
+      "name": "Education & certification",
+      "count": 10,
+      "skills": [
+        {
+          "slug": "tutorial-runner",
+          "pitch": "Interactive tutorials for IronShield features that track completion (e.g. \"build your first NewsCoin trade\"). Hands-on, not video.",
+          "inputs": "`{ tutorial_slug: string }`",
+          "outputs": "`{ steps_completed, badge_earned? }`",
+          "pricing": "Free (funnel skill).",
+          "categories": [
+            "education",
+            "tutorial"
+          ],
+          "tags": [
+            "tutorial",
+            "learn",
+            "hands-on"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a tutorials registry + step-state table."
+          }
+        },
+        {
+          "slug": "quiz-generator",
+          "pitch": "Generates a quiz from a topic + grades attempts. Useful for self-testing or running cohort-based learning.",
+          "inputs": "`{ topic: string, n_questions: number, difficulty?: \"easy\"|\"medium\"|\"hard\" }`",
+          "outputs": "`{ quiz_id, score?: number }`",
+          "pricing": "0.3 NEAR per quiz.",
+          "categories": [
+            "education",
+            "quiz"
+          ],
+          "tags": [
+            "quiz",
+            "learn",
+            "test"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "pure LLM with grading rubric."
+          }
+        },
+        {
+          "slug": "learning-path-builder",
+          "pitch": "Builds a stepped learning path for a topic (e.g. \"MEV from zero to running a searcher in 6 weeks\"). Mixes posts, papers, videos, hands-on tasks.",
+          "inputs": "`{ topic: string, target_weeks: number, current_level?: string }`",
+          "outputs": "`{ path: [{ week, materials, tasks }] }`",
+          "pricing": "2 NEAR per path.",
+          "categories": [
+            "education",
+            "path"
+          ],
+          "tags": [
+            "path",
+            "curriculum",
+            "learn"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM with curated source registry."
+          }
+        },
+        {
+          "slug": "certification-issuer",
+          "pitch": "Issues an on-chain badge after passing a curriculum (NEAR NFT). Resume-line for crypto skills that's verifiable.",
+          "inputs": "`{ curriculum_id: string, recipient: string }`",
+          "outputs": "`{ nft_token_id }`",
+          "pricing": "3 NEAR per cert.",
+          "categories": [
+            "education",
+            "certification",
+            "nft"
+          ],
+          "tags": [
+            "cert",
+            "badge",
+            "nft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a cert NFT contract template."
+          }
+        },
+        {
+          "slug": "flashcard-builder",
+          "pitch": "Turns a topic into spaced-repetition flashcards (Anki-style export or in-app review). Bridge from \"I read about it once\" to \"I actually remember it.\"",
+          "inputs": "`{ topic: string, n_cards: number }`",
+          "outputs": "`{ deck_url, anki_export_url? }`",
+          "pricing": "0.5 NEAR per deck.",
+          "categories": [
+            "education",
+            "flashcards"
+          ],
+          "tags": [
+            "flashcards",
+            "anki",
+            "srs"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM + JSON export."
+          }
+        },
+        {
+          "slug": "concept-explainer",
+          "pitch": "Explains a crypto concept at a chosen depth (ELI5 / intermediate / expert) with citations. Beats single-depth explainers — meets you where you are.",
+          "inputs": "`{ concept: string, depth: \"eli5\"|\"intermediate\"|\"expert\" }`",
+          "outputs": "`{ explanation, citations: string[] }`",
+          "pricing": "0.1 NEAR per query.",
+          "categories": [
+            "education",
+            "explainer"
+          ],
+          "tags": [
+            "explain",
+            "depth",
+            "learn"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM + curated citations."
+          }
+        },
+        {
+          "slug": "paper-summarizer",
+          "pitch": "Summarizes academic papers / whitepapers / yellow papers. Different from `content-thread-from-url` (v1) — paper-specific structure (abstract, claim, evidence, limitations).",
+          "inputs": "`{ paper_url: string }`",
+          "outputs": "`{ abstract_tldr, key_claims, methodology, limitations }`",
+          "pricing": "0.5 NEAR per paper.",
+          "categories": [
+            "education",
+            "research"
+          ],
+          "tags": [
+            "paper",
+            "summarize",
+            "academic"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "fetch + LLM."
+          }
+        },
+        {
+          "slug": "study-group-coordinator",
+          "pitch": "Schedules + runs a study group around a topic. Manages syllabus, weekly meetings (rooms), homework (mini-quizzes), and progress.",
+          "inputs": "`{ topic: string, members: string[], weeks: number }`",
+          "outputs": "`{ syllabus, meetings_scheduled, completion_pct }`",
+          "pricing": "5 NEAR/month per group.",
+          "categories": [
+            "education",
+            "community"
+          ],
+          "tags": [
+            "study",
+            "group",
+            "coordinator"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite of rooms + DMs + quiz."
+          }
+        },
+        {
+          "slug": "glossary-extender",
+          "pitch": "Auto-extends your personal glossary as new terms appear in feed/papers you read. Stops the \"what's a SBT?\" lookup tax — you build a portable cheat sheet over time.",
+          "inputs": "`{ source_streams: string[] }`",
+          "outputs": "`{ new_terms: [{ term, defn, source }] }`",
+          "pricing": "2 NEAR/month.",
+          "categories": [
+            "education",
+            "glossary"
+          ],
+          "tags": [
+            "glossary",
+            "terms",
+            "learn"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "feed reads + LLM definition."
+          }
+        },
+        {
+          "slug": "prerequisite-mapper",
+          "pitch": "Maps prerequisite concepts before tackling a hard topic (\"to understand restaking, you should grok staking, slashing, and AVS\"). Stops \"I read it but it didn't click\" frustration.",
+          "inputs": "`{ target_topic: string, your_known: string[] }`",
+          "outputs": "`{ prereqs: string[], gap_topics: string[] }`",
+          "pricing": "0.3 NEAR per query.",
+          "categories": [
+            "education",
+            "path"
+          ],
+          "tags": [
+            "prereq",
+            "map",
+            "learn"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM with concept graph."
+          }
+        }
+      ]
+    },
+    {
+      "num": 13,
+      "name": "Document & PDF tools",
+      "count": 12,
+      "skills": [
+        {
+          "slug": "pdf-extractor",
+          "pitch": "Extracts text + tables from a PDF. Beats raw `pdftotext` because it handles multi-column layouts and table structure.",
+          "inputs": "`{ pdf_url: string }`",
+          "outputs": "`{ text, tables: object[] }`",
+          "pricing": "0.2 NEAR per PDF.",
+          "categories": [
+            "documents",
+            "extraction"
+          ],
+          "tags": [
+            "pdf",
+            "extract"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a PDF-extract worker (pdf.js / pdfplumber)."
+          }
+        },
+        {
+          "slug": "pdf-summarizer",
+          "pitch": "Multi-page PDF → 1-pager TL;DR with section-by-section abstracts. For everything that lands in your inbox marked \"read this 40-pager.\"",
+          "inputs": "`{ pdf_url: string, target_words?: number }`",
+          "outputs": "`{ summary, section_abstracts: string[] }`",
+          "pricing": "0.5 NEAR per PDF.",
+          "categories": [
+            "documents",
+            "summarize"
+          ],
+          "tags": [
+            "pdf",
+            "summary",
+            "longform"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on `pdf-extractor`."
+          }
+        },
+        {
+          "slug": "pdf-redactor",
+          "pitch": "Redacts PII from a PDF before sharing (names / addresses / SSN / wallet IDs). Returns a redacted PDF — original stays with you.",
+          "inputs": "`{ pdf_url: string, redaction_rules: string[] }`",
+          "outputs": "`{ redacted_pdf_url, redactions_count }`",
+          "pricing": "1 NEAR per PDF.",
+          "categories": [
+            "documents",
+            "privacy"
+          ],
+          "tags": [
+            "redact",
+            "pii",
+            "privacy"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "PDF write library + named-entity recognition."
+          }
+        },
+        {
+          "slug": "contract-clause-finder",
+          "pitch": "Finds specific clauses in a legal contract PDF (termination, liability, assignment, IP). Skips the 60-page read when you only care about clause 11(b).",
+          "inputs": "`{ pdf_url: string, clause_kinds: string[] }`",
+          "outputs": "`{ clauses: [{ kind, text, page }] }`",
+          "pricing": "0.5 NEAR per find.",
+          "categories": [
+            "documents",
+            "legal"
+          ],
+          "tags": [
+            "clause",
+            "contract",
+            "legal"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on `pdf-extractor`."
+          }
+        },
+        {
+          "slug": "signature-status-tracker",
+          "pitch": "Tracks e-signature flows across counterparties (DocuSign / HelloSign / Dropbox Sign). Surfaces \"who hasn't signed yet\" + auto-nudges them.",
+          "inputs": "`{ envelope_id: string, provider: \"docusign\"|\"hellosign\" }`",
+          "outputs": "`{ signers: [{ email, status }], pending: int }`",
+          "pricing": "2 NEAR/month per active envelope.",
+          "categories": [
+            "documents",
+            "signatures"
+          ],
+          "tags": [
+            "esign",
+            "docusign",
+            "track"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "DocuSign/HelloSign API."
+          }
+        },
+        {
+          "slug": "whitepaper-extractor",
+          "pitch": "Pulls tokenomics + claims from a project whitepaper into structured fields. Different from `paper-summarizer` — purpose-built for crypto whitepapers (token-supply, vesting, mint authority).",
+          "inputs": "`{ pdf_or_url: string }`",
+          "outputs": "`{ token: { name, supply, vesting }, claims: string[] }`",
+          "pricing": "1 NEAR per whitepaper.",
+          "categories": [
+            "documents",
+            "research"
+          ],
+          "tags": [
+            "whitepaper",
+            "extract",
+            "tokenomics"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on `pdf-extractor`."
+          }
+        },
+        {
+          "slug": "legal-doc-comparator",
+          "pitch": "Diffs two versions of a legal doc with semantic awareness (catches \"wholly\" → \"principally\" subtly weakening a clause). Beyond textual diff.",
+          "inputs": "`{ doc_a_url: string, doc_b_url: string }`",
+          "outputs": "`{ semantic_changes: [{ section, change_kind }] }`",
+          "pricing": "2 NEAR per comparison.",
+          "categories": [
+            "documents",
+            "legal"
+          ],
+          "tags": [
+            "diff",
+            "legal",
+            "semantic"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on `pdf-extractor`."
+          }
+        },
+        {
+          "slug": "pdf-translator",
+          "pitch": "Translates a PDF preserving layout (tables, columns, section structure). The \"I need this Spanish whitepaper in English without losing the tokenomics table\" surface.",
+          "inputs": "`{ pdf_url: string, target_lang: string }`",
+          "outputs": "`{ translated_pdf_url }`",
+          "pricing": "2 NEAR per PDF.",
+          "categories": [
+            "documents",
+            "i18n"
+          ],
+          "tags": [
+            "translate",
+            "pdf",
+            "layout"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on `pdf-extractor` + PDF write."
+          }
+        },
+        {
+          "slug": "pdf-form-filler",
+          "pitch": "Fills PDF forms from structured input. Useful for tax forms, KYC, partnership applications.",
+          "inputs": "`{ pdf_form_url: string, field_values: object }`",
+          "outputs": "`{ filled_pdf_url }`",
+          "pricing": "0.5 NEAR per fill.",
+          "categories": [
+            "documents",
+            "forms"
+          ],
+          "tags": [
+            "form",
+            "fill",
+            "pdf"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "PDF form library."
+          }
+        },
+        {
+          "slug": "image-pdf-ocr",
+          "pitch": "OCRs a scanned PDF to selectable text. Different from `pdf-extractor` (text-PDF) — purpose-built for image-PDFs from scanners.",
+          "inputs": "`{ pdf_url: string }`",
+          "outputs": "`{ ocr_text, confidence_pct }`",
+          "pricing": "1 NEAR per OCR.",
+          "categories": [
+            "documents",
+            "ocr"
+          ],
+          "tags": [
+            "ocr",
+            "scan",
+            "pdf"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Tesseract worker or hosted OCR API."
+          }
+        },
+        {
+          "slug": "pdf-citation-extractor",
+          "pitch": "Extracts citations from a paper + verifies links resolve. Catches the \"cited paper 404s\" / \"URL points to a domain-squatter\" issues.",
+          "inputs": "`{ pdf_url: string }`",
+          "outputs": "`{ citations: [{ ref, url, status }] }`",
+          "pricing": "0.5 NEAR per check.",
+          "categories": [
+            "documents",
+            "research"
+          ],
+          "tags": [
+            "citations",
+            "verify",
+            "paper"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "depends on `pdf-extractor`."
+          }
+        },
+        {
+          "slug": "terms-changes-monitor",
+          "pitch": "Monitors a project's terms-of-service / privacy policy for changes. Diffs week-over-week. Catches the \"they quietly added a 5% transaction fee\" stunt.",
+          "inputs": "`{ urls: string[], cadence: \"daily\"|\"weekly\" }`",
+          "outputs": "`{ changes: [{ url, diff_summary, at }] }`",
+          "pricing": "3 NEAR/month.",
+          "categories": [
+            "documents",
+            "monitoring",
+            "legal"
+          ],
+          "tags": [
+            "tos",
+            "monitor",
+            "diff"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "fetch + diff + LLM summary."
+          }
+        }
+      ]
+    },
+    {
+      "num": 14,
+      "name": "Sales & outreach automation",
+      "count": 14,
+      "skills": [
+        {
+          "slug": "prospect-list-builder",
+          "pitch": "Builds a list of relevant prospects from public IronShield data (verified posters in a niche, NFT-holder cohorts, recent NewsCoin creators). Different from generic scrapers — cryptonative-only audience.",
+          "inputs": "`{ filters: object, max_count: number }`",
+          "outputs": "`{ prospects: [{ wallet, handle, why }] }`",
+          "pricing": "1 NEAR per 100 prospects.",
+          "categories": [
+            "sales",
+            "prospecting"
+          ],
+          "tags": [
+            "prospect",
+            "list",
+            "b2b"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite of feed/rooms/newscoin reads."
+          }
+        },
+        {
+          "slug": "cold-outreach-drafter",
+          "pitch": "Drafts personalized cold messages from prospect data. Notes the specific posts/holdings driving relevance — beats \"Dear Sir/Madam, I noticed you're in crypto.\"",
+          "inputs": "`{ prospect_wallet: string, offer: string }`",
+          "outputs": "`{ draft, personalization_signals: string[] }`",
+          "pricing": "0.3 NEAR per draft.",
+          "categories": [
+            "sales",
+            "content"
+          ],
+          "tags": [
+            "cold",
+            "outreach",
+            "draft"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "feed reads + LLM."
+          }
+        },
+        {
+          "slug": "follow-up-scheduler",
+          "pitch": "Auto-follow-up after N days of no reply with progressive escalation (gentle → reminder → \"moving on\"). Different from v1's `dm-followup-reminder` — outreach-flow specific, not personal.",
+          "inputs": "`{ prospect_wallet: string, sequence: object[] }`",
+          "outputs": "`{ followups_sent }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "sales",
+            "automation"
+          ],
+          "tags": [
+            "followup",
+            "sequence",
+            "sales"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "DM send + automation cron."
+          }
+        },
+        {
+          "slug": "deal-stage-tracker",
+          "pitch": "Tracks every active deal's stage in a kanban (intro → discovery → proposal → close). The CRM you'd build for yourself if you had a weekend.",
+          "inputs": "`{ }`",
+          "outputs": "`{ deals: [{ counterparty, stage, last_activity, value }] }`",
+          "pricing": "5 NEAR/month.",
+          "categories": [
+            "sales",
+            "crm"
+          ],
+          "tags": [
+            "crm",
+            "kanban",
+            "deal"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a `deals` table; UI surface."
+          }
+        },
+        {
+          "slug": "intro-broker",
+          "pitch": "Brokers warm intros via your network's known overlaps (mutual followers / co-attended rooms / shared NFT holders). Beats \"do you know anyone at X?\" guesswork.",
+          "inputs": "`{ target_company_or_wallet: string }`",
+          "outputs": "`{ paths: [{ via, strength, sample_post }] }`",
+          "pricing": "2 NEAR per intro request.",
+          "categories": [
+            "sales",
+            "network"
+          ],
+          "tags": [
+            "intro",
+            "network",
+            "sales"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "feed/rooms graph reads."
+          }
+        },
+        {
+          "slug": "meeting-prep-pack",
+          "pitch": "Generates a one-pager prep doc per scheduled call (counterparty's last posts, recent moves, mutual contacts, bargaining levers). Different from v1's `meeting-prep-brief` — sales-flavored, not generic.",
+          "inputs": "`{ counterparty_wallet: string, meeting_topic: string }`",
+          "outputs": "`{ prep_pack_url }`",
+          "pricing": "1 NEAR per prep.",
+          "categories": [
+            "sales",
+            "prep"
+          ],
+          "tags": [
+            "prep",
+            "sales",
+            "meeting"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite reads."
+          }
+        },
+        {
+          "slug": "proposal-drafter",
+          "pitch": "Drafts a service proposal from inputs (scope, terms, fee). Tuned for crypto-native engagements (skill builds, contract audits, governance consulting).",
+          "inputs": "`{ scope: string, terms: object, fee_near: number }`",
+          "outputs": "`{ proposal_pdf_url }`",
+          "pricing": "1 NEAR per proposal.",
+          "categories": [
+            "sales",
+            "documents"
+          ],
+          "tags": [
+            "proposal",
+            "draft",
+            "sales"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM + PDF render."
+          }
+        },
+        {
+          "slug": "rfp-responder",
+          "pitch": "Responds to RFPs with tailored sections from your past proposals (case studies, team bios, methodology). Saves the cut-and-paste-ten-RFPs evening.",
+          "inputs": "`{ rfp_url: string, your_template_id: string }`",
+          "outputs": "`{ response_pdf_url, completion_pct }`",
+          "pricing": "5 NEAR per RFP.",
+          "categories": [
+            "sales",
+            "documents"
+          ],
+          "tags": [
+            "rfp",
+            "response",
+            "draft"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs `proposal_template` storage."
+          }
+        },
+        {
+          "slug": "email-sequence-runner",
+          "pitch": "Multi-step email sequences with branching (\"if reply → stop\"; \"if click → branch B\"). Email outside IronShield via your existing mailer (Mailgun/SendGrid).",
+          "inputs": "`{ list_id: string, sequence: object[], mailer_creds: object }`",
+          "outputs": "`{ delivered, opened, replied }`",
+          "pricing": "6 NEAR/month.",
+          "categories": [
+            "sales",
+            "email",
+            "automation"
+          ],
+          "tags": [
+            "email",
+            "sequence",
+            "drip"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "Mailgun/SendGrid API."
+          }
+        },
+        {
+          "slug": "lead-scorer",
+          "pitch": "Scores inbound leads on fit (do they match ICP) + intent (recent activity signals). Stops the \"follow up on every DM\" trap.",
+          "inputs": "`{ icp_profile: object, lead_wallet: string }`",
+          "outputs": "`{ fit_score, intent_score, total }`",
+          "pricing": "0.3 NEAR per scoring.",
+          "categories": [
+            "sales",
+            "analytics"
+          ],
+          "tags": [
+            "lead",
+            "score",
+            "fit"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite reads + LLM."
+          }
+        },
+        {
+          "slug": "conversation-summary-pusher",
+          "pitch": "Pushes call summaries to a CRM (HubSpot / Pipedrive / Salesforce). Saves the \"I'll write the call notes after\" lie.",
+          "inputs": "`{ call_recording_url: string, crm: \"hubspot\"|\"pipedrive\"|\"salesforce\" }`",
+          "outputs": "`{ summary, crm_record_url }`",
+          "pricing": "2 NEAR per push.",
+          "categories": [
+            "sales",
+            "crm",
+            "integration"
+          ],
+          "tags": [
+            "crm",
+            "summary",
+            "push"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "CRM API + ASR (depends on transcription worker)."
+          }
+        },
+        {
+          "slug": "competitor-mention-tracker",
+          "pitch": "Tracks competitor mentions in target accounts (\"prospect_X tweeted about competitor_Y\"). Powers \"they're shopping\" outreach moments.",
+          "inputs": "`{ targets: string[], competitors: string[] }`",
+          "outputs": "`{ events: [{ target, competitor, post_id, at }] }`",
+          "pricing": "5 NEAR/month.",
+          "categories": [
+            "sales",
+            "intel",
+            "competitive"
+          ],
+          "tags": [
+            "competitor",
+            "mention",
+            "intel"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "feed/Nitter polled."
+          }
+        },
+        {
+          "slug": "pricing-quote-generator",
+          "pitch": "Generates quotes from a price book + customer profile (volume tier, region, urgency). Less \"depends\" → more \"send the PDF in 4 minutes.\"",
+          "inputs": "`{ pricebook_id: string, customer: object }`",
+          "outputs": "`{ quote_pdf_url, total_usd }`",
+          "pricing": "0.5 NEAR per quote.",
+          "categories": [
+            "sales",
+            "pricing"
+          ],
+          "tags": [
+            "quote",
+            "pricebook",
+            "sales"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a `pricebook` table."
+          }
+        },
+        {
+          "slug": "customer-renewal-tracker",
+          "pitch": "Tracks renewal dates + auto-prepares the renewal pitch (usage stats, value delivered, suggested upgrade path). Renewals are the highest-ROI sales motion most teams under-invest in.",
+          "inputs": "`{ subscription_list: object[] }`",
+          "outputs": "`{ upcoming: [{ customer, renewal_date, pitch_draft }] }`",
+          "pricing": "4 NEAR/month.",
+          "categories": [
+            "sales",
+            "renewals"
+          ],
+          "tags": [
+            "renewal",
+            "retention",
+            "pitch"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs a `subscriptions` table."
+          }
+        }
+      ]
+    },
+    {
+      "num": 15,
+      "name": "Personal finance (cross-fiat)",
+      "count": 12,
+      "skills": [
+        {
+          "slug": "budget-reconciler",
+          "pitch": "Reconciles fiat bank statement against crypto cash flows so you have one ledger, not two parallel mysteries. Imports CSV from any major bank.",
+          "inputs": "`{ bank_csv_url: string, wallets: string[], month: string }`",
+          "outputs": "`{ matched, unmatched, ledger_url }`",
+          "pricing": "4 NEAR per month reconciled.",
+          "categories": [
+            "personal-finance",
+            "accounting"
+          ],
+          "tags": [
+            "budget",
+            "reconcile",
+            "fiat"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "CSV parse + on-chain reads + matching heuristic."
+          }
+        },
+        {
+          "slug": "expense-classifier",
+          "pitch": "Auto-classifies transactions by category (rent / food / SaaS / fee / on-chain trade). Different from generic budgeting apps — knows about gas/bridge/staking categories.",
+          "inputs": "`{ transactions: object[] }`",
+          "outputs": "`{ classified: [{ tx, category }] }`",
+          "pricing": "0.05 NEAR per 100 tx.",
+          "categories": [
+            "personal-finance",
+            "classification"
+          ],
+          "tags": [
+            "classify",
+            "expense",
+            "category"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM + heuristic."
+          }
+        },
+        {
+          "slug": "savings-goal-tracker",
+          "pitch": "Tracks multi-account savings goal progress (\"save 5 NEAR/week into stables\"). Pings on miss + suggests adjustments.",
+          "inputs": "`{ goals: [{ label, target, deadline, source_wallet }] }`",
+          "outputs": "`{ progress: [{ goal, pct, on_track: bool }] }`",
+          "pricing": "1 NEAR/month.",
+          "categories": [
+            "personal-finance",
+            "goals"
+          ],
+          "tags": [
+            "savings",
+            "goal",
+            "tracker"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "wallet balance polling."
+          }
+        },
+        {
+          "slug": "recurring-charge-finder",
+          "pitch": "Finds recurring fiat + on-chain charges; surfaces forgotten subs (the \"I'm paying for $25/month for a service I haven't opened in 6 months\" reveal).",
+          "inputs": "`{ bank_csv_url?: string, wallets?: string[], lookback_months?: number }`",
+          "outputs": "`{ recurring: [{ name, amount, cadence, last_use? }] }`",
+          "pricing": "2 NEAR per scan.",
+          "categories": [
+            "personal-finance",
+            "subscriptions"
+          ],
+          "tags": [
+            "recurring",
+            "sub",
+            "find"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "periodicity detection + LLM naming."
+          }
+        },
+        {
+          "slug": "currency-pnl",
+          "pitch": "Computes PnL in your home fiat currency from a multi-currency portfolio (NEAR + USDC + ETH + BTC + EUR cash). One number that's actually meaningful to you.",
+          "inputs": "`{ wallets: string[], home_currency: \"USD\"|\"EUR\"|\"GBP\"|\"JPY\", period: string }`",
+          "outputs": "`{ pnl_home, by_asset }`",
+          "pricing": "1 NEAR per report.",
+          "categories": [
+            "personal-finance",
+            "pnl"
+          ],
+          "tags": [
+            "pnl",
+            "fx",
+            "multi-currency"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "wallet reads + FX rates."
+          }
+        },
+        {
+          "slug": "monthly-burn-rate",
+          "pitch": "Computes personal burn rate + runway from bank + on-chain spend. Honest number for \"how long can I last if income stopped today.\"",
+          "inputs": "`{ bank_csv_url?: string, wallets?: string[] }`",
+          "outputs": "`{ monthly_burn_usd, current_assets_usd, runway_months }`",
+          "pricing": "0.5 NEAR per check.",
+          "categories": [
+            "personal-finance",
+            "runway"
+          ],
+          "tags": [
+            "burn",
+            "runway",
+            "personal"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite reads."
+          }
+        },
+        {
+          "slug": "bill-pay-scheduler",
+          "pitch": "Schedules recurring bill payments via stable. Useful for crypto-native creators paying contractors monthly.",
+          "inputs": "`{ bills: [{ payee, amount, asset, day_of_month }] }`",
+          "outputs": "`{ payments_scheduled, last_paid_at }`",
+          "pricing": "2 NEAR setup, 0.05 NEAR per payment.",
+          "categories": [
+            "personal-finance",
+            "payments",
+            "automation"
+          ],
+          "tags": [
+            "billpay",
+            "recurring",
+            "automation"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "automation cron + ft_transfer."
+          }
+        },
+        {
+          "slug": "cash-flow-forecaster",
+          "pitch": "Forecasts 30/60/90 day cash flow given recurring commitments, scheduled income (vests/grants), and known one-offs.",
+          "inputs": "`{ wallets: string[], known_inflows: object[], known_outflows: object[] }`",
+          "outputs": "`{ forecast: [{ date, balance_projection }] }`",
+          "pricing": "1 NEAR per forecast.",
+          "categories": [
+            "personal-finance",
+            "forecast"
+          ],
+          "tags": [
+            "cashflow",
+            "forecast"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "math + balance reads."
+          }
+        },
+        {
+          "slug": "subscription-killer",
+          "pitch": "Identifies low-use subs + drafts cancellation requests (email or in-app). Doesn't auto-cancel — produces the email + login URLs.",
+          "inputs": "`{ recurring_charges: object[] }`",
+          "outputs": "`{ kill_drafts: [{ sub, draft, login_url }] }`",
+          "pricing": "1 NEAR per scan.",
+          "categories": [
+            "personal-finance",
+            "subscriptions"
+          ],
+          "tags": [
+            "cancel",
+            "sub",
+            "kill"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "LLM drafting."
+          }
+        },
+        {
+          "slug": "tax-set-aside",
+          "pitch": "Auto-set-aside an estimated tax % (your config) into a separate wallet on every realized gain. The \"don't spend the IRS's money\" forcing function.",
+          "inputs": "`{ tax_pct: number, set_aside_wallet: string }`",
+          "outputs": "`{ set_aside_total, transactions_intercepted: int }`",
+          "pricing": "4 NEAR setup, 0.05 NEAR per set-aside.",
+          "categories": [
+            "personal-finance",
+            "tax",
+            "automation"
+          ],
+          "tags": [
+            "tax",
+            "set-aside",
+            "discipline"
+          ],
+          "status": {
+            "kind": "yellow",
+            "reason": "needs trade-event hook to intercept gains pre-spend."
+          }
+        },
+        {
+          "slug": "personal-net-worth-statement",
+          "pitch": "Periodic statement of your assets + liabilities (PCM-style). Includes illiquid positions, vested-but-unclaimed, debts. Saves the year-end \"where do I stand?\" night.",
+          "inputs": "`{ wallets: string[], illiquid_overrides?: object, debts?: object[] }`",
+          "outputs": "`{ statement_pdf_url, net_worth }`",
+          "pricing": "2 NEAR per statement.",
+          "categories": [
+            "personal-finance",
+            "reporting"
+          ],
+          "tags": [
+            "networth",
+            "statement"
+          ],
+          "status": {
+            "kind": "green",
+            "reason": "composite reads + PDF."
+          }
+        },
+        {
+          "slug": "inheritance-doc-bundler",
+          "pitch": "Assembles an emergency bundle for a trusted contact: recovery instructions, key locations (encrypted), trustee map, and a clear \"what to do\" doc. Stored encrypted; released only on dead-man trigger.",
+          "inputs": "`{ trustees: string[], dead_man_period_days: number }`",
+          "outputs": "`{ bundle_id, last_check_in_at }`",
+          "pricing": "5 NEAR setup, 1 NEAR/month.",
+          "categories": [
+            "personal-finance",
+            "legacy",
+            "security"
+          ],
+          "tags": [
+            "inheritance",
+            "deadman",
+            "legacy"
+          ],
+          "status": {
+            "kind": "red",
+            "reason": "needs an encrypted-storage + dead-man-switch contract template (no native primitive on IronShield today)."
+          }
+        }
+      ]
+    }
+  ]
+}
