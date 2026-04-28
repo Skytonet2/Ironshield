@@ -314,6 +314,62 @@ function PresetField({ k, def, required, value, onChange }) {
     outline: "none",
   };
 
+  // Tier 4 Kit manifests use type:object (price_range, year_range)
+  // and type:array (fb_group_ids). Render those before the legacy
+  // string/number/boolean/enum branch.
+  if (type === "object" && def.properties && typeof def.properties === "object") {
+    const obj = (value && typeof value === "object") ? value : {};
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-1)" }}>
+          {label} {required && <span style={{ color: "var(--red)" }}>*</span>}
+        </span>
+        {desc && <span style={{ fontSize: 11, color: "var(--text-2)" }}>{desc}</span>}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+          gap: 8, padding: 10, borderRadius: 9, border: "1px dashed var(--border)",
+        }}>
+          {Object.entries(def.properties).map(([subKey, subDef]) => (
+            <PresetField
+              key={subKey}
+              k={subKey}
+              def={subDef}
+              required={(def.required || []).includes(subKey)}
+              value={obj[subKey]}
+              onChange={(v) => onChange({ ...obj, [subKey]: v })}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "array") {
+    const arr = Array.isArray(value) ? value : [];
+    return (
+      <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-1)" }}>
+          {label} {required && <span style={{ color: "var(--red)" }}>*</span>}
+        </span>
+        {desc && <span style={{ fontSize: 11, color: "var(--text-2)" }}>{desc}</span>}
+        <input
+          type="text"
+          value={arr.join(", ")}
+          onChange={(e) => {
+            const parts = e.target.value
+              .split(",").map((s) => s.trim()).filter(Boolean);
+            onChange(parts);
+          }}
+          placeholder="comma-separated"
+          style={commonInputStyle}
+        />
+        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>
+          {arr.length} item{arr.length === 1 ? "" : "s"}
+        </span>
+      </label>
+    );
+  }
+
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-1)" }}>
@@ -427,43 +483,122 @@ function ProfileChoice({ active, onClick, title, subtitle, icon }) {
 
 function ConnectionsStep({ kit }) {
   const required = Array.isArray(kit?.required_connectors) ? kit.required_connectors : [];
+  const optional = Array.isArray(kit?.optional_connectors) ? kit.optional_connectors : [];
+  const [mine, setMine] = useState([]);
+  const [loadingMine, setLoadingMine] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { apiFetch } = await import("@/lib/apiFetch");
+        const r = await apiFetch("/api/connectors/me");
+        if (!r.ok) throw new Error();
+        const j = await r.json();
+        if (!cancelled) setMine(Array.isArray(j.connections) ? j.connections : []);
+      } catch {
+        if (!cancelled) setMine([]); // not signed in / 401 — treat as none connected
+      } finally {
+        if (!cancelled) setLoadingMine(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const connectedSet = new Set(mine.map((m) => m.connector_name));
+  const missing = required.filter((n) => !connectedSet.has(n));
+
   return (
     <div style={cardStyle}>
       <h2 style={cardTitleStyle}>Web2 connectors</h2>
       <p style={muted}>
-        This Kit asks for these connectors. Wiring them up — OAuth, API
-        keys, etc. — lands in Phase 4. For now you can still deploy the
-        agent and add connectors later from <Link href="/settings" style={linkStyle}>Settings → Connections</Link>.
+        This Kit needs your accounts to act on your behalf. Each connector is
+        encrypted at rest and only used by missions you start.{" "}
+        <Link href="/connectors" target="_blank" style={linkStyle}>Open the Connectors page →</Link>
       </p>
-      {required.length === 0 ? (
+
+      {loadingMine && (
+        <div style={{ ...muted, marginTop: 14 }}>
+          <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} /> Checking your connections…
+        </div>
+      )}
+
+      {!loadingMine && required.length === 0 && optional.length === 0 && (
         <div style={{ ...muted, marginTop: 14 }}>
           <Plug size={13} /> No external connectors required.
         </div>
-      ) : (
+      )}
+
+      {!loadingMine && missing.length > 0 && (
+        <div style={{
+          ...hintStyle,
+          marginTop: 12,
+          background: "rgba(245, 158, 11, 0.08)",
+          borderColor: "rgba(245, 158, 11, 0.3)",
+          color: "var(--amber, #f59e0b)",
+        }}>
+          <AlertTriangle size={13} />
+          <span>
+            <strong>{missing.length} required connector{missing.length === 1 ? "" : "s"}</strong>{" "}
+            not connected yet. The Kit will deploy, but missions that need {missing.join(", ")} will
+            fail until you connect.
+          </span>
+        </div>
+      )}
+
+      {!loadingMine && [...required, ...optional].length > 0 && (
         <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-          {required.map((name) => (
-            <div key={name} style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 12px",
-              borderRadius: 9,
-              border: "1px dashed var(--border)",
-              background: "var(--bg-card)",
-            }}>
-              <span style={{
-                width: 28, height: 28, borderRadius: 8,
-                background: "var(--bg-input)",
-                color: "var(--text-2)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                flexShrink: 0,
-              }}><Plug size={13} /></span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)" }}>{name}</div>
-                <div style={{ fontSize: 11, color: "var(--text-2)" }}>Coming soon — Phase 4</div>
+          {[...required.map((n) => ({ name: n, kind: "required" })),
+            ...optional.map((n) => ({ name: n, kind: "optional" }))].map(({ name, kind }) => {
+            const connected = connectedSet.has(name);
+            return (
+              <div key={name} style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 12px",
+                borderRadius: 9,
+                border: "1px solid var(--border)",
+                background: "var(--bg-card)",
+              }}>
+                <span style={{
+                  width: 28, height: 28, borderRadius: 8,
+                  background: connected ? "rgba(16, 185, 129, 0.15)" : "var(--bg-input)",
+                  color: connected ? "var(--green, #10B981)" : "var(--text-2)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  {connected ? <Check size={13} /> : <Plug size={13} />}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)" }}>
+                    {name}{" "}
+                    {kind === "optional" && (
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-3)", marginLeft: 4 }}>
+                        optional
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: connected ? "var(--green, #10B981)" : "var(--text-2)" }}>
+                    {connected ? "Connected" : "Not connected"}
+                  </div>
+                </div>
+                {!connected && (
+                  <Link
+                    href={`/connectors`}
+                    target="_blank"
+                    style={{
+                      fontSize: 11.5, fontWeight: 700, padding: "6px 10px", borderRadius: 7,
+                      border: "1px solid var(--accent-border)", color: "var(--accent)",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Connect →
+                  </Link>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
