@@ -28,6 +28,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import { apiFetch } from "@/lib/apiFetch";
 import { API_BASE as API } from "@/lib/apiBase";
+import ConceptsSection from "@/components/skills/ConceptsSection";
 
 const YOCTO_PER_NEAR = 1_000_000_000_000_000_000_000_000n;
 
@@ -815,9 +816,14 @@ export default function MarketplacePage() {
           {!isEmpty && !filteredEmpty && (
             <>
               <FeaturedSection t={t} rows={featured} onInstall={handleInstall} installingId={installingId} />
+              <ConceptsSection t={t} />
               <TopTable      t={t} rows={topTable} onInstall={handleInstall} installingId={installingId} />
             </>
           )}
+          {/* Show concepts even on the empty marketplace state — they're
+              the most useful thing on a freshly-launched site, and don't
+              depend on any on-chain state. */}
+          {(isEmpty || filteredEmpty) && <ConceptsSection t={t} />}
         </div>
         <aside className="mk-right" style={{
           position: "sticky", top: 76,
