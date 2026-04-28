@@ -79,8 +79,9 @@ function loadBuiltins() {
     "./facebook",
     "./jiji",
     "./email",
+    "./whatsapp",
     // Additional connectors register themselves as their commits land.
-    // "./whatsapp", "./linkedin",
+    // "./linkedin",
   ];
   for (const path of candidates) {
     try {
