@@ -65,4 +65,15 @@ const economy = {
     }),
 };
 
-module.exports = { req, tg, economy, BACKEND };
+// ─── Phase 10 Tier 2 — IronGuide concierge helpers ──────────────────
+// All of these treat the TG channel as the subject so the same session
+// shape (channel='tg', subject_tg_id=…) is used end-to-end.
+const ironguide = {
+  start:     (tgId)               => req("/api/ironguide/start",                  { method: "POST", body: { channel: "tg", tg_id: tgId } }),
+  reply:     (sessionId, content) => req(`/api/ironguide/${sessionId}/reply`,     { method: "POST", body: { content } }),
+  recommend: (sessionId)          => req(`/api/ironguide/${sessionId}/recommend`, { method: "POST", body: {} }),
+  open:      (tgId)               => req(`/api/ironguide/open?channel=tg&tg_id=${tgId}`),
+  load:      (sessionId)          => req(`/api/ironguide/${sessionId}`),
+};
+
+module.exports = { req, tg, economy, ironguide, BACKEND };

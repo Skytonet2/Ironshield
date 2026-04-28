@@ -17,14 +17,17 @@ const digest    = require("../commands/digest");
 const custodial = require("../commands/custodial");
 const vote      = require("../commands/vote");
 const missions  = require("../commands/missions");
+const onboard   = require("../commands/onboard");
+const { tg }    = require("../services/backend");
 
 function escapeMarkdownV2(text) {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
 }
 
 const COMMANDS = {
-  "/start":     link.handleStart,
+  "/start":     handleStartWithOnboardingHook,
   "/link":      link.handleStart,
+  "/onboard":   onboard.handle,
   "/help":      helpHandler,
   "/status":    statusHandler,
 
@@ -71,10 +74,33 @@ const COMMANDS = {
   "/missions":  missions.handle,
 };
 
+// /start with a passthrough to the existing wallet-link flow + a soft
+// IronGuide CTA when the user is brand-new (no linked wallets yet) and
+// arrived without a deep-link payload. Keeps the existing onboarding
+// untouched for users who already linked a wallet — they'd find the
+// concierge nag noisy.
+async function handleStartWithOnboardingHook(bot, msg) {
+  await link.handleStart(bot, msg);
+  // Only nudge for fresh users coming in via a bare /start (no payload).
+  const text = msg.text || "";
+  if (text.split(/\s+/).length > 1) return;
+  try {
+    const s = await tg.settings(msg.from.id);
+    const wallets = s?.wallets || [];
+    if (wallets.length === 0) {
+      await bot.sendMessage(
+        msg.chat.id,
+        "Want me to walk you through setting up an agent in under a minute? Tap /onboard.",
+      );
+    }
+  } catch { /* best-effort soft CTA */ }
+}
+
 async function helpHandler(bot, msg) {
   const message = `*IronShield Bot — Commands*
 
 🔗 *Onboarding*
+• /onboard — IronGuide picks the right agent for you
 • Paste any wallet address to link it
 • /wallets — switch between linked wallets
 • /addwallet <address>
