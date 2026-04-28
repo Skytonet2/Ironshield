@@ -33,6 +33,11 @@ const { handleMessage }  = require("./handlers/messageHandler");
 const { handleDM }       = require("./handlers/dmHandler");
 const { handleCallback } = require("./handlers/callbackHandler");
 const { recordMessage }  = require("./commands/summary");
+// Phase 10 Tier 5 — bridge inbound TG messages to the scout_tg
+// skill's ring buffer. Lazy-required so a bot deploy without the
+// backend connector framework loaded still boots.
+let _connectorEventBus = null;
+try { _connectorEventBus = require("../backend/services/eventBus"); } catch { /* optional */ }
 const agentState = require("../backend/db/agentState");
 
 const priceMonitor    = require("./jobs/priceMonitor");
@@ -113,6 +118,24 @@ function attachBot(app) {
       const isGroup   = msg.chat.type !== "private";
       const isCommand = msg.text?.startsWith("/");
       if (!isCommand && msg.text) recordMessage(msg);
+      // Fan out non-command messages to the scout_tg skill's ring
+      // buffer. Both group + private messages — the Freelancer Hunter
+      // Kit cares about either, and the buffer trims to MAX_BUFFER.
+      // Best-effort: a missing/broken event bus shouldn't kill the
+      // primary bot dispatch.
+      if (!isCommand && msg.text && _connectorEventBus?.emit) {
+        try {
+          _connectorEventBus.emit("connector:tg:message", {
+            chat_id:    msg.chat.id,
+            chat_title: msg.chat.title || null,
+            chat_type:  msg.chat.type,
+            from_user:  msg.from?.first_name || null,
+            from_username: msg.from?.username || null,
+            text:       msg.text,
+            message_id: msg.message_id,
+          });
+        } catch { /* swallow — never break the primary handler */ }
+      }
       if (isCommand)      await handleCommand(bot, msg);
       else if (isGroup)   await handleMessage(bot, msg);
       else                await handleDM(bot, msg);
