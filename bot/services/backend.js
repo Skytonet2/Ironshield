@@ -72,4 +72,34 @@ const tg = {
   agentConfirm: (body) => req("/api/tg/agent/confirm", { method: "POST", body }),
 };
 
-module.exports = { req, tg, BACKEND };
+// ─── Phase 10 — Agent Economy helpers ───────────────────────────────
+// Resolve an escalation when the owner taps Approve/Reject. The bot
+// authenticates via the orchestrator shared secret because the user
+// has already authenticated to TG and we trust the chat id ↔ wallet
+// linkage on the backend side.
+const economy = {
+  missions:        (wallet) => req(`/api/missions?mine=1`, { wallet }),
+  mission:         (id)     => req(`/api/missions/${id}`),
+  resolveEscalation: (id, decision, note, wallet) =>
+    req(`/api/escalations/${id}/resolve`, {
+      method: "POST",
+      body: { decision, note, source: "tg" },
+      wallet,
+      headers: process.env.ORCHESTRATOR_SHARED_SECRET
+        ? { "x-orchestrator-secret": process.env.ORCHESTRATOR_SHARED_SECRET }
+        : {},
+    }),
+};
+
+// ─── Phase 10 Tier 2 — IronGuide concierge helpers ──────────────────
+// All of these treat the TG channel as the subject so the same session
+// shape (channel='tg', subject_tg_id=…) is used end-to-end.
+const ironguide = {
+  start:     (tgId)               => req("/api/ironguide/start",                  { method: "POST", body: { channel: "tg", tg_id: tgId } }),
+  reply:     (sessionId, content) => req(`/api/ironguide/${sessionId}/reply`,     { method: "POST", body: { content } }),
+  recommend: (sessionId)          => req(`/api/ironguide/${sessionId}/recommend`, { method: "POST", body: {} }),
+  open:      (tgId)               => req(`/api/ironguide/open?channel=tg&tg_id=${tgId}`),
+  load:      (sessionId)          => req(`/api/ironguide/${sessionId}`),
+};
+
+module.exports = { req, tg, economy, ironguide, BACKEND };

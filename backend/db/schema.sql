@@ -1149,6 +1149,363 @@ CREATE INDEX IF NOT EXISTS idx_feed_posts_author_active
 CREATE INDEX IF NOT EXISTS idx_feed_notifs_unread
   ON feed_notifications (user_id) WHERE read_at IS NULL;
 
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║ Phase 10 — Agent Economy (Phase 1 of the Economy build)             ║
+-- ╠══════════════════════════════════════════════════════════════════════╣
+-- ║ Adds the off-chain side of the agent-economy primitives. The        ║
+-- ║ on-chain anchors live in the StakingContract monolith (mission +    ║
+-- ║ kit registries, prefixes b"B" and b"k"). Everything that's verbose, ║
+-- ║ mutable, or doesn't need consensus lives here:                      ║
+-- ║   - skill_runtime_manifests   (prompts, tool bindings, IO schema)   ║
+-- ║   - mission_templates         (catalog of structured jobs)          ║
+-- ║   - missions                  (off-chain mirror of on-chain row)    ║
+-- ║   - mission_audit_log         (hash-chained step log)               ║
+-- ║   - mission_escalations       (auth-engine require_approval queue)  ║
+-- ║   - auth_profiles             (per-user/agent/mission rule sets)    ║
+-- ║   - agent_kits + kit_versions (Kit catalog + history)               ║
+-- ║   - kit_deployments           (per-instance deploy of a Kit)        ║
+-- ║   - connector_credentials     (encrypted Web2 connector creds)      ║
+-- ║   - reputation_cache          (subject score mirror)                ║
+-- ║                                                                      ║
+-- ║ At v1 most of these are read-only or write-rarely; the loops that   ║
+-- ║ populate them (mission engine, auth engine, skills runtime) ship in ║
+-- ║ Phase 1 of the Economy build.                                       ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
+
+-- ── Skill runtime manifests ───────────────────────────────────────────
+-- Off-chain side of an on-chain Skill. The on-chain row carries identity,
+-- price, and category; the manifest carries the actual runtime payload —
+-- prompt fragment, tool bindings, IO schema, connector deps. Pinned via
+-- manifest_hash so a future Phase-5 on-chain skill_registry can validate
+-- that what runs matches what the catalog claims.
+--
+-- skill_id is the u64 from the contract. multiple versions per skill are
+-- allowed; the active one is whichever has the highest version with
+-- status='active'.
+CREATE TABLE IF NOT EXISTS skill_runtime_manifests (
+  id                  BIGSERIAL    PRIMARY KEY,
+  skill_id            BIGINT       NOT NULL,
+  version             TEXT         NOT NULL,
+  category            TEXT         NOT NULL,
+  vertical_tags       TEXT[]       NOT NULL DEFAULT '{}',
+  prompt_fragment     TEXT         NOT NULL,
+  tool_manifest_json  JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  required_connectors TEXT[]       NOT NULL DEFAULT '{}',
+  io_schema_json      JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  manifest_hash       TEXT         NOT NULL,
+  status              TEXT         NOT NULL DEFAULT 'internal',
+  deployed_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (skill_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_skill_manifests_skill_id
+  ON skill_runtime_manifests (skill_id);
+CREATE INDEX IF NOT EXISTS idx_skill_manifests_active
+  ON skill_runtime_manifests (skill_id, deployed_at DESC)
+  WHERE status = 'active';
+
+-- ── Mission templates ─────────────────────────────────────────────────
+-- Catalog row a mission is created from. Inputs schema is JSON Schema;
+-- default_crew is an ordered list of role tags ['scout','outreach',...].
+-- compatible_kits is informational at v1 — no enforcement yet, the spec
+-- says any agent with the right skills can fulfill any compatible
+-- template.
+CREATE TABLE IF NOT EXISTS mission_templates (
+  id                    BIGSERIAL    PRIMARY KEY,
+  slug                  TEXT         NOT NULL UNIQUE,
+  vertical              TEXT         NOT NULL,
+  title                 TEXT         NOT NULL,
+  description           TEXT         NOT NULL DEFAULT '',
+  required_inputs_json  JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  default_crew_json     JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  compatible_kits       TEXT[]       NOT NULL DEFAULT '{}',
+  auth_profile_id       BIGINT,
+  estimated_duration    TEXT,
+  estimated_cost_min    NUMERIC(40,0),
+  estimated_cost_max    NUMERIC(40,0),
+  cost_token            TEXT         NOT NULL DEFAULT 'NEAR',
+  success_criteria      TEXT,
+  geo_scope             TEXT         CHECK (geo_scope IS NULL OR geo_scope IN ('local','national','global')),
+  language_support      TEXT[]       NOT NULL DEFAULT '{en}',
+  status                TEXT         NOT NULL DEFAULT 'active',
+  created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_mission_templates_vertical
+  ON mission_templates (vertical, status);
+
+-- ── Missions (off-chain mirror) ───────────────────────────────────────
+-- on_chain_id is the u64 from create_mission. Indexed off the
+-- mission_created event; if the indexer drops a row, the orchestrator
+-- can backfill from contract state. inputs_hash matches the value
+-- escrowed on-chain so we can prove tampering.
+CREATE TABLE IF NOT EXISTS missions (
+  on_chain_id      BIGINT       PRIMARY KEY,
+  template_slug    TEXT         REFERENCES mission_templates(slug),
+  poster_wallet    TEXT         NOT NULL,
+  claimant_wallet  TEXT,
+  kit_slug         TEXT,
+  inputs_json      JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  inputs_hash      TEXT         NOT NULL,
+  escrow_yocto     NUMERIC(40,0) NOT NULL,
+  platform_fee_bps INTEGER      NOT NULL,
+  status           TEXT         NOT NULL,
+  audit_root       TEXT,
+  tx_create        TEXT,
+  tx_finalize      TEXT,
+  created_at       TIMESTAMPTZ  NOT NULL,
+  claimed_at       TIMESTAMPTZ,
+  submitted_at     TIMESTAMPTZ,
+  review_deadline  TIMESTAMPTZ,
+  finalized_at     TIMESTAMPTZ,
+  indexed_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_missions_status
+  ON missions (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_missions_poster
+  ON missions (poster_wallet, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_missions_claimant
+  ON missions (claimant_wallet, created_at DESC)
+  WHERE claimant_wallet IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_missions_kit
+  ON missions (kit_slug, created_at DESC)
+  WHERE kit_slug IS NOT NULL;
+
+-- ── Mission audit log ─────────────────────────────────────────────────
+-- One row per agent step in a mission. payload_hash is the sha256 of
+-- payload_json; prev_hash is the previous row's payload_hash for the
+-- same mission, forming a hash chain whose root is what gets committed
+-- on-chain via submit_mission_work(audit_root). Roots are computed off-
+-- chain — we don't reconstruct from prev_hash on read.
+CREATE TABLE IF NOT EXISTS mission_audit_log (
+  id                  BIGSERIAL    PRIMARY KEY,
+  mission_on_chain_id BIGINT       NOT NULL REFERENCES missions(on_chain_id) ON DELETE CASCADE,
+  step_seq            INTEGER      NOT NULL,
+  skill_id            BIGINT,
+  role                TEXT,
+  action_type         TEXT         NOT NULL,
+  payload_json        JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  payload_hash        TEXT         NOT NULL,
+  prev_hash           TEXT,
+  agent_wallet        TEXT,
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (mission_on_chain_id, step_seq)
+);
+CREATE INDEX IF NOT EXISTS idx_mission_audit_log_mission
+  ON mission_audit_log (mission_on_chain_id, step_seq);
+
+-- ── Mission escalations ───────────────────────────────────────────────
+-- The auth engine writes a row here whenever a 'require_approval' rule
+-- fires. The corresponding step is frozen until status flips to
+-- 'approved' or 'rejected'. tg_message_id + tg_chat_id are populated
+-- when the escalation went out via Telegram so the callback can find
+-- the right row.
+CREATE TABLE IF NOT EXISTS mission_escalations (
+  id                  BIGSERIAL    PRIMARY KEY,
+  mission_on_chain_id BIGINT       NOT NULL REFERENCES missions(on_chain_id) ON DELETE CASCADE,
+  step_seq            INTEGER,
+  action_type         TEXT         NOT NULL,
+  payload_json        JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  status              TEXT         NOT NULL DEFAULT 'pending'
+                                   CHECK (status IN ('pending','approved','rejected','expired','aborted')),
+  channel             TEXT         NOT NULL DEFAULT 'in_app'
+                                   CHECK (channel IN ('tg','email','sms','in_app')),
+  tg_message_id       BIGINT,
+  tg_chat_id          BIGINT,
+  decided_by_wallet   TEXT,
+  decision_note       TEXT,
+  decided_at          TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  expires_at          TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_mission_escalations_mission
+  ON mission_escalations (mission_on_chain_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mission_escalations_pending
+  ON mission_escalations (status, created_at DESC)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_mission_escalations_tg
+  ON mission_escalations (tg_chat_id, tg_message_id)
+  WHERE tg_chat_id IS NOT NULL;
+
+-- ── Authorization profiles ────────────────────────────────────────────
+-- A profile is a set of AuthRules. Resolution order: mission-bound profile,
+-- then agent-bound profile, then user default, then system default. v1
+-- ships only system + user defaults; agent and mission scoping land in
+-- Phase 2 with the crew orchestrator.
+CREATE TABLE IF NOT EXISTS auth_profiles (
+  id                  BIGSERIAL    PRIMARY KEY,
+  user_wallet         TEXT         NOT NULL,
+  agent_owner_wallet  TEXT,
+  mission_on_chain_id BIGINT,
+  rules_json          JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  is_default          BOOLEAN      NOT NULL DEFAULT FALSE,
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_auth_profiles_user
+  ON auth_profiles (user_wallet);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_profiles_user_default
+  ON auth_profiles (user_wallet) WHERE is_default = TRUE;
+
+-- ── Kit catalog (off-chain mirror + verbose body) ─────────────────────
+-- The on-chain Kit row holds slug, vertical, curator, revenue split, and
+-- manifest_hash. The verbose body — bundled skill ids, preset config
+-- schema, hero image, marketing copy — lives here. manifest_hash
+-- matches the on-chain pin, so a tampered Kit catalog is detectable.
+CREATE TABLE IF NOT EXISTS agent_kits (
+  slug                       TEXT         PRIMARY KEY,
+  title                      TEXT         NOT NULL,
+  vertical                   TEXT         NOT NULL,
+  description                TEXT         NOT NULL DEFAULT '',
+  hero_image_url             TEXT,
+  example_missions           TEXT[]       NOT NULL DEFAULT '{}',
+  required_connectors        TEXT[]       NOT NULL DEFAULT '{}',
+  bundled_skill_ids          BIGINT[]     NOT NULL DEFAULT '{}',
+  preset_config_schema_json  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  default_auth_profile_id    BIGINT       REFERENCES auth_profiles(id),
+  default_pricing_json       JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  curator_wallet             TEXT         NOT NULL,
+  manifest_hash              TEXT         NOT NULL,
+  kit_curator_bps            INTEGER      NOT NULL,
+  agent_owner_bps            INTEGER      NOT NULL,
+  platform_bps               INTEGER      NOT NULL,
+  status                     TEXT         NOT NULL DEFAULT 'beta'
+                                          CHECK (status IN ('active','beta','deprecated')),
+  created_at                 TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at                 TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  CONSTRAINT agent_kits_revenue_sums_to_10000
+    CHECK (kit_curator_bps + agent_owner_bps + platform_bps = 10000)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_kits_vertical
+  ON agent_kits (vertical, status);
+
+-- ── Kit version history ───────────────────────────────────────────────
+-- Each manifest update writes a row here. The current Kit row in
+-- agent_kits is the latest version; this table is the history feed.
+CREATE TABLE IF NOT EXISTS kit_versions (
+  id                         BIGSERIAL    PRIMARY KEY,
+  kit_slug                   TEXT         NOT NULL REFERENCES agent_kits(slug),
+  version                    TEXT         NOT NULL,
+  bundled_skill_ids          BIGINT[]     NOT NULL DEFAULT '{}',
+  preset_config_schema_json  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  required_connectors        TEXT[]       NOT NULL DEFAULT '{}',
+  manifest_hash              TEXT         NOT NULL,
+  deployed_at                TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (kit_slug, version)
+);
+
+-- ── Kit deployments ───────────────────────────────────────────────────
+-- A user picks a Kit, fills the preset form, and gets a deployment row.
+-- agent_owner_wallet references the on-chain agent_profile. For Phase 10
+-- v1 the on-chain agent record predates Kits, so this is informational
+-- only — the actual agent identity is what's already in agent_profiles.
+CREATE TABLE IF NOT EXISTS kit_deployments (
+  id                  BIGSERIAL    PRIMARY KEY,
+  kit_slug            TEXT         NOT NULL REFERENCES agent_kits(slug),
+  kit_version_id     BIGINT       REFERENCES kit_versions(id),
+  agent_owner_wallet  TEXT         NOT NULL,
+  preset_config_json  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  status              TEXT         NOT NULL DEFAULT 'active'
+                                   CHECK (status IN ('pending','active','paused','retired')),
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kit_deployments_owner
+  ON kit_deployments (agent_owner_wallet, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kit_deployments_kit
+  ON kit_deployments (kit_slug, status);
+
+-- ── Connector credentials ─────────────────────────────────────────────
+-- BYO-account credentials for Web2 connectors (X, Facebook, WhatsApp,
+-- LinkedIn, Jiji, etc.). encrypted_blob is opaque payload — the
+-- connector module decrypts it at use time using the platform key. v1
+-- ships with an empty connector framework; rows arrive in Phase 4.
+CREATE TABLE IF NOT EXISTS connector_credentials (
+  id              BIGSERIAL    PRIMARY KEY,
+  user_wallet     TEXT         NOT NULL,
+  connector_name  TEXT         NOT NULL,
+  encrypted_blob  BYTEA        NOT NULL,
+  expires_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (user_wallet, connector_name)
+);
+
+-- ── Reputation cache ──────────────────────────────────────────────────
+-- subject_type is 'agent' or 'skill' (Phase 5 may add 'kit'). subject_id
+-- is the corresponding identifier — agent owner wallet for agents, the
+-- u64 skill_id for skills. score is a derived integer 0..10_000. This
+-- is a cache; the source of truth is mission outcomes + the Phase 5
+-- on-chain reputation ledger (not yet deployed).
+CREATE TABLE IF NOT EXISTS reputation_cache (
+  subject_type        TEXT         NOT NULL CHECK (subject_type IN ('agent','skill')),
+  subject_id          TEXT         NOT NULL,
+  score               INTEGER      NOT NULL DEFAULT 0,
+  missions_completed  INTEGER      NOT NULL DEFAULT 0,
+  missions_failed     INTEGER      NOT NULL DEFAULT 0,
+  success_rate_bps    INTEGER      NOT NULL DEFAULT 0,
+  last_synced_block   BIGINT,
+  updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (subject_type, subject_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reputation_cache_score
+  ON reputation_cache (subject_type, score DESC);
+
+-- ╔═════════════════════════════════════════════════════════════════════╗
+-- ║  Phase 10 Tier 2 — IronGuide concierge                              ║
+-- ║   - ironguide_sessions  (free concierge interview state)            ║
+-- ║   - kit_requests        (gap log when no Kit fits the user)         ║
+-- ╚═════════════════════════════════════════════════════════════════════╝
+
+-- ── IronGuide sessions ────────────────────────────────────────────────
+-- One row per onboarding interview. Channel is 'web' or 'tg'. Subject
+-- key (wallet for web, tg_id for tg) is unique per channel so a single
+-- user gets one in-progress interview at a time per surface. Conversation
+-- state is the message history; classified_json is the structured
+-- vertical/geo/budget/language signal extracted from the answers.
+CREATE TABLE IF NOT EXISTS ironguide_sessions (
+  id                       BIGSERIAL    PRIMARY KEY,
+  channel                  TEXT         NOT NULL CHECK (channel IN ('web','tg')),
+  subject_wallet           TEXT,
+  subject_tg_id            BIGINT,
+  ironclaw_thread_id       TEXT,
+  status                   TEXT         NOT NULL DEFAULT 'active'
+                                        CHECK (status IN ('active','recommended','deployed','abandoned')),
+  messages_json            JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  classified_json          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  recommended_kit_id       TEXT         REFERENCES agent_kits(slug),
+  recommended_presets_json JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  created_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ironguide_sessions_wallet
+  ON ironguide_sessions (subject_wallet)
+  WHERE subject_wallet IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ironguide_sessions_tg
+  ON ironguide_sessions (subject_tg_id)
+  WHERE subject_tg_id IS NOT NULL;
+-- Defensive idempotent column adds in case an older shape exists.
+ALTER TABLE ironguide_sessions
+  ADD COLUMN IF NOT EXISTS recommended_kit_id TEXT REFERENCES agent_kits(slug);
+ALTER TABLE ironguide_sessions
+  ADD COLUMN IF NOT EXISTS recommended_presets_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- ── Kit requests (gap log) ────────────────────────────────────────────
+-- When IronGuide can't recommend any existing Kit for the classified
+-- profile, it logs the gap here so the curation team can decide whether
+-- to author a new Kit. status='open' until a curator triages.
+CREATE TABLE IF NOT EXISTS kit_requests (
+  id                  BIGSERIAL    PRIMARY KEY,
+  ironguide_session_id BIGINT      REFERENCES ironguide_sessions(id) ON DELETE SET NULL,
+  classified_json     JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  summary             TEXT,
+  channel             TEXT,
+  subject_wallet      TEXT,
+  subject_tg_id       BIGINT,
+  status              TEXT         NOT NULL DEFAULT 'open'
+                                   CHECK (status IN ('open','triaged','authored','dismissed')),
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kit_requests_status
+  ON kit_requests (status, created_at DESC);
 -- ── Telegram link hardening (post-Day 9) ─────────────────────────────
 -- Pre-hardening, /api/tg/claim accepted a bare `wallet` body field
 -- and /api/tg/add-wallet upserted feed_users.id into the caller's

@@ -39,6 +39,7 @@ const path   = require("path");
 
 const { connect, keyStores } = require("near-api-js");
 const { getOrchestratorAccount } = require("./nearSigner");
+const missionIndexer = require("./missionIndexer");
 
 const STAKING_CONTRACT  = process.env.STAKING_CONTRACT_ID || "ironshield.near";
 const NODE_URL          = process.env.NEAR_RPC_URL        || "https://rpc.mainnet.near.org";
@@ -275,6 +276,15 @@ function sha256Hex(s) {
 
 // ─── Main poll ───────────────────────────────────────────────────
 async function poll() {
+  // Mission indexer runs first and is read-only — it doesn't need
+  // orchestrator credentials, so a missing-creds backend still keeps
+  // the off-chain mirror in sync with on-chain mission state.
+  try {
+    await missionIndexer.pollOnce();
+  } catch (err) {
+    console.error(`[orchestrator] mission indexer error: ${err.message}`);
+  }
+
   const orchestrator = getOrchestratorAccount();
   if (!orchestrator) {
     // Still poll — we want the "missing creds" warning to persist in
