@@ -39,21 +39,20 @@ export default function MissionDetailPage() {
   const [streaming, setStreaming] = useState(false);
   const [resolving, setResolving] = useState({}); // id → bool
 
-  const applySnapshot = useCallback((snap) => {
-    if (snap?.mission) setMission(snap.mission);
-    if (Array.isArray(snap?.audit)) setAudit(snap.audit);
-    if (Array.isArray(snap?.escalations)) setEsc(snap.escalations);
-  }, []);
-
+  // GET /:id returns { mission, audit, escalations } in one shot — used
+  // for the initial render and for the polling fallback when SSE isn't
+  // available. Tier 1's stream sends `snapshot` once on connect plus
+  // incremental `audit.appended / escalation.created / escalation.resolved`
+  // events, so the SSE path applies state diffs instead of replacing.
   const fetchOnce = useCallback(async () => {
     const r = await fetch(`${API_BASE}/api/missions/${id}`);
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || "Mission not found");
-    applySnapshot(j);
-  }, [id, applySnapshot]);
+    if (j.mission) setMission(j.mission);
+    if (Array.isArray(j.audit)) setAudit(j.audit);
+    if (Array.isArray(j.escalations)) setEsc(j.escalations);
+  }, [id]);
 
-  // Subscribe to SSE if available, otherwise poll. Either way, the page
-  // gets a fresh snapshot every few seconds while open.
   useEffect(() => {
     if (!Number.isFinite(id)) return;
     let cancelled = false;
@@ -75,17 +74,55 @@ export default function MissionDetailPage() {
         try {
           es = new window.EventSource(`${API_BASE}/api/missions/${id}/stream`);
           setStreaming(true);
+
+          // Initial snapshot — Tier 1 sends just { audit, escalations }
+          // (the mission object came from the GET above).
           es.addEventListener("snapshot", (ev) => {
-            try { applySnapshot(JSON.parse(ev.data)); } catch { /* ignore */ }
+            try {
+              const snap = JSON.parse(ev.data);
+              if (Array.isArray(snap.audit)) setAudit(snap.audit);
+              if (Array.isArray(snap.escalations)) setEsc(snap.escalations);
+            } catch { /* ignore */ }
           });
-          es.addEventListener("gone", () => {
-            setError("Mission no longer exists");
-            es?.close();
+
+          // Append a new audit row, dedup by step_seq so a re-emitted
+          // event from a brief reconnect doesn't double-render.
+          es.addEventListener("audit.appended", (ev) => {
+            try {
+              const row = JSON.parse(ev.data);
+              setAudit((prev) => {
+                if (prev.some((r) => r.step_seq === row.step_seq)) return prev;
+                return [...prev, row].sort((a, b) => a.step_seq - b.step_seq);
+              });
+            } catch { /* ignore */ }
           });
+
+          // New escalation lands at the top of the list (most-recent first).
+          es.addEventListener("escalation.created", (ev) => {
+            try {
+              const row = JSON.parse(ev.data);
+              setEsc((prev) => {
+                if (prev.some((e) => e.id === row.id)) return prev;
+                return [row, ...prev];
+              });
+            } catch { /* ignore */ }
+          });
+
+          // Resolved → patch in place. Server returns the same id with
+          // the new status / decided_at / decided_by_wallet.
+          es.addEventListener("escalation.resolved", (ev) => {
+            try {
+              const row = JSON.parse(ev.data);
+              setEsc((prev) => prev.map((e) => e.id === row.id ? { ...e, ...row } : e));
+            } catch { /* ignore */ }
+          });
+
           es.onerror = () => {
             setStreaming(false);
             es?.close();
-            // Fall back to polling.
+            // Fall back to polling. The diff handlers stop firing once
+            // the EventSource is closed, so the poll catches anything
+            // that lands during the gap.
             if (!pollTimer) pollTimer = setInterval(() => fetchOnce().catch(() => {}), 4000);
           };
           return;
@@ -101,7 +138,7 @@ export default function MissionDetailPage() {
       es?.close?.();
       if (pollTimer) clearInterval(pollTimer);
     };
-  }, [id, fetchOnce, applySnapshot]);
+  }, [id, fetchOnce]);
 
   const isPoster = useMemo(() => {
     if (!wallet || !mission?.poster_wallet) return false;
