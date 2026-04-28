@@ -116,6 +116,62 @@ router.get("/:key/reposts", async (req, res, next) => {
   }
 });
 
+// GET /api/users/:key/replies — comments this user has authored,
+// each one paired with its parent post for context. Profile page
+// renders these as { reply, parent_post } pairs.
+router.get("/:key/replies", async (req, res, next) => {
+  try {
+    const target = await resolveUser(req.params.key);
+    if (!target) return res.json({ replies: [] });
+    const limit = parseLimit(req.query.limit);
+    // Pull the user's comments + the post each one is on. Parent
+    // posts run through the same hydration as everywhere else so the
+    // PostCard renderer can be reused without a special branch.
+    const cm = await db.query(
+      `SELECT c.id AS comment_id, c.content AS comment_content,
+              c.created_at AS comment_created_at, c.parent_comment_id,
+              c.post_id,
+              (SELECT COUNT(*)::int FROM feed_comment_likes l
+                 WHERE l.comment_id = c.id) AS like_count
+         FROM feed_comments c
+        WHERE c.author_id = $1
+        ORDER BY c.created_at DESC
+        LIMIT $2`,
+      [target.id, limit]
+    );
+    if (!cm.rows.length) return res.json({ replies: [] });
+
+    const postIds = [...new Set(cm.rows.map((r) => r.post_id))];
+    const ps = await db.query(
+      "SELECT * FROM feed_posts WHERE id = ANY($1) AND deleted_at IS NULL",
+      [postIds]
+    );
+    const viewerWallet = req.header("x-wallet");
+    const viewer = viewerWallet ? await getOrCreateUser(viewerWallet) : null;
+    const hydrated = await hydratePosts(ps.rows, viewer?.id);
+    const byId = new Map(hydrated.map((p) => [p.id, p]));
+
+    const replies = cm.rows
+      .map((row) => {
+        const parent = byId.get(row.post_id);
+        if (!parent) return null;  // parent deleted
+        return {
+          comment: {
+            id: row.comment_id,
+            content: row.comment_content,
+            created_at: row.comment_created_at,
+            parent_comment_id: row.parent_comment_id,
+            like_count: row.like_count,
+          },
+          parent_post: parent,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ replies });
+  } catch (e) { next(e); }
+});
+
 // GET /api/users/:key/likes — posts this user has liked
 router.get("/:key/likes", async (req, res, next) => {
   try {

@@ -5,7 +5,7 @@
 // in src/hooks/useAgent.js.
 
 import Link from "next/link";
-import { Book, Coins, Tag, ShieldCheck, ExternalLink } from "lucide-react";
+import { Book, Coins, Tag, ShieldCheck, ExternalLink, BookOpen } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 
 function Section({ t, icon: Icon, title, children }) {
@@ -52,6 +52,15 @@ export default function SkillsDocsPage() {
           Authoring, installing, and verifying skills on the IronShield contract.
         </p>
       </header>
+
+      <Section t={t} icon={BookOpen} title="Looking for ideas?">
+        <p style={{ margin: 0 }}>
+          The <Link href="/docs/skills-catalog" style={{ color: t.accent, textDecoration: "none", fontWeight: 600 }}>
+          Skills Catalog</Link> lists 200 plausible skills you can build on top of the IronShield
+          platform — grouped by category, with pricing notes and a status flag so you know which
+          ones ship today vs. need a missing piece.
+        </p>
+      </Section>
 
       <Section t={t} icon={Book} title="What is a skill?">
         <p style={{ margin: 0 }}>

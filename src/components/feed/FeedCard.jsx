@@ -382,6 +382,11 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onQuot
             anywhere on the embed opens the original post's detail view. */}
         {post?.quotedPost && <QuotedEmbed quoted={post.quotedPost} t={t} />}
 
+        {/* Embedded quoted comment — renders when this post quote-reposted
+            a comment. Same shape as QuotedEmbed but links to the parent
+            post's detail page anchored to the comment id. */}
+        {post?.quotedComment && <QuotedCommentEmbed quoted={post.quotedComment} t={t} />}
+
         {/* Metrics */}
         <div style={{
           display: "flex",
@@ -628,6 +633,65 @@ function QuotedEmbed({ quoted, t }) {
           [{quoted.mediaUrls.length} attached]
         </div>
       )}
+    </a>
+  );
+}
+
+/** Embedded quoted comment. Mirrors QuotedEmbed but links to the
+ *  parent post's detail page anchored to the comment id, and labels
+ *  the embed as a reply so the reader knows what they're looking at.
+ */
+function QuotedCommentEmbed({ quoted, t }) {
+  if (!quoted) return null;
+  const author = quoted.author || {};
+  const name   = author.display_name || author.username || "—";
+  const handle = author.username ? `@${author.username}` : null;
+  const href   = `/post/?postId=${encodeURIComponent(quoted.postId)}#c${quoted.id}`;
+  return (
+    <a
+      href={href}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        display: "block",
+        marginTop: 10,
+        padding: 10,
+        borderRadius: 10,
+        border: `1px solid ${t.border}`,
+        background: "var(--bg-input)",
+        textDecoration: "none",
+        color: "inherit",
+      }}
+    >
+      <div style={{
+        fontSize: 10, color: t.textDim, fontWeight: 700,
+        textTransform: "uppercase", letterSpacing: 0.5,
+        marginBottom: 6,
+      }}>
+        Reply
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        {author.pfp_url ? (
+          <img src={author.pfp_url} alt="" width={20} height={20}
+               style={{ borderRadius: "50%", objectFit: "cover" }}
+               onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
+        ) : (
+          <div style={{
+            width: 20, height: 20, borderRadius: "50%",
+            background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+            color: "#fff", fontSize: 10, fontWeight: 800,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>{(name[0] || "?").toUpperCase()}</div>
+        )}
+        <span style={{ fontSize: 12, fontWeight: 700, color: t.white }}>{name}</span>
+        {handle && <span style={{ fontSize: 11, color: t.textDim }}>{handle}</span>}
+      </div>
+      <div style={{
+        fontSize: 13, color: t.text, lineHeight: 1.45,
+        whiteSpace: "pre-wrap", wordBreak: "break-word",
+        display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden",
+      }}>
+        {quoted.content}
+      </div>
     </a>
   );
 }

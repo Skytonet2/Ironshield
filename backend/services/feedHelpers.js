@@ -33,8 +33,13 @@ async function hydratePosts(rows, viewerId) {
   // Quoted-post fan-out: only fetch the rows that are referenced.
   // Set lookup avoids a "WHERE id = ANY([])" with no-op rows.
   const quotedIds = [...new Set(rows.map(r => r.quoted_post_id).filter(Boolean))];
+  // Quoted-comment fan-out: posts that quote a comment (the comment-quote
+  // path) carry quoted_comment_id. Same shape as quoted-post hydration —
+  // one extra round-trip when at least one post in the batch quotes a
+  // comment, none otherwise.
+  const quotedCommentIds = [...new Set(rows.map(r => r.quoted_comment_id).filter(Boolean))];
 
-  const [authors, likes, comments, reposts, viewerLikes, viewerReposts, tips, quoted] = await Promise.all([
+  const [authors, likes, comments, reposts, viewerLikes, viewerReposts, tips, quoted, quotedComments] = await Promise.all([
     db.query("SELECT id, wallet_address, username, display_name, pfp_url, account_type, verified FROM feed_users WHERE id = ANY($1)", [authorIds]),
     db.query("SELECT post_id, COUNT(*)::int AS c FROM feed_likes    WHERE post_id = ANY($1) GROUP BY post_id", [ids]),
     db.query("SELECT post_id, COUNT(*)::int AS c FROM feed_comments WHERE post_id = ANY($1) GROUP BY post_id", [ids]),
@@ -55,6 +60,16 @@ async function hydratePosts(rows, viewerId) {
              JOIN feed_users u ON u.id = p.author_id
             WHERE p.id = ANY($1) AND p.deleted_at IS NULL`,
           [quotedIds]
+        )
+      : { rows: [] },
+    quotedCommentIds.length
+      ? db.query(
+          `SELECT c.id, c.content, c.created_at, c.post_id,
+                  u.id AS author_id, u.username, u.display_name, u.pfp_url, u.wallet_address, u.verified
+             FROM feed_comments c
+             JOIN feed_users u ON u.id = c.author_id
+            WHERE c.id = ANY($1)`,
+          [quotedCommentIds]
         )
       : { rows: [] },
   ]);
@@ -80,6 +95,20 @@ async function hydratePosts(rows, viewerId) {
       verified: !!q.verified,
     },
   }]));
+  const qcMap = Object.fromEntries(quotedComments.rows.map(c => [c.id, {
+    id: c.id,
+    content: c.content,
+    createdAt: c.created_at,
+    postId: c.post_id,
+    author: {
+      id: c.author_id,
+      username: c.username,
+      display_name: c.display_name,
+      pfp_url: c.pfp_url,
+      wallet_address: c.wallet_address,
+      verified: !!c.verified,
+    },
+  }]));
 
   return rows.map(p => {
     // Assemble gate object only if gate_type is set.
@@ -99,6 +128,8 @@ async function hydratePosts(rows, viewerId) {
       repostOfId: p.repost_of_id,
       quotedPostId: p.quoted_post_id,
       quotedPost:   p.quoted_post_id ? (qMap[p.quoted_post_id] || null) : null,
+      quotedCommentId: p.quoted_comment_id,
+      quotedComment:   p.quoted_comment_id ? (qcMap[p.quoted_comment_id] || null) : null,
       createdAt: p.created_at,
       onchainTx: p.onchain_tx || null,
       author: aMap[p.author_id] || null,
