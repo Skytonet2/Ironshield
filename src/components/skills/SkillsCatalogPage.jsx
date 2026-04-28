@@ -1,16 +1,22 @@
 "use client";
-// /docs/skills-catalog — rendered version of docs/skills-catalog.md.
-// 200 plausible skills grouped by category, with search + status
-// filters. Source data is parsed at build time from the markdown by
-// scripts/build-skills-catalog.mjs into src/data/skillsCatalog.json
+// /docs/skills-catalog{,-v2} — rendered version of the catalog markdown.
+// 200 plausible skills per volume, grouped by category, with search +
+// status filters. Source data is parsed at build time from the markdown
+// by scripts/build-skills-catalog.mjs into src/data/skillsCatalog{,V2}.json
 // so we don't pay a runtime markdown dep on every page view.
+//
+// Pass `catalog` + `sourceUrl` + `siblingLink` as props to render either
+// volume; defaults render v1 for backwards compatibility with the
+// existing /docs/skills-catalog route.
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   BookOpen, Search, Filter, ExternalLink, Hash, Wallet, ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
-import catalog from "@/data/skillsCatalog.json";
+import catalogV1 from "@/data/skillsCatalog.json";
 
 const STATUS_META = {
   green:  { dot: "🟢", label: "Buildable today",         color: "#10b981" },
@@ -133,7 +139,11 @@ function Field({ t, label, value, monospace }) {
   );
 }
 
-export default function SkillsCatalogPage() {
+export default function SkillsCatalogPage({
+  catalog = catalogV1,
+  sourceUrl = "https://github.com/Skytonet2/Ironshield/blob/main/docs/skills-catalog.md",
+  siblingLink = { href: "/docs/skills-catalog-v2", label: "v2 — 200 more skills" },
+} = {}) {
   const t = useTheme();
   const [query, setQuery]       = useState("");
   const [statusKinds, setKinds] = useState({ green: true, yellow: true, red: true });
@@ -177,11 +187,23 @@ export default function SkillsCatalogPage() {
           <span style={{ fontSize: 12, color: t.textMuted }}>
             {catalog.meta.total} skills · {catalog.categories.length} categories
           </span>
+          {siblingLink && (
+            <Link
+              href={siblingLink.href}
+              style={{
+                marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4,
+                fontSize: 12, color: t.accent, fontWeight: 600, textDecoration: "none",
+                padding: "5px 10px", border: `1px solid ${t.border}`, borderRadius: 6,
+              }}>
+              {siblingLink.label} <ArrowRight size={11} />
+            </Link>
+          )}
           <a
-            href="https://github.com/Skytonet2/Ironshield/blob/main/docs/skills-catalog.md"
+            href={sourceUrl}
             target="_blank" rel="noopener noreferrer"
             style={{
-              marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4,
+              marginLeft: siblingLink ? 0 : "auto",
+              display: "inline-flex", alignItems: "center", gap: 4,
               fontSize: 12, color: t.accent, fontWeight: 600, textDecoration: "none",
               padding: "5px 10px", border: `1px solid ${t.border}`, borderRadius: 6,
             }}>

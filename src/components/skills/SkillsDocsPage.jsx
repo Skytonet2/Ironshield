@@ -54,11 +54,20 @@ export default function SkillsDocsPage() {
       </header>
 
       <Section t={t} icon={BookOpen} title="Looking for ideas?">
+        <p style={{ margin: "0 0 8px" }}>
+          The Skills Catalog lists 400 plausible skills you can build on top of IronShield —
+          grouped by category, with pricing notes and a status flag so you know which ones ship
+          today vs. need a missing piece.
+        </p>
         <p style={{ margin: 0 }}>
-          The <Link href="/docs/skills-catalog" style={{ color: t.accent, textDecoration: "none", fontWeight: 600 }}>
-          Skills Catalog</Link> lists 200 plausible skills you can build on top of the IronShield
-          platform — grouped by category, with pricing notes and a status flag so you know which
-          ones ship today vs. need a missing piece.
+          <Link href="/docs/skills-catalog" style={{ color: t.accent, textDecoration: "none", fontWeight: 600 }}>
+            Volume 1
+          </Link>
+          <span style={{ color: t.textMuted }}> — the platform's unique primitives (NewsCoin, IronFeed, governance, rooms, DMs). </span>
+          <Link href="/docs/skills-catalog-v2" style={{ color: t.accent, textDecoration: "none", fontWeight: 600 }}>
+            Volume 2
+          </Link>
+          <span style={{ color: t.textMuted }}> — the broader automation surface: DeFi yield, NFTs, multi-DAO ops, dev tools, sales workflows, document handling.</span>
         </p>
       </Section>
 
