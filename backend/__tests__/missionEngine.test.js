@@ -96,3 +96,48 @@ test("hashPayload: returns 64-char hex string", () => {
   const h = me.hashPayload({ x: 1 });
   assert.match(h, /^[0-9a-f]{64}$/);
 });
+
+// mirrorEvent's allowSkip option is load-bearing for the indexer's
+// catch-up path: when the bot has been offline and on-chain state has
+// jumped past one or more intermediate steps, the indexer must be able
+// to overwrite the mirror in one call. The HTTP /mirror route does NOT
+// pass allowSkip, so the strict guard still protects route-side state.
+test("mirrorEvent: allowSkip bypasses the canTransition guard", async () => {
+  // Stand up a one-shot fake db that returns a fixed current row.
+  const realCache = require.cache[clientPath].exports;
+  let updateCalled = false;
+  require.cache[clientPath].exports = {
+    ...realCache,
+    query: async (sql, params) => {
+      if (/^\s*SELECT/i.test(sql)) {
+        return { rows: [{
+          on_chain_id: 1, status: "open", claimant_wallet: null,
+          audit_root: null, claimed_at: null, submitted_at: null,
+          review_deadline: null, finalized_at: null,
+        }] };
+      }
+      if (/^\s*UPDATE/i.test(sql)) {
+        updateCalled = true;
+        return { rows: [{ on_chain_id: 1, status: params[1] || "approved" }] };
+      }
+      return { rows: [] };
+    },
+  };
+  // Re-require missionEngine fresh so the test sees the swapped client.
+  delete require.cache[require.resolve("../services/missionEngine")];
+  const fresh = require("../services/missionEngine");
+
+  // Without allowSkip — open → approved is illegal in v1.
+  await assert.rejects(
+    fresh.mirrorEvent({ on_chain_id: 1, status: "approved" }),
+    /Illegal transition/,
+  );
+  // With allowSkip — same call succeeds.
+  const out = await fresh.mirrorEvent({ on_chain_id: 1, status: "approved" }, { allowSkip: true });
+  assert.equal(out.status, "approved");
+  assert.equal(updateCalled, true);
+
+  // Restore the original mock so later tests in the file see the same shape.
+  require.cache[clientPath].exports = realCache;
+  delete require.cache[require.resolve("../services/missionEngine")];
+});
