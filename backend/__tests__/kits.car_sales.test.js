@@ -19,7 +19,8 @@ test("car_sales kit: manifest core fields", () => {
 });
 
 test("car_sales kit: every bundled builtin skill is registered", () => {
-  for (const cat of manifest.bundled_skills) {
+  for (const entry of manifest.bundled_skills) {
+    const cat = typeof entry === "string" ? entry : entry.skill;
     const c = skills.classifyCategory(cat);
     assert.ok(c, `unrunnable category: ${cat}`);
     if (c.kind === "builtin") assert.ok(skills.get(c.key), `not registered: ${c.key}`);

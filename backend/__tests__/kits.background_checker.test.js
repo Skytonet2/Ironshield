@@ -13,12 +13,14 @@ const manifest = JSON.parse(
 test("background_checker kit: manifest core fields", () => {
   assert.equal(manifest.slug, "background_checker");
   assert.equal(manifest.vertical, "reputation");
-  assert.ok(manifest.bundled_skills.includes("builtin:scam_detect"));
-  assert.ok(manifest.bundled_skills.includes("builtin:report_gen"));
+  const cats = manifest.bundled_skills.map((e) => typeof e === "string" ? e : e.skill);
+  assert.ok(cats.includes("builtin:scam_detect"));
+  assert.ok(cats.includes("builtin:report_gen"));
 });
 
 test("background_checker kit: every bundled builtin skill is registered", () => {
-  for (const cat of manifest.bundled_skills) {
+  for (const entry of manifest.bundled_skills) {
+    const cat = typeof entry === "string" ? entry : entry.skill;
     const c = skills.classifyCategory(cat);
     assert.ok(c, `unrunnable category: ${cat}`);
     if (c.kind === "builtin") assert.ok(skills.get(c.key), `not registered: ${c.key}`);

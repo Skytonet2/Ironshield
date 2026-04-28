@@ -264,16 +264,35 @@ async function runCrew({
 
     // auto or notify — proceed. Notify already wrote an escalation row;
     // we don't block on it, just record that we proceeded.
+    //
+    // Optional pre-run hook (Tier 5 — Kit DSL): callers that want
+    // per-step output threading (e.g. scout result → negotiator
+    // params) supply a `resolveStepParams({ step, priorResults, index })`
+    // callback in deps. The hook returns the final params to forward to
+    // the skill runtime; default behaviour is the planned step.params
+    // unchanged. Pure ad-hoc /run-crew callers don't need this.
     let runResult = null;
     let runError  = null;
-    if (resolved.runtime_category) {
+    let effectiveParams = step.params;
+    if (typeof deps.resolveStepParams === "function") {
+      try {
+        effectiveParams = await deps.resolveStepParams({
+          step,
+          priorResults: result.steps.map((s) => s.result),
+          index: i,
+        }) || step.params;
+      } catch (e) {
+        runError = `resolveStepParams failed: ${e.message}`;
+      }
+    }
+    if (resolved.runtime_category && !runError) {
       try {
         runResult = await sk.runByCategory({
           category: resolved.runtime_category,
           ctx: {
             owner:          mission.poster_wallet,
             agent_account:  mission.claimant_wallet || null,
-            params:         step.params,
+            params:         effectiveParams,
             mission_id,
           },
           // Built-ins bypass; HTTP requires admin verification — for
@@ -294,7 +313,8 @@ async function runCrew({
         step_index:        i,
         policy:            verdict.policy,
         runtime_category:  resolved.runtime_category,
-        params:            step.params,
+        params:            effectiveParams,           // post-resolution view of what ran
+        ...(effectiveParams !== step.params ? { params_planned: step.params } : {}),
         result:            runResult,
         ...(runError ? { error: runError } : {}),
       },

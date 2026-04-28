@@ -20,7 +20,10 @@ test("realtor kit: manifest core fields", () => {
 });
 
 test("realtor kit: every bundled builtin skill is registered", () => {
-  for (const cat of manifest.bundled_skills) {
+  for (const entry of manifest.bundled_skills) {
+    // Tier 5 DSL: entries can be either a category string OR
+    // { skill: <category>, params: {...} } for per-step output threading.
+    const cat = typeof entry === "string" ? entry : entry.skill;
     const c = skills.classifyCategory(cat);
     assert.ok(c, `unrunnable category: ${cat}`);
     if (c.kind !== "builtin") continue;

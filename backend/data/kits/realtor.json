@@ -12,11 +12,47 @@
   "required_connectors": ["facebook", "jiji"],
   "optional_connectors":  ["whatsapp", "tg", "x", "email"],
   "bundled_skills": [
-    "builtin:scout_fb",
-    "builtin:scout_jiji",
-    "builtin:outreach_dm",
-    "builtin:negotiator",
-    "builtin:verifier_listing"
+    {
+      "skill": "builtin:scout_fb",
+      "params": {
+        "group_id": "$preset.fb_group_ids[0]",
+        "limit":    25,
+        "filter":   "$preset.query"
+      }
+    },
+    {
+      "skill": "builtin:scout_jiji",
+      "params": {
+        "query":     "$preset.query",
+        "location":  "$preset.location",
+        "min_price": "$preset.price_range.min",
+        "max_price": "$preset.price_range.max",
+        "limit":     20
+      }
+    },
+    {
+      "skill": "builtin:verifier_listing",
+      "params": {
+        "listing": "$prev.items[0]"
+      }
+    },
+    {
+      "skill": "builtin:negotiator",
+      "params": {
+        "listing_title": "$1.items[0].title",
+        "listing_price": "$1.items[0].price_text",
+        "target_price":  "$preset.price_range.max",
+        "language":      "$preset.language",
+        "tone":          "$preset.tone"
+      }
+    },
+    {
+      "skill": "builtin:outreach_dm",
+      "params": {
+        "target":  "$preset.contact_handle",
+        "message": "$prev.message"
+      }
+    }
   ],
   "preset_config_schema": {
     "type": "object",
@@ -59,6 +95,10 @@
         "type": "array",
         "items": { "type": "string" },
         "description": "Optional: Facebook Group IDs the user is a member of. Leave empty to skip FB scout."
+      },
+      "contact_handle": {
+        "type": "string",
+        "description": "Where to send the negotiator's draft — e.g. a phone number for WhatsApp, a TG chat id, an email address. Channel is picked by outreach_dm based on what you've connected."
       }
     }
   },

@@ -13,7 +13,8 @@ const manifest = JSON.parse(
 test("freelancer_hunter kit: manifest core fields", () => {
   assert.equal(manifest.slug, "freelancer_hunter");
   assert.equal(manifest.vertical, "lead_gen");
-  assert.deepEqual(manifest.bundled_skills.sort(), [
+  const cats = manifest.bundled_skills.map((e) => typeof e === "string" ? e : e.skill).sort();
+  assert.deepEqual(cats, [
     "builtin:outreach_dm",
     "builtin:pitch_gen",
     "builtin:scout_tg",
@@ -22,7 +23,8 @@ test("freelancer_hunter kit: manifest core fields", () => {
 });
 
 test("freelancer_hunter kit: every bundled builtin skill is registered", () => {
-  for (const cat of manifest.bundled_skills) {
+  for (const entry of manifest.bundled_skills) {
+    const cat = typeof entry === "string" ? entry : entry.skill;
     const c = skills.classifyCategory(cat);
     assert.ok(c, `unrunnable category: ${cat}`);
     if (c.kind === "builtin") assert.ok(skills.get(c.key), `not registered: ${c.key}`);
