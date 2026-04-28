@@ -218,6 +218,26 @@ ALTER TABLE feed_comments
 CREATE INDEX IF NOT EXISTS idx_feed_comments_post ON feed_comments(post_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feed_comments_parent ON feed_comments(parent_comment_id) WHERE parent_comment_id IS NOT NULL;
 
+-- Likes on comments. Mirrors feed_likes shape; UNIQUE constraint
+-- gives us idempotent toggles + uniqueness without a separate
+-- constraint. ON DELETE CASCADE so likes vanish with their parent.
+CREATE TABLE IF NOT EXISTS feed_comment_likes (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,
+  comment_id INTEGER REFERENCES feed_comments(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, comment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_feed_comment_likes_comment ON feed_comment_likes(comment_id);
+
+-- Quote-repost a comment. When a user "reposts" a comment, we
+-- create a NEW feed_post with quoted_comment_id pointing at the
+-- referenced comment + optional body text — same pattern as
+-- quoted_post_id for post quotes. The comment row itself isn't
+-- modified; the renderer fetches + embeds the quoted comment by id.
+ALTER TABLE feed_posts
+  ADD COLUMN IF NOT EXISTS quoted_comment_id INTEGER REFERENCES feed_comments(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS feed_reposts (
   id         SERIAL PRIMARY KEY,
   user_id    INTEGER REFERENCES feed_users(id) ON DELETE CASCADE,

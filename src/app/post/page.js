@@ -29,7 +29,7 @@ import { API_BASE as API } from "@/lib/apiBase";
 import { apiFetch } from "@/lib/apiFetch";
 import {
   Loader2, ArrowLeft, MessageCircle, Send as SendIcon,
-  CornerDownRight,
+  CornerDownRight, Heart, Repeat2, Link as LinkIcon, Check,
 } from "lucide-react";
 
 function shortAddr(a) {
@@ -124,6 +124,47 @@ export default function PostPage() {
     }
     return roots;
   }, [comments]);
+
+  // Toggle a like on a comment. Returns the server's authoritative
+  // { liked, count } so the optimistic UI in CommentNode can reconcile.
+  const likeComment = useCallback(async (commentId) => {
+    if (!address) { openWallet?.(); return null; }
+    const r = await apiFetch(`/api/social/comment-like`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commentId }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  }, [address, openWallet]);
+
+  // Quote-repost a comment. Open the existing QuoteComposerModal-style
+  // prompt — for v1 we use a simple window.prompt to keep scope tight;
+  // a future pass can wire up a richer modal that shows the embedded
+  // comment preview while typing.
+  const quoteComment = useCallback(async (cm) => {
+    if (!address) { openWallet?.(); return; }
+    const text = (typeof window !== "undefined")
+      ? window.prompt(`Quote @${cm.username || "user"}'s reply with your take:`, "")
+      : null;
+    if (text === null) return;  // cancelled
+    try {
+      const r = await apiFetch(`/api/social/comment-quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId: cm.id, content: text || "" }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      const j = await r.json();
+      // Hop to the new post so the user sees their quote land.
+      if (j?.post?.id && typeof window !== "undefined") {
+        window.location.href = `/post/?postId=${j.post.id}`;
+      }
+    } catch (e) { alert(`Repost failed: ${e.message}`); }
+  }, [address, openWallet]);
 
   const postComment = useCallback(async ({ content, parentCommentId }) => {
     if (!address) { alert("Connect wallet to comment."); return; }
@@ -308,6 +349,9 @@ export default function PostPage() {
               }}
               canPost={!!address}
               posting={posting}
+              onLikeComment={likeComment}
+              onQuoteComment={quoteComment}
+              postId={postId}
             />
           ))}
         </section>
@@ -347,11 +391,42 @@ export default function PostPage() {
 // Recursive comment node. Max visual nesting at depth 4 — beyond
 // that we flatten into the parent's thread to save horizontal real
 // estate on mobile. Thread continuity is preserved in the data.
-function CommentNode({ t, c, depth, replyTarget, setReplyTarget, replyText, setReplyText, onSubmitReply, canPost, posting }) {
+function CommentNode({ t, c, depth, replyTarget, setReplyTarget, replyText, setReplyText, onSubmitReply, canPost, posting, onLikeComment, onQuoteComment, postId }) {
   const isOpen = replyTarget === c.id;
   const visualDepth = Math.min(depth, 4);
   const displayName = c.display_name || c.username || shortAddr(c.wallet_address);
   const handle = c.username ? `@${c.username}` : shortAddr(c.wallet_address);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Local optimistic state. Mirror the comment's incoming flags so a
+  // reload still reflects truth, but flip immediately on click for
+  // perceived snappiness; the parent's reload pass corrects drift.
+  const [liked,    setLiked]    = useState(!!c.liked_by_viewer);
+  const [likeCount, setLikeCount] = useState(c.like_count || 0);
+
+  const copyLink = useCallback(() => {
+    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/post/?postId=${postId}#c${c.id}`;
+    try {
+      navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1600);
+    } catch { /* clipboard blocked — UI just won't flip */ }
+  }, [c.id, postId]);
+
+  const toggleLike = useCallback(async () => {
+    if (!canPost) return;  // not connected
+    const next = !liked;
+    setLiked(next);
+    setLikeCount((n) => Math.max(0, n + (next ? 1 : -1)));
+    try {
+      const r = await onLikeComment(c.id);
+      if (r && typeof r.count === "number") setLikeCount(r.count);
+      if (r && typeof r.liked === "boolean") setLiked(r.liked);
+    } catch {
+      setLiked(!next);
+      setLikeCount((n) => Math.max(0, n + (next ? -1 : 1)));
+    }
+  }, [c.id, liked, onLikeComment, canPost]);
 
   return (
     <div style={{
@@ -359,7 +434,8 @@ function CommentNode({ t, c, depth, replyTarget, setReplyTarget, replyText, setR
       paddingLeft: visualDepth === 0 ? 0 : 10,
       borderLeft: visualDepth === 0 ? "none" : `1px solid ${t.border}`,
       marginTop: 10,
-    }} className="ix-cmt-branch">
+    }} className="ix-cmt-branch" id={`c${c.id}`}>
+
       <div style={{
         display: "flex", gap: 10, alignItems: "flex-start",
         padding: 10, borderRadius: 10,
@@ -390,7 +466,7 @@ function CommentNode({ t, c, depth, replyTarget, setReplyTarget, replyText, setR
           }}>
             {c.content}
           </div>
-          <div style={{ marginTop: 6 }}>
+          <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={() => { setReplyTarget(isOpen ? null : c.id); setReplyText(""); }}
@@ -402,6 +478,51 @@ function CommentNode({ t, c, depth, replyTarget, setReplyTarget, replyText, setR
               }}
             >
               <CornerDownRight size={11} /> {isOpen ? "Cancel" : "Reply"}
+            </button>
+            <button
+              type="button"
+              onClick={toggleLike}
+              disabled={!canPost}
+              title={canPost ? "Like" : "Connect to like"}
+              style={{
+                padding: "3px 8px", borderRadius: 6, border: "none",
+                background: "transparent", color: liked ? "#ef4444" : t.textDim,
+                fontSize: 11, fontWeight: 700,
+                cursor: canPost ? "pointer" : "not-allowed",
+                display: "inline-flex", alignItems: "center", gap: 4,
+              }}
+            >
+              <Heart size={11} fill={liked ? "currentColor" : "none"} />
+              {likeCount > 0 ? likeCount : "Like"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onQuoteComment(c)}
+              disabled={!canPost}
+              title={canPost ? "Quote in a new post" : "Connect to repost"}
+              style={{
+                padding: "3px 8px", borderRadius: 6, border: "none",
+                background: "transparent", color: t.textDim,
+                fontSize: 11, fontWeight: 700,
+                cursor: canPost ? "pointer" : "not-allowed",
+                display: "inline-flex", alignItems: "center", gap: 4,
+              }}
+            >
+              <Repeat2 size={11} /> Repost
+            </button>
+            <button
+              type="button"
+              onClick={copyLink}
+              title="Copy link to comment"
+              style={{
+                padding: "3px 8px", borderRadius: 6, border: "none",
+                background: "transparent",
+                color: linkCopied ? "#10b981" : t.textDim,
+                fontSize: 11, fontWeight: 700, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", gap: 4,
+              }}
+            >
+              {linkCopied ? <><Check size={11} /> Copied</> : <><LinkIcon size={11} /> Share</>}
             </button>
           </div>
           {isOpen && (
@@ -461,6 +582,9 @@ function CommentNode({ t, c, depth, replyTarget, setReplyTarget, replyText, setR
           onSubmitReply={onSubmitReply}
           canPost={canPost}
           posting={posting}
+          onLikeComment={onLikeComment}
+          onQuoteComment={onQuoteComment}
+          postId={postId}
         />
       ))}
     </div>
