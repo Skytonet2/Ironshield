@@ -30,6 +30,7 @@ const scoutJiji       = require("./scout_jiji");
 const outreachDm      = require("./outreach_dm");
 const negotiator      = require("./negotiator");
 const verifierListing = require("./verifier_listing");
+const verifierScam    = require("./verifier_scam");
 
 const REGISTRY = {};
 function register(mod) {
@@ -45,6 +46,7 @@ register(scoutJiji);
 register(outreachDm);
 register(negotiator);
 register(verifierListing);
+register(verifierScam);
 
 /** Resolve a SkillMetadata.category to an executable shape:
  *    "builtin:<id>" → { kind: "builtin", key }     (registered above)
