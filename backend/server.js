@@ -83,6 +83,7 @@ app.use("/api/agents/avatar",   require("./routes/avatars.route"));
 app.use("/api/agents/diy",      require("./routes/agentsDiy.route"));
 app.use("/api/agents",    require("./routes/agents.route"));
 app.use("/api/skills",    require("./routes/skills.route"));
+app.use("/api/connectors", require("./routes/connectors.route"));
 app.use("/api/trending",  require("./routes/trending.route"));
 app.use("/api/alpha",    require("./routes/alpha.route"));
 
