@@ -9,6 +9,7 @@ const alert     = require("../commands/alert");
 const report    = require("../commands/report");
 const trending  = require("../commands/trending");
 const link      = require("../commands/link");
+const onboard   = require("../commands/onboard");
 const custodial = require("../commands/custodial");
 const agent     = require("./agentHandler");
 const { tg }    = require("../services/backend");
@@ -44,7 +45,12 @@ async function handleDM(bot, msg) {
   //    Runs first so "yes" doesn't get routed elsewhere.
   if (await agent.handlePendingReply(bot, msg)) return;
 
-  // 3) Wallet-first onboarding: a plain address links the wallet.
+  // 3a) IronGuide concierge: if there's an in-flight onboarding session
+  //     for this user, route the answer there BEFORE the wallet detector
+  //     so a typed answer like "Nigeria" doesn't get parsed as anything else.
+  if (await onboard.tryRoute(bot, msg)) return;
+
+  // 3b) Wallet-first onboarding: a plain address links the wallet.
   if (await link.tryLinkFromMessage(bot, msg)) return;
 
   // 4) Fast-path trading intent parser — regex catches the obvious
