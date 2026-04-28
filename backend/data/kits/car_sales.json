@@ -1,0 +1,72 @@
+{
+  "$schema": "../kits.schema.json",
+  "slug": "car_sales",
+  "title": "Car Sales Agent",
+  "vertical": "commerce",
+  "description": "Scouts second-hand cars across Facebook Groups + jiji.ng, screens each listing for vehicle-specific scam patterns (VIN mismatches, odometer claims, escrow-bypass language), drafts an opening offer anchored at a target price, and ships outreach via the user's preferred channel.",
+  "hero_image_url": null,
+  "example_missions": [
+    "Find 5 Toyota Camry 2015–2018 in Lagos under ₦8M with verified VIN",
+    "Scout 3 used Honda Civic in Abuja under ₦6M with full service history"
+  ],
+  "required_connectors": ["facebook", "jiji"],
+  "optional_connectors":  ["whatsapp", "tg", "x", "email"],
+  "bundled_skills": [
+    "builtin:scout_fb",
+    "builtin:scout_jiji",
+    "builtin:outreach_dm",
+    "builtin:negotiator",
+    "builtin:verifier_scam"
+  ],
+  "preset_config_schema": {
+    "type": "object",
+    "required": ["model", "year_range", "price_floor", "location"],
+    "properties": {
+      "model": {
+        "type": "string",
+        "minLength": 2,
+        "description": "Make + model — e.g. 'Toyota Camry'"
+      },
+      "year_range": {
+        "type": "object",
+        "required": ["min", "max"],
+        "properties": {
+          "min": { "type": "integer", "minimum": 1990, "maximum": 2050 },
+          "max": { "type": "integer", "minimum": 1990, "maximum": 2050 }
+        }
+      },
+      "price_floor": {
+        "type": "number",
+        "minimum": 0,
+        "description": "Walk-away price — listings below this are auto-flagged as suspicious"
+      },
+      "price_ceiling": {
+        "type": "number",
+        "minimum": 0,
+        "description": "Anchor price for negotiator step"
+      },
+      "location": { "type": "string" },
+      "language": { "type": "string", "default": "English" },
+      "tone": {
+        "type": "string",
+        "default": "warm-professional",
+        "enum": ["warm-professional", "casual", "blunt"]
+      },
+      "fb_group_ids": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  },
+  "default_pricing": {
+    "model": "per_mission",
+    "amount_yocto": "1000000000000000000000000",
+    "token": "NEAR"
+  },
+  "revenue_split_bps": {
+    "kit_curator": 1500,
+    "agent_owner": 7500,
+    "platform":     1000
+  },
+  "status": "beta"
+}

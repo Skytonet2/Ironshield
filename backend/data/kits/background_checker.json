@@ -1,0 +1,63 @@
+{
+  "$schema": "../kits.schema.json",
+  "slug": "background_checker",
+  "title": "Background Checker",
+  "vertical": "reputation",
+  "description": "Runs a public-source due diligence sweep on a subject (handle, name, phone). Gathers signals from X + public Facebook Groups, runs each through verifier_listing's red-flag screener, cross-checks the subject for fraud patterns, and synthesises everything into a single report.",
+  "hero_image_url": null,
+  "example_missions": [
+    "Background-check @some_handle on X for romance-scam patterns",
+    "Verify a Lagos-based seller's credibility before paying a deposit"
+  ],
+  "required_connectors": ["x"],
+  "optional_connectors":  ["facebook"],
+  "bundled_skills": [
+    "builtin:scout_x",
+    "builtin:scout_fb",
+    "builtin:verifier_listing",
+    "builtin:scam_detect",
+    "builtin:report_gen"
+  ],
+  "preset_config_schema": {
+    "type": "object",
+    "required": ["subject", "depth"],
+    "properties": {
+      "subject": {
+        "type": "string",
+        "minLength": 2,
+        "description": "Handle, name, phone, or other identifier to check"
+      },
+      "depth": {
+        "type": "string",
+        "enum": ["quick", "standard", "deep"],
+        "default": "standard",
+        "description": "Quick: ~30s, X only. Standard: X + 1 FB Group. Deep: X + multiple FB Groups + cross-references."
+      },
+      "x_query_override": {
+        "type": "string",
+        "description": "Optional X search query. If empty, derived from subject."
+      },
+      "fb_group_ids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Facebook Group IDs to scan for mentions of the subject."
+      },
+      "report_format": {
+        "type": "string",
+        "enum": ["markdown", "json"],
+        "default": "markdown"
+      }
+    }
+  },
+  "default_pricing": {
+    "model": "per_mission",
+    "amount_yocto": "2000000000000000000000000",
+    "token": "NEAR"
+  },
+  "revenue_split_bps": {
+    "kit_curator": 1500,
+    "agent_owner": 7500,
+    "platform":     1000
+  },
+  "status": "beta"
+}

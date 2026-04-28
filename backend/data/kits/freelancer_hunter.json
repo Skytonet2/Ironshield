@@ -1,0 +1,72 @@
+{
+  "$schema": "../kits.schema.json",
+  "slug": "freelancer_hunter",
+  "title": "Freelancer Hunter",
+  "vertical": "lead_gen",
+  "description": "Hunts cold-outreach prospects on X and Telegram, LLM-filters them against the freelancer's service offering, drafts a personalised pitch, and ships outreach via the user's preferred channel. TG inbound monitoring is best-effort — the orchestrator bot must already be in the channels of interest.",
+  "hero_image_url": null,
+  "example_missions": [
+    "Find 10 startup founders on X looking for a React contractor this week",
+    "Scout 5 prospects in TG channels asking about Solidity audits"
+  ],
+  "required_connectors": ["x"],
+  "optional_connectors":  ["tg", "whatsapp", "email"],
+  "bundled_skills": [
+    "builtin:scout_x",
+    "builtin:scout_tg",
+    "builtin:outreach_dm",
+    "builtin:pitch_gen"
+  ],
+  "preset_config_schema": {
+    "type": "object",
+    "required": ["service_offered", "target_market"],
+    "properties": {
+      "service_offered": {
+        "type": "string",
+        "minLength": 4,
+        "description": "Plain-English description of what you do — e.g. 'React + TypeScript contractor with 5y SaaS experience'"
+      },
+      "target_market": {
+        "type": "string",
+        "description": "Who you want to reach — e.g. 'YC-backed early-stage startups', 'NEAR ecosystem teams'"
+      },
+      "pricing_hint": {
+        "type": "string",
+        "default": "open to discussion",
+        "description": "Optional anchor — e.g. '$80–120/hr' or 'fixed-bid only'"
+      },
+      "x_query": {
+        "type": "string",
+        "description": "X search query. If empty, derived from service_offered + target_market."
+      },
+      "tg_filter": {
+        "type": "string",
+        "description": "Optional substring to filter inbound TG messages on"
+      },
+      "language": { "type": "string", "default": "English" },
+      "tone": {
+        "type": "string",
+        "default": "warm-professional",
+        "enum": ["warm-professional", "casual", "blunt"]
+      },
+      "min_relevance_score": {
+        "type": "number",
+        "default": 5,
+        "minimum": 0,
+        "maximum": 10,
+        "description": "Drop X tweets scoring below this on the LLM relevance filter"
+      }
+    }
+  },
+  "default_pricing": {
+    "model": "per_mission",
+    "amount_yocto": "500000000000000000000000",
+    "token": "NEAR"
+  },
+  "revenue_split_bps": {
+    "kit_curator": 1500,
+    "agent_owner": 7500,
+    "platform":     1000
+  },
+  "status": "beta"
+}
