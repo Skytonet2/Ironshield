@@ -105,19 +105,111 @@ router.post("/comment", requireWallet, async (req, res, next) => {
 // GET /api/social/comments/:postId
 //
 // Returns flat list ordered oldest→newest so the frontend can build
-// a tree in O(n) via a single pass. Old behavior (DESC) was fine for
-// a flat list but tree rendering needs parents before children for
-// the render order to be stable across reloads. UI caps at 300
-// comments per post; the cap is loose — nested reply counts will
-// realistically stay well under this.
+// a tree in O(n) via a single pass. Each row carries like_count +
+// liked_by_viewer (when x-wallet is provided) so the comment-like
+// button renders the right initial state without a second round-trip.
 router.get("/comments/:postId", async (req, res, next) => {
   try {
     const r = await db.query(
       `SELECT c.*, u.username, u.display_name, u.pfp_url, u.account_type,
-              u.wallet_address
+              u.wallet_address,
+              (SELECT COUNT(*)::int FROM feed_comment_likes l
+                 WHERE l.comment_id = c.id) AS like_count
          FROM feed_comments c JOIN feed_users u ON u.id = c.author_id
-        WHERE c.post_id=$1 ORDER BY c.created_at ASC LIMIT 300`, [req.params.postId]);
-    res.json({ comments: r.rows });
+        WHERE c.post_id=$1 ORDER BY c.created_at ASC LIMIT 300`,
+      [req.params.postId]);
+    const comments = r.rows;
+
+    // Viewer-state pass: which of these comments did the viewer like?
+    // Bare x-wallet is enough — same trust posture as feed reads.
+    const viewerWallet = req.header("x-wallet");
+    let liked = new Set();
+    if (viewerWallet && comments.length) {
+      const viewer = await db.query(
+        "SELECT id FROM feed_users WHERE LOWER(wallet_address) = LOWER($1) LIMIT 1",
+        [viewerWallet]);
+      const viewerId = viewer.rows[0]?.id;
+      if (viewerId) {
+        const ids = comments.map((c) => c.id);
+        const likes = await db.query(
+          "SELECT comment_id FROM feed_comment_likes WHERE user_id = $1 AND comment_id = ANY($2)",
+          [viewerId, ids]);
+        liked = new Set(likes.rows.map((r) => r.comment_id));
+      }
+    }
+    for (const c of comments) c.liked_by_viewer = liked.has(c.id);
+
+    res.json({ comments });
+  } catch (e) { next(e); }
+});
+
+// POST /api/social/comment-like  body: { commentId }
+// Toggle a like on a comment. Mirrors /like for posts. Returns the
+// new viewer state + post-toggle count so the UI flips deterministically.
+router.post("/comment-like", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const { commentId } = req.body || {};
+    if (!commentId) return res.status(400).json({ error: "commentId required" });
+    const ex = await db.query(
+      "SELECT id FROM feed_comment_likes WHERE user_id=$1 AND comment_id=$2",
+      [user.id, commentId]);
+    let liked;
+    if (ex.rows.length) {
+      await db.query("DELETE FROM feed_comment_likes WHERE id=$1", [ex.rows[0].id]);
+      liked = false;
+    } else {
+      await db.query(
+        "INSERT INTO feed_comment_likes (user_id, comment_id) VALUES ($1,$2)",
+        [user.id, commentId]);
+      liked = true;
+      // Notify the comment author. Reuse the post-likes notification
+      // type — frontend renders "X liked your reply" vs "your post"
+      // by checking the entity referenced.
+      const author = await db.query(
+        "SELECT author_id, post_id FROM feed_comments WHERE id=$1", [commentId]);
+      if (author.rows[0]) {
+        notify(author.rows[0].author_id, "comment_like", user.id, author.rows[0].post_id);
+      }
+    }
+    const c = await db.query(
+      "SELECT COUNT(*)::int AS c FROM feed_comment_likes WHERE comment_id=$1",
+      [commentId]);
+    res.json({ liked, count: c.rows[0].c });
+  } catch (e) { next(e); }
+});
+
+// POST /api/social/comment-quote  body: { commentId, content }
+// Quote-repost a comment as a new post. Creates a feed_posts row with
+// quoted_comment_id set + the user's commentary in `content`. The
+// renderer fetches + embeds the quoted comment by id at read time,
+// same shape as quoted_post_id.
+router.post("/comment-quote", requireWallet, async (req, res, next) => {
+  try {
+    const user = await getOrCreateUser(req.wallet);
+    const { commentId, content } = req.body || {};
+    if (!commentId) return res.status(400).json({ error: "commentId required" });
+    const text = String(content || "").trim();
+    if (text.length > 500) return res.status(400).json({ error: "content > 500 chars" });
+
+    // Verify the comment exists; we tag the comment author + parent
+    // post author for notifications.
+    const cm = await db.query(
+      "SELECT id, author_id, post_id FROM feed_comments WHERE id=$1 LIMIT 1",
+      [commentId]);
+    if (!cm.rows.length) return res.status(404).json({ error: "comment not found" });
+
+    const ins = await db.query(
+      `INSERT INTO feed_posts (author_id, content, quoted_comment_id)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [user.id, text, commentId]);
+
+    // Notify the quoted-comment author (skip if quoting yourself).
+    if (cm.rows[0].author_id && cm.rows[0].author_id !== user.id) {
+      notify(cm.rows[0].author_id, "comment_quote", user.id, ins.rows[0].id);
+    }
+    await enqueue(user.id, "comment-quote", { commentId, postId: ins.rows[0].id });
+    res.json({ post: ins.rows[0] });
   } catch (e) { next(e); }
 });
 

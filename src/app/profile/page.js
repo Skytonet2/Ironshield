@@ -11,7 +11,7 @@ import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
 import FeedCard from "@/components/feed/FeedCard";
 import FeedRightRail from "@/components/feed/FeedRightRail";
-import { Coins, Camera, X as XIcon, Loader2 } from "lucide-react";
+import { Coins, Camera, X as XIcon, Loader2, Reply } from "lucide-react";
 import { primeViewerProfile } from "@/lib/hooks/useViewerProfile";
 import FollowButton from "@/components/profile/FollowButton";
 import ReferralCard from "@/components/profile/ReferralCard";
@@ -30,6 +30,7 @@ const BACKEND_BASE = (() => {
 
 const TABS = [
   { key: "posts",    label: "Posts",    endpoint: (a) => `/api/users/${encodeURIComponent(a)}/posts` },
+  { key: "replies",  label: "Replies",  endpoint: (a) => `/api/users/${encodeURIComponent(a)}/replies` },
   { key: "reposts",  label: "Reposts",  endpoint: (a) => `/api/users/${encodeURIComponent(a)}/reposts` },
   { key: "likes",    label: "Likes",    endpoint: (a) => `/api/users/${encodeURIComponent(a)}/likes` },
   { key: "deployed", label: "Deployed", endpoint: null },
@@ -61,6 +62,10 @@ export default function ProfilePage() {
 
   const [tab, setTab] = useState("posts");
   const [posts, setPosts] = useState([]);
+  // Replies live in a separate state because the endpoint returns
+  // { comment, parent_post } pairs, not raw posts. Keeping them apart
+  // avoids forcing FeedCard to know about a comment-context shape.
+  const [replies, setReplies] = useState([]);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState(null);
@@ -116,9 +121,15 @@ export default function ProfilePage() {
       headers: viewerAddress ? { "x-wallet": viewerAddress } : {},
       signal: ctl.signal,
     })
-      .then(r => r.ok ? r.json() : { posts: [] })
-      .then(j => setPosts(Array.isArray(j?.posts) ? j.posts.filter(Boolean) : []))
-      .catch(() => setPosts([]))
+      .then(r => r.ok ? r.json() : (tab === "replies" ? { replies: [] } : { posts: [] }))
+      .then(j => {
+        if (tab === "replies") {
+          setReplies(Array.isArray(j?.replies) ? j.replies.filter(Boolean) : []);
+        } else {
+          setPosts(Array.isArray(j?.posts) ? j.posts.filter(Boolean) : []);
+        }
+      })
+      .catch(() => { if (tab === "replies") setReplies([]); else setPosts([]); })
       .finally(() => setLoading(false));
     return () => ctl.abort();
   }, [targetKey, targetAddress, tab, viewerAddress]);
@@ -384,11 +395,31 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {!loading && tab !== "deployed" && posts.length === 0 && (
+          {!loading && tab === "replies" && replies.length === 0 && (
+            <EmptyPanel t={t} label="No replies yet." />
+          )}
+
+          {!loading && tab === "replies" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {replies.map((r) => (
+                <ReplyCard
+                  key={r.comment.id}
+                  t={t}
+                  comment={r.comment}
+                  parentPost={r.parent_post}
+                  viewerAddress={viewerAddress}
+                  onLike={onLike} onRepost={onRepost} onQuote={onQuote}
+                  onTip={onTip} onReply={onReply}
+                />
+              ))}
+            </div>
+          )}
+
+          {!loading && tab !== "deployed" && tab !== "replies" && posts.length === 0 && (
             <EmptyPanel t={t} label="Nothing here yet." />
           )}
 
-          {!loading && tab !== "deployed" && (
+          {!loading && tab !== "deployed" && tab !== "replies" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {posts.map((p) => (
                 <FeedCard
@@ -771,3 +802,48 @@ function input(t) {
     width: "100%",
   };
 }
+
+function ReplyCard({ t, comment, parentPost, viewerAddress, onLike, onRepost, onQuote, onTip, onReply }) {
+  // A reply card is the user's own comment text in a small framed
+  // block, with the parent post rendered underneath via FeedCard so
+  // the reader has the conversational context. Clicking the comment
+  // text takes them into the thread anchored to the comment.
+  const ts = new Date(comment.created_at).toLocaleString();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <a
+        href={`/post?postId=${parentPost.id}#c${comment.id}`}
+        style={{
+          display: "block", textDecoration: "none", color: "inherit",
+          padding: "10px 14px", borderRadius: 10,
+          border: `1px solid ${t.border}`, background: "var(--bg-card)",
+        }}
+      >
+        <div style={{
+          fontSize: 11, color: t.textDim, marginBottom: 6,
+          display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <Reply size={11} /> Replied {ts}
+          {comment.like_count > 0 && (
+            <span style={{ marginLeft: 6 }}>· {comment.like_count} like{comment.like_count === 1 ? "" : "s"}</span>
+          )}
+        </div>
+        <div style={{ fontSize: 14, color: t.text, whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+          {comment.content}
+        </div>
+      </a>
+      <div style={{ paddingLeft: 16, borderLeft: `2px solid ${t.border}` }}>
+        <FeedCard
+          post={parentPost}
+          viewer={{ wallet_address: viewerAddress }}
+          onLike={()      => onLike(parentPost)}
+          onRepost={()    => onRepost(parentPost)}
+          onQuote={onQuote}
+          onTip={()       => onTip(parentPost)}
+          onReply={(text) => onReply(parentPost, text)}
+        />
+      </div>
+    </div>
+  );
+}
+
