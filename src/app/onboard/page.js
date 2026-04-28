@@ -182,7 +182,7 @@ export default function OnboardPage() {
   }, [send]);
 
   const deployHref = recommendation?.kit_slug
-    ? `/agents/deploy/${encodeURIComponent(recommendation.kit_slug)}?ironguide=${sessionId}`
+    ? `/agents/deploy?slug=${encodeURIComponent(recommendation.kit_slug)}&ironguide=${sessionId}`
     : null;
 
   return (

@@ -1,14 +1,19 @@
 "use client";
-// /missions/[id] — Mission detail + audit timeline + escalations.
+// /missions?id=<n> — Mission detail + audit timeline + escalations.
+//
+// Was previously /missions/[id] but `output: "export"` doesn't allow
+// dynamic segments without a static path list, and mission ids are
+// runtime-generated. Switched to a query param so the route is fully
+// static-exportable. Backend /api/missions/:id is unchanged.
 //
 // Subscribes to /api/missions/:id/stream for live updates (Tier 1 was
 // supposed to ship the SSE indexer; until then the backend implements
 // /stream as a 3-second poll-and-diff). If EventSource fails on the
 // browser, we fall through to a plain interval poll.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   Activity, ArrowLeft, Check, X as XIcon, Clock, Loader2, ShieldAlert,
   ChevronRight, ExternalLink, AlertTriangle,
@@ -26,9 +31,20 @@ const STATUS_PALETTE = {
   aborted:   { tone: "var(--text-3)",     label: "Aborted" },
 };
 
-export default function MissionDetailPage() {
-  const params = useParams();
-  const id = Number(params?.id);
+// useSearchParams must run inside a Suspense boundary during static
+// prerender (Next 14+) — without it the export pass throws and the
+// build fails. The outer default export wraps an inner component.
+export default function MissionsPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#9aa4bd", fontSize: 13 }}>Loading…</div>}>
+      <MissionDetailPage />
+    </Suspense>
+  );
+}
+
+function MissionDetailPage() {
+  const search = useSearchParams();
+  const id = Number(search?.get("id"));
 
   const { address: wallet } = useWallet?.() || {};
   const [mission, setMission]     = useState(null);

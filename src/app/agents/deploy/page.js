@@ -1,5 +1,10 @@
 "use client";
-// /agents/deploy/[kit_slug] — Kit deployment wizard.
+// /agents/deploy?slug=<kit_slug> — Kit deployment wizard.
+//
+// Was previously /agents/deploy/[kit_slug] but `output: "export"`
+// rejects dynamic segments without an enumerated static path list,
+// and kit slugs are catalog-driven runtime values. Switched to a
+// query param so the route is fully static-exportable.
 //
 // 4-step (Details → Permissions → Connections → Review/Deploy) clone of
 // the skill-create wizard's visual language, scoped to the much smaller
@@ -17,9 +22,9 @@
 // ?ironguide=<id> query param links the deployment back to the
 // concierge session (so /onboard can flip its status to 'deployed').
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, ArrowRight, Check, Loader2, ShieldCheck, Plug,
   Sparkles, AlertTriangle, Wallet, Send,
@@ -35,14 +40,24 @@ const STEPS = [
   { key: "review",      label: "Review & Deploy" },
 ];
 
-export default function DeployKitPage() {
-  // Next 16 wraps the page in a Suspense boundary so useParams + useSearchParams
-  // both resolve client-side without the page-arg Promise dance.
-  const params = useParams();
-  const slug = decodeURIComponent(String(params?.kit_slug || ""));
+// useSearchParams must run inside a Suspense boundary during static
+// prerender (Next 14+) — see the same pattern in /missions/page.js.
+export default function DeployKitPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#9aa4bd", fontSize: 13 }}>Loading kit…</div>}>
+      <DeployKitPage />
+    </Suspense>
+  );
+}
+
+function DeployKitPage() {
+  // Both slug + ironguide come from query params now — slug used to
+  // be a route segment, but the dynamic-segment + output:"export"
+  // combination doesn't build. Same reader, just a different source.
   const router = useRouter();
   const search = useSearchParams();
-  const ironguideSessionId = search.get("ironguide");
+  const slug = decodeURIComponent(String(search?.get("slug") || ""));
+  const ironguideSessionId = search?.get("ironguide");
 
   const { address: wallet, connected, showModal } = useWallet?.() || {};
   const { registerAgent, profile, hasAgent } = useAgent();

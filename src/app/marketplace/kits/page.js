@@ -192,7 +192,7 @@ function KitCard({ kit, deployments }) {
 
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <Link
-          href={`/agents/deploy/${encodeURIComponent(kit.slug)}`}
+          href={`/agents/deploy?slug=${encodeURIComponent(kit.slug)}`}
           style={cardCtaStyle}
         >
           <ArrowRight size={13} />
