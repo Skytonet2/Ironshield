@@ -15,11 +15,14 @@
 //   GET  /api/missions/:id/audit/root     the latest payload_hash
 //   POST /api/missions/:id/record-create  off-chain bootstrap after create_mission
 //   POST /api/missions/:id/audit          append a step to the audit log
+//   POST /api/missions/:id/run-crew       run a sequential crew (auth-gated)
 //   POST /api/missions/:id/mirror         indexer/orchestrator pushes a state event
 
 const router = require("express").Router();
-const requireWallet = require("../middleware/requireWallet");
-const missionEngine = require("../services/missionEngine");
+const requireWallet      = require("../middleware/requireWallet");
+const missionEngine      = require("../services/missionEngine");
+const crewOrchestrator   = require("../services/crewOrchestrator");
+const tgEscalation       = require("../services/tgEscalation");
 
 router.get("/", async (req, res) => {
   try {
@@ -156,6 +159,46 @@ router.post("/:id/audit", requireWallet, async (req, res) => {
   }
 });
 
+// Run a sequential crew against a mission. Open to the wallet that's
+// the poster OR the claimant. Each step is gated through authEngine;
+// require_approval verdicts dispatch to TG via tgEscalation.dispatch
+// and freeze the run mid-stream. Returns the run summary so the caller
+// can poll for resume once an escalation resolves.
+//
+// Factored out as a named handler so it's unit-testable against
+// mocked deps without spinning up Express.
+async function runCrewHandler(req, res, deps = {}) {
+  const me = deps.missionEngine    || missionEngine;
+  const co = deps.crewOrchestrator || crewOrchestrator;
+  const tg = deps.tgEscalation     || tgEscalation;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "id must be numeric" });
+    const mission = await me.getMission(id);
+    if (!mission) return res.status(404).json({ error: "Mission not found" });
+    const wallet = String(req.wallet || "").toLowerCase();
+    const allowed = [mission.poster_wallet, mission.claimant_wallet]
+      .filter(Boolean)
+      .map((w) => w.toLowerCase());
+    if (!allowed.includes(wallet)) {
+      return res.status(403).json({ error: "Only poster or claimant may run a crew" });
+    }
+    const { steps } = req.body || {};
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return res.status(400).json({ error: "steps must be a non-empty array" });
+    }
+    const run = await co.runCrew({
+      mission_id: id,
+      steps,
+      dispatchEscalation: tg.dispatch,
+    });
+    return res.json({ ok: true, run });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+}
+router.post("/:id/run-crew", requireWallet, (req, res) => runCrewHandler(req, res));
+
 // Indexer / orchestrator pushes contract events into the off-chain
 // mirror. Gated by an env shared secret since this isn't user-facing.
 router.post("/:id/mirror", async (req, res) => {
@@ -176,3 +219,4 @@ router.post("/:id/mirror", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.runCrewHandler = runCrewHandler;
