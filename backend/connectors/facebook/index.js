@@ -105,6 +105,39 @@ async function invoke(action, ctx = {}) {
   }
 }
 
+// Refresh — Facebook does not issue rotating refresh_tokens. Instead,
+// short-lived user tokens (1h) can be exchanged for long-lived ones
+// (60d) via fb_exchange_token. We do that exchange on the OAuth
+// callback's first store; here we just extend a long-lived token by
+// one more 60-day cycle if it's inside the refresh window. If the
+// extension fails (token already expired, scopes revoked), the user
+// has to re-run /oauth/start — there's no other automated path.
+async function refresh({ wallet }) {
+  const id     = process.env.FACEBOOK_APP_ID;
+  const secret = process.env.FACEBOOK_APP_SECRET;
+  if (!id || !secret) throw new Error("facebook refresh: app id/secret unset");
+  const row = await credentialStore.getDecrypted({ wallet, connector: "facebook" });
+  if (!row?.payload?.access_token) throw new Error("facebook refresh: no token on file");
+  const u = new URL("https://graph.facebook.com/v19.0/oauth/access_token");
+  u.searchParams.set("grant_type",        "fb_exchange_token");
+  u.searchParams.set("client_id",         id);
+  u.searchParams.set("client_secret",     secret);
+  u.searchParams.set("fb_exchange_token", row.payload.access_token);
+  const r = await fetch(u.toString());
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j?.access_token) {
+    throw new Error(`facebook refresh failed: ${r.status} ${j?.error?.message || ""}`);
+  }
+  return {
+    payload: {
+      ...row.payload,                  // preserve page_tokens
+      access_token: j.access_token,
+      token_type:   j.token_type || "bearer",
+    },
+    expiresAt: j.expires_in ? new Date(Date.now() + j.expires_in * 1000).toISOString() : null,
+  };
+}
+
 module.exports = {
   name: "facebook",
   capabilities: ["search", "read", "write"],
@@ -115,4 +148,5 @@ module.exports = {
   rate_limits: { per_minute: 30, per_hour: 60, scope: "wallet" },
   auth_method: "oauth",
   invoke,
+  refresh,
 };

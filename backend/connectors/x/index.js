@@ -97,6 +97,46 @@ async function invoke(action, ctx = {}) {
   }
 }
 
+// Refresh — called by connectorRefresh worker before expires_at fires.
+// X expects grant_type=refresh_token + Basic-auth client creds at the
+// same /oauth2/token endpoint the OAuth callback uses. Returns the
+// shape upsert() expects: { payload, expiresAt }.
+async function refresh({ wallet }) {
+  const id     = process.env.X_CLIENT_ID;
+  const secret = process.env.X_CLIENT_SECRET;
+  if (!id || !secret) throw new Error("x refresh: X_CLIENT_ID/SECRET unset");
+  const row = await credentialStore.getDecrypted({ wallet, connector: "x" });
+  if (!row?.payload?.refresh_token) throw new Error("x refresh: no refresh_token on file");
+  const body = new URLSearchParams({
+    grant_type:    "refresh_token",
+    refresh_token: row.payload.refresh_token,
+    client_id:     id,
+  });
+  const basic = Buffer.from(`${id}:${secret}`).toString("base64");
+  const r = await fetch("https://api.x.com/2/oauth2/token", {
+    method: "POST",
+    headers: {
+      authorization:  `Basic ${basic}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j?.access_token) {
+    throw new Error(`x refresh failed: ${r.status} ${j?.error || ""}`);
+  }
+  return {
+    payload: {
+      access_token:  j.access_token,
+      // X rotates refresh tokens — use the new one if returned, else keep old.
+      refresh_token: j.refresh_token || row.payload.refresh_token,
+      token_type:    j.token_type || "bearer",
+      scope:         j.scope || row.payload.scope,
+    },
+    expiresAt: j.expires_in ? new Date(Date.now() + j.expires_in * 1000).toISOString() : null,
+  };
+}
+
 module.exports = {
   name: "x",
   capabilities: ["search", "read", "write"],
@@ -106,4 +146,5 @@ module.exports = {
   rate_limits: { per_minute: 12, per_hour: 180, scope: "wallet" },
   auth_method: "oauth",
   invoke,
+  refresh,
 };
