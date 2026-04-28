@@ -23,7 +23,12 @@ const provider = new providers.JsonRpcProvider({ url: RPC_URL });
 const SKILLS_CONTRACT = process.env.STAKING_CONTRACT_ID || process.env.CONTRACT_ID || "ironshield.near";
 // Platform cut on skill installs. Must match the contract's
 // PLATFORM_FEE_BPS — change here if the contract ever rotates.
-const PLATFORM_FEE_BPS = 100; // 1.00%
+// Day 15 raised the constant to 1500 (15%) on testnet but mainnet
+// contract still runs 100 (1%) until the Day 21 cutover redeploys
+// ironshield.near. Hold this at 100 until then or the dashboard
+// over-states treasury take on every mainnet install. Day 21 PR
+// must move both in lockstep.
+const PLATFORM_FEE_BPS = 100; // 1.00% — bumps to 1500 at Day 21 cutover
 
 /** GET /api/skills/registry
  *  Public list of every executable built-in skill + its expected

@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
+import { apiFetch } from "@/lib/apiFetch";
+import { API_BASE as API } from "@/lib/apiBase";
 
 const YOCTO_PER_NEAR = 1_000_000_000_000_000_000_000_000n;
 
@@ -654,14 +656,46 @@ export default function MarketplacePage() {
 
   // Install handler — called from the featured grid + top table. Sends
   // the skill's `price_yocto` as attached deposit; contract validates +
-  // splits 99/1 + refunds overpay. Free skills sign a 0-deposit tx.
+  // splits 85/15 + refunds overpay. Free skills sign a 0-deposit tx.
   //
   // The contract's install_skill panics if the caller has no
   // registered AgentProfile, so we pre-flight here: no wallet →
   // open the connect modal; no profile → route to the wizard.
   // That's a real check (chain view), not a UI cosmetic.
+  //
+  // After a paid install, fire-and-forget POST to Day 16's
+  // /api/skills/record-install so the creator-revenue dashboard
+  // picks up the sale. Backend dedupes by tx_hash and pulls the
+  // canonical numbers from on-chain — losing this hop just means
+  // the dashboard lags until a backfill sweep (not built yet).
+  const recordInstallSale = async (txHash) => {
+    if (!txHash) return;
+    try {
+      await apiFetch(`/api/skills/record-install`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ txHash }),
+      });
+    } catch { /* dashboard lag is acceptable; no UX surfacing */ }
+  };
+
   const handleInstall = async (skill) => {
     if (!connected) { showModal?.(); return; }
+
+    // Confirm intent on paid skills. Free installs skip the modal —
+    // a confirmation popup for "do you want to install this for free?"
+    // is friction with no upside.
+    const priceY = String(skill.price_yocto ?? "0");
+    if (priceY !== "0" && typeof window !== "undefined") {
+      const priceNear = formatPrice(priceY);
+      const ok = window.confirm(
+        `Buy ${skill.name || `skill #${skill.id}`} for ${priceNear} NEAR?\n\n` +
+        `85% goes to the author, 15% to the platform treasury. ` +
+        `Overpay refunds automatically.`
+      );
+      if (!ok) return;
+    }
+
     setInstallingId(skill.id);
     try {
       const profile = await agentRef.current.fetchProfile?.();
@@ -672,7 +706,15 @@ export default function MarketplacePage() {
         }
         return;
       }
-      await agentRef.current.installSkill(skill.id, skill.price_yocto || "0");
+      const result = await agentRef.current.installSkill(skill.id, priceY);
+      // Non-redirect wallets (Meteor / HERE / HOT / Intear) return a
+      // FinalExecutionOutcome here; redirect wallets (MyNearWallet)
+      // never reach this line — they round-trip via URL on success.
+      // Recording on the redirect-return path is a follow-up; the
+      // current hook covers the popular Meteor case.
+      const txHash = result?.transaction?.hash;
+      if (priceY !== "0" && txHash) recordInstallSale(txHash);
+
       setSkills(list => list.map(row =>
         row.skill.id === skill.id
           ? { ...row, skill: { ...row.skill, install_count: Number(row.skill.install_count || 0) + 1 } }

@@ -1,16 +1,42 @@
 // bot/services/backend.js — thin fetch wrapper around the IronShield API
 const fetch = require("node-fetch");
+const crypto = require("crypto");
 
 const BACKEND = process.env.BACKEND_URL || "http://localhost:3001";
+// Shared HMAC secret with backend/middleware/requireBotSig.js. The
+// backend rejects /api/tg/* requests without a matching X-TG-Signature
+// in production, so this env MUST be set on the bot worker (Render
+// service: ironshield-worker-bot).
+const BOT_SECRET = process.env.TELEGRAM_BOT_BACKEND_SECRET || "";
+
+if (!BOT_SECRET && (process.env.NODE_ENV || "").toLowerCase() === "production") {
+  console.error("[bot/backend] TELEGRAM_BOT_BACKEND_SECRET unset — every /api/tg/* call will 503");
+}
+
+function signTg(rawBody) {
+  // Exact same payload shape requireBotSig expects: `${ts}.${rawBody}`.
+  const ts = String(Date.now());
+  const sig = crypto.createHmac("sha256", BOT_SECRET).update(`${ts}.${rawBody || ""}`).digest("hex");
+  return { ts, sig };
+}
 
 async function req(path, { method = "GET", body, headers = {}, wallet } = {}) {
   const h = { "Content-Type": "application/json", ...headers };
   if (wallet) h["x-wallet"] = wallet;
+  const rawBody = body ? JSON.stringify(body) : "";
+  // Stamp every /api/tg/* call with HMAC. Other endpoints (legacy
+  // bot-side calls to non-tg routes, if any) skip the stamp — the
+  // backend doesn't require it outside /api/tg/*.
+  if (BOT_SECRET && path.startsWith("/api/tg/")) {
+    const { ts, sig } = signTg(rawBody);
+    h["X-TG-Timestamp"] = ts;
+    h["X-TG-Signature"] = sig;
+  }
   try {
     const r = await fetch(`${BACKEND}${path}`, {
       method,
       headers: h,
-      body: body ? JSON.stringify(body) : undefined,
+      body: body ? rawBody : undefined,
     });
     const raw = await r.text();
     let j;
@@ -29,7 +55,7 @@ const tg = {
   updateSettings: (payload) => req("/api/tg/settings", { method: "POST", body: payload }),
   addWallet: (tgId, wallet) => req("/api/tg/add-wallet", { method: "POST", body: { tgId, wallet } }),
   removeWallet: (tgId, wallet) => req("/api/tg/remove-wallet", { method: "POST", body: { tgId, wallet } }),
-  reply: (tgMsgId, text) => req("/api/tg/reply", { method: "POST", body: { tgMsgId, text } }),
+  reply: (tgMsgId, tgId, text) => req("/api/tg/reply", { method: "POST", body: { tgMsgId, tgId, text } }),
   watchlist: (tgId) => req(`/api/tg/watchlist/${tgId}`),
   addWatch: (tgId, kind, value) => req("/api/tg/watchlist/add", { method: "POST", body: { tgId, kind, value } }),
   removeWatch: (tgId, kind, value) => req("/api/tg/watchlist/remove", { method: "POST", body: { tgId, kind, value } }),

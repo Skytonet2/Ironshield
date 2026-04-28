@@ -33,7 +33,10 @@ async function handleDM(bot, msg) {
   //    relay it back to the site as a real DM.
   if (msg.reply_to_message?.message_id) {
     try {
-      const r = await tg.reply(msg.reply_to_message.message_id, msg.text || "");
+      // Pass msg.from.id as the verified TG sender so the backend
+      // can confirm the caller actually owns the conversation's
+      // wallet before persisting the reply.
+      const r = await tg.reply(msg.reply_to_message.message_id, msg.from?.id, msg.text || "");
       if (r.ok) {
         await bot.sendMessage(msg.chat.id, "✅ Reply sent to IronShield.");
         return;

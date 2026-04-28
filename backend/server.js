@@ -38,13 +38,26 @@ const corsAllowed = new Set(
 if (process.env.NODE_ENV !== "production") {
   corsAllowed.add("http://localhost:3000");
 }
+// Cloudflare Pages preview aliases ride a per-deploy hash subdomain
+// (e.g. https://51f99b24.ironshield.pages.dev). The exact-match Set
+// can't enumerate them, so we ALSO accept any subdomain of the
+// project's pages.dev hostname. Only Cloudflare can mint subdomains
+// of the project's pages.dev space, so the wildcard isn't an open door.
+// CF_PAGES_HOSTNAME defaults to ironshield.pages.dev; override via env
+// if the project name ever changes.
+const PAGES_HOSTNAME = (process.env.CF_PAGES_HOSTNAME || "ironshield.pages.dev").trim();
+const previewRe = new RegExp(`^https://[a-z0-9][a-z0-9-]*\\.${PAGES_HOSTNAME.replace(/\./g, "\\.")}$`);
+function originAllowed(origin) {
+  if (corsAllowed.has(origin)) return true;
+  return previewRe.test(origin);
+}
 app.use(require("cors")({
   origin: (origin, cb) => {
     // Same-origin (curl, server-to-server, native fetch with no Origin
     // header) gets through. Browser-issued cross-origin must be on the
-    // allowlist.
+    // allowlist or match the Pages preview-subdomain pattern.
     if (!origin) return cb(null, true);
-    cb(null, corsAllowed.has(origin));
+    cb(null, originAllowed(origin));
   },
   credentials: true,
 }));
@@ -180,6 +193,15 @@ async function start() {
   try { require("./services/trendingAgent").start(); } catch (e) { console.warn("[trendingAgent] not started:", e.message); }
   try { require("./services/orchestratorBot").start(); } catch (e) { console.warn("[orchestrator] not started:", e.message); }
   try { require("./services/agents/automationWorker").start(); } catch (e) { console.warn("[automation] not started:", e.message); }
+  // Day 3.5 caveat: the dedicated `ironshield-worker-bot` Render
+  // service was declared in render.yaml but never created in the
+  // Render UI, so the TG bot has been silently offline in
+  // production. Folding it into the main web service collapses the
+  // ops surface and removes one dead service from the runbook.
+  // attachBot is gated on TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET
+  // + WEBHOOK_URL — missing any of those logs and continues, so dev
+  // and preview deploys without bot creds still boot cleanly.
+  try { require("../bot/attach").attachBot(app); } catch (e) { console.warn("[bot] not attached:", e.message); }
 }
 
 start();

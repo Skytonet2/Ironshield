@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import { API_BASE as API } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
 import { tabCard, tabTitle, row, rowSub, toggle } from "./_shared";
 
 // Must match bot/commands/settings.js toggle keys.
@@ -69,7 +70,10 @@ export default function TelegramTab() {
     if (!address) { setState({ loading: false, linked: false }); return; }
     setState((s) => ({ ...s, loading: true }));
     try {
-      const r = await fetch(`${API}/api/tg/status?wallet=${encodeURIComponent(address)}`);
+      // /status now reads the wallet from the NEP-413 signature, not
+      // a query param — anyone could otherwise probe any wallet's TG
+      // settings. apiFetch handles the signing + Bearer token reuse.
+      const r = await apiFetch(`/api/tg/status`);
       const j = await r.json();
       setState({ loading: false, ...j });
     } catch (e) {
@@ -83,10 +87,13 @@ export default function TelegramTab() {
     if (!address) return;
     setSaveError("");
     try {
-      const r = await fetch(`${API}/api/tg/link-code`, {
+      // /link-code now derives the wallet from the signature — body
+      // wallet field used to be trusted, which let anyone mint codes
+      // for any wallet. apiFetch handles the auth.
+      const r = await apiFetch(`/api/tg/link-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet: address }),
+        body: JSON.stringify({}),
       });
       const j = await r.json();
       if (!r.ok || !j.deepLink) throw new Error(j.error || "Failed to generate link code");

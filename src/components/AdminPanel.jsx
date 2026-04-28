@@ -64,13 +64,22 @@ export default function AdminPanel({ onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, adminTab]);
 
-  // Resolve admin status against the backend allowlist on mount + when
-  // the connected wallet changes. Server is the source of truth — no
-  // client-side bypass possible. Connection-less or non-admin wallets
-  // both render the "Not authorized" view; the panel only shows when
-  // authed === true.
+  // Resolve admin status against the backend allowlist. Server is the
+  // source of truth — no client-side bypass possible.
+  //
+  // Auth is split into two phases so wallets that pop a window for
+  // signMessage (MyNearWallet, etc.) work:
+  //   1. On wallet change → set authed=null and stop. We do NOT auto-
+  //      fire the signed POST, because browsers block the wallet popup
+  //      when it isn't initiated by a user gesture.
+  //   2. The "Verify admin access" button fires the check inside the
+  //      click handler. The click counts as a user gesture so the
+  //      popup is allowed.
+  //
+  // For Day 5.6 token-cached sessions (Meteor / HERE / HOT / Intear
+  // already signed once this session), the verify call is silent —
+  // no popup needed because apiFetch reuses the bearer token.
   useEffect(() => {
-    let cancelled = false;
     if (!connected || !address) {
       setAuthed(false);
       setAuthError(null);
@@ -78,26 +87,31 @@ export default function AdminPanel({ onClose }) {
     }
     setAuthed(null);
     setAuthError(null);
-    (async () => {
-      try {
-        const r = await apiFetch("/api/admin/check", { method: "POST" });
-        if (cancelled) return;
-        if (r.ok) {
-          setAuthed(true);
-        } else if (r.status === 401 || r.status === 403) {
-          setAuthed(false);
-        } else {
-          setAuthed(false);
-          setAuthError(`Server error (HTTP ${r.status})`);
-        }
-      } catch (err) {
-        if (cancelled) return;
-        setAuthed(false);
-        setAuthError(err?.message || "Auth check failed");
-      }
-    })();
-    return () => { cancelled = true; };
   }, [connected, address]);
+
+  const verifyAdmin = useCallback(async () => {
+    setAuthError(null);
+    setAuthed(null);
+    try {
+      const r = await apiFetch("/api/admin/check", { method: "POST" });
+      if (r.ok) {
+        setAuthed(true);
+      } else if (r.status === 401 || r.status === 403) {
+        setAuthed(false);
+      } else {
+        setAuthed(false);
+        setAuthError(`Server error (HTTP ${r.status})`);
+      }
+    } catch (err) {
+      setAuthed(false);
+      const msg = String(err?.message || err || "");
+      if (/popup|blocked/i.test(msg)) {
+        setAuthError("Popup blocked — allow popups for this site, or switch to Meteor/HERE wallet, then try again.");
+      } else {
+        setAuthError(msg || "Auth check failed");
+      }
+    }
+  }, []);
 
   const govOk  = (m) => { setGovMsg(m); setTimeout(() => setGovMsg(""), 3500); };
   const govBad = (m) => { setGovErr(m); setTimeout(() => setGovErr(""), 4500); };
@@ -212,13 +226,7 @@ export default function AdminPanel({ onClose }) {
       <div style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20, padding: 40, width: 380, textAlign: "center" }}>
         <Settings size={32} color={t.accent} style={{ marginBottom: 16 }} />
         <div style={{ fontSize: 20, fontWeight: 700, color: t.white, marginBottom: 6 }}>Admin Access</div>
-        {authed === null ? (
-          <>
-            <Loader size={18} color={t.textMuted} style={{ animation: "spin 1s linear infinite", marginBottom: 14 }} />
-            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>Verifying wallet…</div>
-            <Btn onClick={onClose} style={{ width: "100%", justifyContent: "center" }}>Cancel</Btn>
-          </>
-        ) : !connected ? (
+        {!connected ? (
           <>
             <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 20 }}>Connect a wallet on the admin allowlist to continue.</div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -226,12 +234,28 @@ export default function AdminPanel({ onClose }) {
               <Btn primary onClick={showModal} style={{ flex: 1, justifyContent: "center" }}>Connect</Btn>
             </div>
           </>
+        ) : authed === null ? (
+          <>
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 6 }}>Connected as</div>
+            <div style={{ fontSize: 12, color: t.text, marginBottom: 16, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>{address}</div>
+            <div style={{ fontSize: 12, color: t.textDim, marginBottom: 16, lineHeight: 1.45 }}>
+              Click below to sign a one-time admin proof. Your wallet may pop a window — make sure popups are allowed for this site.
+            </div>
+            {authError && <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 12 }}>{authError}</div>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+              <Btn primary onClick={verifyAdmin} style={{ flex: 1, justifyContent: "center" }}>Verify access</Btn>
+            </div>
+          </>
         ) : (
           <>
             <div style={{ fontSize: 13, color: t.red, marginBottom: 6 }}>Not authorized</div>
             <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 18, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>{address}</div>
             {authError && <div style={{ fontSize: 11, color: t.textDim, marginBottom: 14 }}>{authError}</div>}
-            <Btn onClick={onClose} style={{ width: "100%", justifyContent: "center" }}>Close</Btn>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Close</Btn>
+              <Btn primary onClick={verifyAdmin} style={{ flex: 1, justifyContent: "center" }}>Try again</Btn>
+            </div>
           </>
         )}
       </div>
@@ -257,6 +281,7 @@ export default function AdminPanel({ onClose }) {
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 6, padding: "14px 28px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
           {[
+            { key: "stats",      label: "Stats" },
             { key: "contests",   label: "Contests" },
             { key: "scores",     label: "Score Users" },
             { key: "governance", label: "Governance" },
@@ -270,6 +295,9 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div style={{ overflowY: "auto", padding: 28, flex: 1 }}>
+
+          {/* ── Stats tab ── live counts from /api/admin/stats. */}
+          {adminTab === "stats" && <StatsTab t={t} />}
 
           {/* ── Contests tab ── */}
           {adminTab === "contests" && (
@@ -572,6 +600,110 @@ export default function AdminPanel({ onClose }) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── StatsTab ─────────────────────────────────────────────────────────
+// Renders live aggregate counts from /api/admin/stats. Polls once on
+// mount; the manual Refresh button re-fires. Numbers stay null while
+// loading so the operator can tell "still fetching" from "actually
+// zero". Each section is a small grid; missing sections (older deploys
+// without that table) render as "—".
+function StatsTab({ t }) {
+  const [data, setData] = useState(null);
+  const [err, setErr]   = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const r = await apiFetch("/api/admin/stats", { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setData(await r.json());
+    } catch (e) {
+      setErr(e?.message || "Failed to load stats");
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString());
+
+  const tile = (label, value, sub) => (
+    <div key={label} style={{
+      padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: t.bgSurface,
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+        color: t.textDim, textTransform: "uppercase", marginBottom: 6,
+      }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: t.white,
+        fontFamily: "var(--font-jetbrains-mono), monospace", lineHeight: 1.1 }}>{fmt(value)}</div>
+      {sub && <div style={{ fontSize: 11, color: t.textDim, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: t.white }}>
+          Platform stats {data?.ts && <span style={{ fontSize: 11, color: t.textDim, marginLeft: 8 }}>· {new Date(data.ts).toLocaleString()}</span>}
+        </div>
+        <button onClick={load} disabled={loading} style={{
+          padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+          border: `1px solid ${t.border}`, background: t.bgSurface,
+          color: loading ? t.textDim : t.text, cursor: loading ? "wait" : "pointer",
+        }}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {err && (
+        <div style={{
+          padding: 10, borderRadius: 8, marginBottom: 12,
+          background: "rgba(239,68,68,0.08)", border: `1px solid var(--red)`,
+          color: "var(--red)", fontSize: 12,
+        }}>{err}</div>
+      )}
+
+      <Section t={t} title="Users">
+        {tile("Total accounts",   data?.users?.total,     "All-time signups")}
+        {tile("Onboarded",        data?.users?.onboarded, "Completed setup modal")}
+        {tile("Active (7 days)",  data?.users?.active7d,  "Connected in the last week")}
+        {tile("New (24h)",        data?.users?.new24h,    "Signups in the last day")}
+      </Section>
+
+      <Section t={t} title="Feed">
+        {tile("Posts",     data?.feed?.posts)}
+        {tile("Comments",  data?.feed?.comments)}
+        {tile("DMs",       data?.feed?.dms)}
+        {tile("Follows",   data?.feed?.follows)}
+      </Section>
+
+      <Section t={t} title="NewsCoin & Skills">
+        {tile("NewsCoins",       data?.newscoin?.total)}
+        {tile("NewsCoin trades", data?.newscoin?.trades)}
+        {tile("Skill sales",     data?.skills?.sales)}
+        {tile("Automations",     data?.agents?.automations)}
+      </Section>
+    </div>
+  );
+}
+
+function Section({ t, title, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: 0.6, color: t.textMuted,
+        textTransform: "uppercase", marginBottom: 8,
+      }}>{title}</div>
+      <div style={{
+        display: "grid", gap: 10,
+        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+      }}>
+        {children}
       </div>
     </div>
   );

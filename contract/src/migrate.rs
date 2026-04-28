@@ -26,6 +26,19 @@ use near_sdk::store::{
     UnorderedMap as OldUnorderedMap, Vector as OldVector,
 };
 
+// ─── Note on the Phase 8 → Phase 10 upgrade path ────────────────────
+//
+// Both the agent-economy work (missions + kits, prefixes b"B" + b"k")
+// and the Pro-membership work (pro_locks, prefix b"R") landed against
+// Phase 8 storage. They were drafted as separate `migrate_v10_*` entry
+// points on different branches; the merge folds them into a single
+// `migrate_v10_economy()` defined further down — that function reads
+// the Phase 8 mirror struct and writes a Self that contains BOTH new
+// storage prefixes initialized empty. The standalone
+// `migrate_v10_pro_membership()` from the Pro branch is therefore
+// redundant and was removed at merge time. See the deploy-gate memo
+// for why the combined output requires a fresh testnet round-trip.
+
 /// Byte-for-byte mirror of the deployed `StakingContract` state.
 /// DO NOT change this struct after the upgrade has run on mainnet — its only
 /// purpose is to read the pre-Phase-2 storage. If we ever need a Phase-3
@@ -139,6 +152,8 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -306,6 +321,8 @@ impl StakingContract {
             missions:               UnorderedMap::new(b"B"),
             next_mission_id:        0,
             kits:                   UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:              LookupMap::new(b"R"),
         }
     }
 }
@@ -429,6 +446,8 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -551,6 +570,8 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -676,6 +697,8 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -750,6 +773,8 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -864,6 +889,8 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -980,6 +1007,8 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -1093,6 +1122,9 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }
@@ -1211,6 +1243,9 @@ impl StakingContract {
             missions:               UnorderedMap::new(b"B"),
             next_mission_id:        0,
             kits:                   UnorderedMap::new(b"k"),
+
+            // Day 18 (Phase 10) — empty on every upgrade path. Prefix b"R".
+            pro_locks:              LookupMap::new(b"R"),
         }
     }
 }

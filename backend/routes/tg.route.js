@@ -1,26 +1,24 @@
 // backend/routes/tg.route.js — Telegram integration endpoints
 //
-// Exposes:
-//   POST /api/tg/link-code   { wallet? } → { code, deepLink }
-//   GET  /api/tg/status?wallet=...       → { linked, username, wallets }
-//   POST /api/tg/claim       { code, tgId, tgChatId, tgUsername, wallet? }
-//   GET  /api/tg/settings/:tgId          → { wallets, activeWallet, settings }
-//   POST /api/tg/settings    { tgId, settings?, activeWallet?, wallets? }
-//   POST /api/tg/add-wallet  { tgId, wallet }
-//   POST /api/tg/remove-wallet { tgId, wallet }
-//   POST /api/tg/reply       { tgMsgId, text }  (bot → site DM relay)
-//   POST /api/tg/tip         { tgId, toHandle, amountHuman, tokenSymbol }
-//   GET  /api/tg/watchlist/:tgId
-//   POST /api/tg/watchlist/add   { tgId, kind, value }
-//   POST /api/tg/watchlist/remove{ tgId, kind, value }
-//   GET  /api/tg/price-alerts/:tgId
-//   POST /api/tg/price-alerts/add { tgId, token, op, value, basePrice? }
-//   POST /api/tg/price-alerts/remove { id }
+// Two distinct callers:
+//   1. The website (signed-auth via requireWallet) — only /link-code
+//      and /status. Both narrow surfaces a logged-in user can hit.
+//   2. The bot worker (HMAC-auth via requireBotSig) — every other
+//      route. The bot relays user input from Telegram into the
+//      backend; the HMAC gate ensures only bot/services/backend.js
+//      (which holds the shared secret) can hit these endpoints.
+//
+// Day 9 hardening was deferred and the routes shipped public, which
+// allowed: custodial wallet drains, DM eavesdropping (claim/add-wallet
+// upserting the caller's user_id to a victim's), and DM identity theft
+// (anyone could /reply into anyone's conversation). All closed here.
 
 const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
 const db = require("../db/client");
+const requireWallet = require("../middleware/requireWallet");
+const requireBotSig = require("../middleware/requireBotSig");
 
 const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || "IronShieldCore_bot";
 
@@ -28,15 +26,17 @@ function newCode() {
   return crypto.randomBytes(4).toString("hex").toUpperCase();
 }
 
-// ─── link-code: called from website to start the link flow ──────────
-// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
-router.post("/link-code", async (req, res) => {
-  const { wallet } = req.body || {};
+// ─── link-code: called from website by an authenticated wallet ──────
+// The wallet identity comes from the NEP-413 signature on this
+// request, NOT from the body. The body's `wallet` field used to be
+// trusted — that allowed anyone to mint a code for any wallet, which
+// /claim then trusted as proof of ownership. Locked: only req.wallet.
+router.post("/link-code", requireWallet, async (req, res) => {
   const code = newCode();
   try {
     await db.query(
       "INSERT INTO feed_tg_link_codes (code, wallet) VALUES ($1,$2)",
-      [code, wallet || null]
+      [code, req.wallet]
     );
     res.json({
       code,
@@ -47,9 +47,11 @@ router.post("/link-code", async (req, res) => {
   }
 });
 
-// ─── status: does this wallet already have a TG link? ───────────────
-router.get("/status", async (req, res) => {
-  const wallet = String(req.query.wallet || "").toLowerCase();
+// ─── status: TG link status for the connected wallet. Wallet comes
+// from the signed request, not query params — anyone with curl could
+// otherwise probe any wallet's TG settings.
+router.get("/status", requireWallet, async (req, res) => {
+  const wallet = String(req.wallet || "").toLowerCase();
   if (!wallet) return res.json({ linked: false });
   try {
     const u = await db.query(
@@ -77,37 +79,114 @@ router.get("/status", async (req, res) => {
   }
 });
 
-// ─── claim: bot calls this after /start <code> ──────────────────────
-// If `code` is provided and matches a row with a wallet, we link the
-// wallet directly. Otherwise the bot passes the wallet the user sent
-// later.
-// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
-router.post("/claim", async (req, res) => {
-  const { code, tgId, tgChatId, tgUsername, wallet } = req.body || {};
+// All routes below are bot-callable only. router.use(requireBotSig)
+// gates every handler defined after this line — individual per-route
+// requireBotSig calls left in place for readability are redundant
+// but harmless (the middleware passes a second time).
+router.use(requireBotSig);
+
+// ─── claim: bot calls this after /start <code> OR after the user
+// pastes a wallet directly ──────────────────────────────────────────
+//
+// Two paths now:
+//   A. WITH `code` (the website-signed flow) — full link: sets
+//      user_id, enables private DM / notification fan-out, mints the
+//      custodial bot account.
+//   B. WITHOUT `code`, just `wallet` — watch-only fallback for the
+//      bot's "paste your wallet" UX. Adds the wallet to the TG row's
+//      wallets[] for read-only price/feed alerts. Crucially does NOT
+//      set user_id — that's the eavesdropping leak the original
+//      implementation had. No proof of ownership, no private fan-out.
+router.post("/claim", requireBotSig, async (req, res) => {
+  const { code, tgId, tgChatId, tgUsername, wallet: pastedWallet } = req.body || {};
   if (!tgId || !tgChatId) return res.status(400).json({ error: "tgId + tgChatId required" });
 
-  let linkedWallet = wallet || null;
-  if (code && !linkedWallet) {
-    const r = await db.query(
-      "UPDATE feed_tg_link_codes SET consumed_at = NOW() WHERE code=$1 AND consumed_at IS NULL RETURNING wallet",
-      [code]
-    );
-    if (r.rows[0]?.wallet) linkedWallet = r.rows[0].wallet;
+  // Path B — watch-only paste. Returns a partial-link response so the
+  // bot can tell the user "tracking, but link a code from the
+  // website for full features".
+  if (!code) {
+    if (!pastedWallet) {
+      // No code, no wallet — onboarding /start with no payload. Just
+      // create the empty TG row + custodial account so future flows
+      // have a row to update. No wallet associated yet.
+      try {
+        await db.query(
+          `INSERT INTO feed_tg_links (tg_id, tg_chat_id, tg_username, last_seen_at)
+             VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (tg_id) DO UPDATE SET
+             tg_chat_id = EXCLUDED.tg_chat_id,
+             tg_username = EXCLUDED.tg_username,
+             last_seen_at = NOW()`,
+          [tgId, tgChatId, tgUsername || null]
+        );
+        let custodialAccount = null;
+        try {
+          const custodial = require("../services/custodialBotWallet");
+          const acct = await custodial.getOrCreateForTgId(tgId);
+          custodialAccount = acct.accountId;
+        } catch (e) {
+          console.warn("[tg/claim] custodial skipped:", e.message);
+        }
+        return res.json({ ok: true, custodialAccount });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+    // Watch-only: wallet pasted, no code → tracking only.
+    const w = String(pastedWallet).toLowerCase();
+    try {
+      await db.query(
+        `INSERT INTO feed_tg_links (tg_id, tg_chat_id, tg_username, wallets, active_wallet, last_seen_at)
+           VALUES ($1, $2, $3, ARRAY[$4], $4, NOW())
+         ON CONFLICT (tg_id) DO UPDATE SET
+           tg_chat_id = EXCLUDED.tg_chat_id,
+           tg_username = EXCLUDED.tg_username,
+           wallets = ARRAY(SELECT DISTINCT UNNEST(feed_tg_links.wallets || EXCLUDED.wallets)),
+           active_wallet = COALESCE(feed_tg_links.active_wallet, EXCLUDED.active_wallet),
+           last_seen_at = NOW()`,
+        [tgId, tgChatId, tgUsername || null, w]
+      );
+      let custodialAccount = null;
+      try {
+        const custodial = require("../services/custodialBotWallet");
+        const acct = await custodial.getOrCreateForTgId(tgId);
+        custodialAccount = acct.accountId;
+      } catch (e) {
+        console.warn("[tg/claim] custodial skipped:", e.message);
+      }
+      // linkedWallet returned so the existing bot's success branch
+      // fires the "you're linked" message — accurate for watch-only
+      // tracking. Ownership proof message can come in a later bot
+      // deploy that distinguishes watch-only vs full.
+      return res.json({ ok: true, linkedWallet: w, wallets: [w], watchOnly: true, custodialAccount });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
   }
 
-  let userId = null;
-  let wallets = [];
-  if (linkedWallet) {
-    const u = await db.query(
-      `INSERT INTO feed_users (wallet_address)
-         VALUES (LOWER($1))
-       ON CONFLICT (wallet_address) DO UPDATE SET wallet_address = EXCLUDED.wallet_address
-       RETURNING id`,
-      [linkedWallet]
-    );
-    userId = u.rows[0].id;
-    wallets = [linkedWallet.toLowerCase()];
+  // Path A — code-based full link. Atomically consume the code.
+  const codeRow = await db.query(
+    "UPDATE feed_tg_link_codes SET consumed_at = NOW() WHERE code=$1 AND consumed_at IS NULL RETURNING wallet",
+    [code]
+  );
+  if (!codeRow.rows.length) return res.status(401).json({ error: "invalid or already-used code", code: "bad-code" });
+  const linkedWallet = codeRow.rows[0].wallet;
+  if (!linkedWallet) {
+    // Pre-hardening codes were created without a wallet (anonymous
+    // /link-code). Refuse — the bot must walk the user back to the
+    // website to mint a fresh, signed code.
+    return res.status(401).json({ error: "code is missing wallet ownership proof; mint a new one from the website", code: "anonymous-code" });
   }
+
+  const u = await db.query(
+    `INSERT INTO feed_users (wallet_address)
+       VALUES (LOWER($1))
+     ON CONFLICT (wallet_address) DO UPDATE SET wallet_address = EXCLUDED.wallet_address
+     RETURNING id`,
+    [linkedWallet]
+  );
+  const userId = u.rows[0].id;
+  const wallets = [linkedWallet.toLowerCase()];
 
   try {
     const existing = await db.query(
@@ -115,15 +194,20 @@ router.post("/claim", async (req, res) => {
       [tgId]
     );
     if (existing.rows.length) {
-      // Merge: add new wallet to existing array.
+      // Merge: add the just-claimed wallet. user_id is set
+      // authoritatively to the freshly verified wallet's user, NOT
+      // COALESCE — a legit re-link must overwrite any stale user_id
+      // from the pre-hardening days. link_code is also stamped so
+      // the migration's "nullify rows with NULL link_code" check
+      // recognises this row as legitimately re-linked.
       const merged = Array.from(new Set([...(existing.rows[0].wallets || []), ...wallets].map(w => String(w).toLowerCase())));
       await db.query(
         `UPDATE feed_tg_links
-            SET tg_chat_id=$2, tg_username=$3, user_id=COALESCE($4,user_id),
-                wallets=$5, active_wallet=COALESCE(active_wallet,$6),
+            SET tg_chat_id=$2, tg_username=$3, user_id=$4,
+                wallets=$5, active_wallet=$6, link_code=$7,
                 last_seen_at=NOW()
           WHERE tg_id=$1`,
-        [tgId, tgChatId, tgUsername || null, userId, merged, merged[0] || null]
+        [tgId, tgChatId, tgUsername || null, userId, merged, linkedWallet.toLowerCase(), code]
       );
     } else {
       await db.query(
@@ -705,29 +789,35 @@ router.post("/settings", async (req, res) => {
   }
 });
 
-// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
-router.post("/add-wallet", async (req, res) => {
+// /add-wallet — watch-only.
+//
+// Adds a wallet to this TG account's `wallets[]` array for read-only
+// price/feed alerts. Crucially, this does NOT touch `user_id` — that
+// would route the wallet's private DM/notification fan-out to this
+// TG, which is the eavesdropping vector. The previous implementation
+// did `user_id = COALESCE(user_id, $3)` and upserted feed_users, so
+// any TG could "track" any wallet and start receiving its private
+// notifications. Locked.
+//
+// To actually own a wallet (DM fan-out, custodial wallet bound to it),
+// use /link-code on the website + /start <code> in TG → /claim.
+router.post("/add-wallet", requireBotSig, async (req, res) => {
   const { tgId, wallet } = req.body || {};
   if (!tgId || !wallet) return res.status(400).json({ error: "tgId + wallet required" });
   const w = String(wallet).toLowerCase();
   try {
-    const u = await db.query(
-      `INSERT INTO feed_users (wallet_address) VALUES ($1)
-        ON CONFLICT (wallet_address) DO UPDATE SET wallet_address = EXCLUDED.wallet_address
-        RETURNING id`,
-      [w]
-    );
-    await db.query(
+    const upd = await db.query(
       `UPDATE feed_tg_links
           SET wallets = ARRAY(SELECT DISTINCT UNNEST(wallets || ARRAY[$2])),
-              active_wallet = COALESCE(active_wallet, $2),
-              user_id = COALESCE(user_id, $3),
               last_seen_at = NOW()
-        WHERE tg_id=$1`,
-      [tgId, w, u.rows[0].id]
+        WHERE tg_id=$1
+        RETURNING wallets, active_wallet`,
+      [tgId, w]
     );
-    const r = await db.query("SELECT wallets, active_wallet FROM feed_tg_links WHERE tg_id=$1", [tgId]);
-    res.json({ ok: true, wallets: r.rows[0]?.wallets || [], activeWallet: r.rows[0]?.active_wallet });
+    if (!upd.rows.length) {
+      return res.status(404).json({ error: "tgId not linked — /start the bot first", code: "no-link" });
+    }
+    res.json({ ok: true, wallets: upd.rows[0].wallets || [], activeWallet: upd.rows[0].active_wallet, watchOnly: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -752,16 +842,48 @@ router.post("/remove-wallet", async (req, res) => {
 });
 
 // ─── Reply relay: bot posts the user's TG reply into feed_dm_messages ──
-// public: telegram bridge — bot↔backend channel auth deferred to Day 9 hardening
-router.post("/reply", async (req, res) => {
-  const { tgMsgId, text } = req.body || {};
-  if (!tgMsgId || !text) return res.status(400).json({ error: "tgMsgId + text required" });
+//
+// Caller (the bot) must pass the tgId of the user who actually sent
+// the TG reply. The previous version trusted the user_id stored in
+// feed_tg_reply_map — anyone with the tgMsgId could then post into
+// that conversation as the wallet owner (DM identity theft). Now we
+// require the caller's tgId AND verify that tgId is linked to the
+// user_id stored in the reply map.
+router.post("/reply", requireBotSig, async (req, res) => {
+  const { tgMsgId, tgId, text } = req.body || {};
+  if (!tgMsgId || !text) {
+    return res.status(400).json({ error: "tgMsgId + text required" });
+  }
   try {
-    const map = await db.query(
-      "SELECT conversation_id, user_id FROM feed_tg_reply_map WHERE tg_msg_id=$1",
-      [tgMsgId]
-    );
-    if (!map.rows.length) return res.status(404).json({ error: "no conversation for message" });
+    // When tgId is provided (post-hardening bot), join-verify that
+    // tgId actually owns the user_id stored in the reply map — closes
+    // identity theft. When tgId is NOT provided (pre-hardening bot
+    // version still in prod), fall back to the looser lookup with a
+    // warning, so reply relay keeps working through the bot rollout.
+    // Re-tighten by enforcing tgId once the bot worker is updated.
+    if (!tgId) {
+      console.warn("[tg/reply] tgId missing — falling back to legacy lookup; redeploy bot to use tgId-verified path");
+    }
+    const map = tgId
+      ? await db.query(
+          `SELECT m.conversation_id, m.user_id
+             FROM feed_tg_reply_map m
+             JOIN feed_tg_links l
+               ON l.tg_id = $2
+              AND l.user_id IS NOT NULL
+              AND l.user_id = m.user_id
+            WHERE m.tg_msg_id = $1`,
+          [tgMsgId, tgId]
+        )
+      : await db.query(
+          `SELECT conversation_id, user_id FROM feed_tg_reply_map WHERE tg_msg_id = $1`,
+          [tgMsgId]
+        );
+    if (!map.rows.length) {
+      const code = tgId ? "not-owner" : "no-conversation";
+      const msg  = tgId ? "tgId is not the owner of this conversation" : "no conversation for tgMsgId";
+      return res.status(tgId ? 403 : 404).json({ error: msg, code });
+    }
     const { conversation_id, user_id } = map.rows[0];
     // Insert into feed_dm_messages. We store ciphertext = plain text
     // with an "unencrypted" flag so the site renders it as a Telegram

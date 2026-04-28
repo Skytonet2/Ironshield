@@ -16,6 +16,7 @@ mod pretoken;
 mod agents;
 mod mission_engine;
 mod kits;
+mod pro;
 mod migrate;
 
 pub use pretoken::{ContributorApplication, ContributorInfo};
@@ -226,6 +227,15 @@ pub struct StakingContract {
     /// schema live off-chain; on-chain row is the integrity anchor.
     /// Prefix b"k" (lowercase) — distinct from b"K" (skills).
     pub kits:             UnorderedMap<String, Kit>,
+
+    // ── Day 18: IronShield Pro lock ──────────────────────────────────
+    /// Per-wallet Pro-membership lock-until timestamp (unix ns). A
+    /// wallet that wants Pro perks calls `extend_lock(seconds)` to
+    /// commit to keeping their stake locked at least that long;
+    /// `is_pro` returns true only while lock_until is at least
+    /// PRO_MIN_LOCK_NS in the future AND total stake meets
+    /// PRO_MIN_STAKE_YOCTO. Absence == 0 == "never opted in." Prefix b"R".
+    pub pro_locks: LookupMap<AccountId, u64>,
 }
 
 #[near]
@@ -304,6 +314,10 @@ impl StakingContract {
             missions:            UnorderedMap::new(b"B"),
             next_mission_id:     0,
             kits:                UnorderedMap::new(b"k"),
+
+            // Day 18 — Pro lock-until timestamps. Prefix b"R" (previously
+            // unused; see migrate.rs for the full prefix inventory).
+            pro_locks:           LookupMap::new(b"R"),
         }
     }
 }

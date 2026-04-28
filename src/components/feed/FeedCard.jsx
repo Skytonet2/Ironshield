@@ -13,7 +13,7 @@
 // no separate plumbing from each consumer.
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckCircle2, Send, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Flag } from "lucide-react";
+import { MessageCircle, Repeat2, Heart, DollarSign, Eye, VolumeX, Shield, CheckCircle2, Send, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Flag, Share2, Quote, Copy, Check } from "lucide-react";
 import { useTheme } from "@/lib/contexts";
 import useImpression from "@/lib/hooks/useImpression";
 import CoinItButton from "./CoinItButton";
@@ -147,7 +147,7 @@ function Metric({ Icon, label, count, active, color, onClick, t }) {
   );
 }
 
-export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip, onReply, onMute, onDelete }) {
+export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onQuote, onTip, onReply, onMute, onDelete }) {
   const t = useTheme() || {};
   // viewer can arrive in two shapes depending on the caller:
   //   - the WalletCtx object (address field, used by /feed/page.js)
@@ -377,6 +377,11 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
           );
         })()}
 
+        {/* Embedded quoted post — only renders when this post is a
+            quote (post.quotedPost set by hydratePosts). Clickable: tapping
+            anywhere on the embed opens the original post's detail view. */}
+        {post?.quotedPost && <QuotedEmbed quoted={post.quotedPost} t={t} />}
+
         {/* Metrics */}
         <div style={{
           display: "flex",
@@ -387,10 +392,17 @@ export default function FeedCard({ post, viewer, isOwn, onLike, onRepost, onTip,
         }}>
           <Metric Icon={Eye}          label="Impressions" count={post?.impressions} t={t} />
           <Metric Icon={MessageCircle} label="Reply"       count={post?.comments}    onClick={() => setReplyOpen((v) => !v)} active={replyOpen} color={t.accent} t={t} />
-          <Metric Icon={Repeat2}      label="Reposts"     count={post?.reposts}     onClick={onRepost} active={post?.repostedByMe} color="var(--green)" t={t} />
+          <RepostMenu
+            count={post?.reposts}
+            active={post?.repostedByMe}
+            onRepost={onRepost}
+            onQuote={onQuote ? () => onQuote(post) : null}
+            t={t}
+          />
           <Metric Icon={Heart}        label="Likes"       count={post?.likes}       onClick={onLike}   active={post?.likedByMe}    color="var(--red)"   t={t} />
           <Metric Icon={DollarSign}   label={`Tips${post?.tipTotalUsd ? ` · $${post.tipTotalUsd.toFixed(2)}` : ""}`}
                   count={post?.tipCount}    onClick={onTip}   color={t.accent} t={t} />
+          <ShareButton post={post} t={t} />
         </div>
 
         {/* Reddit-style inline reply — shows below the post when the
@@ -563,5 +575,172 @@ function CardActionsMenu({ t, isOwn, author, onMute, onDelete }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Embedded quoted post — small, clickable, links to /post?id=<id>. */
+function QuotedEmbed({ quoted, t }) {
+  if (!quoted) return null;
+  const author = quoted.author || {};
+  const name   = author.display_name || author.username || "—";
+  const handle = author.username ? `@${author.username}` : null;
+  const href   = `/post?id=${encodeURIComponent(quoted.id)}`;
+  return (
+    <a
+      href={href}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        display: "block",
+        marginTop: 10,
+        padding: 10,
+        borderRadius: 10,
+        border: `1px solid ${t.border}`,
+        background: "var(--bg-input)",
+        textDecoration: "none",
+        color: "inherit",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        {author.pfp_url ? (
+          <img src={author.pfp_url} alt="" width={20} height={20}
+               style={{ borderRadius: "50%", objectFit: "cover" }}
+               onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
+        ) : (
+          <div style={{
+            width: 20, height: 20, borderRadius: "50%",
+            background: `linear-gradient(135deg, #a855f7, ${t.accent})`,
+            color: "#fff", fontSize: 10, fontWeight: 800,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>{(name[0] || "?").toUpperCase()}</div>
+        )}
+        <span style={{ fontSize: 12, fontWeight: 700, color: t.white }}>{name}</span>
+        {handle && <span style={{ fontSize: 11, color: t.textDim }}>{handle}</span>}
+      </div>
+      <div style={{
+        fontSize: 13, color: t.text, lineHeight: 1.45,
+        whiteSpace: "pre-wrap", wordBreak: "break-word",
+        display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden",
+      }}>
+        {quoted.content}
+      </div>
+      {Array.isArray(quoted.mediaUrls) && quoted.mediaUrls.length > 0 && (
+        <div style={{ marginTop: 6, fontSize: 11, color: t.textDim }}>
+          [{quoted.mediaUrls.length} attached]
+        </div>
+      )}
+    </a>
+  );
+}
+
+/** Repost button with a menu: plain Repost or Quote. Closes on outside click. */
+function RepostMenu({ count, active, onRepost, onQuote, t }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("click", onDoc);
+    return () => document.removeEventListener("click", onDoc);
+  }, [open]);
+
+  // If onQuote isn't wired (older callers), fall back to a plain Repost button.
+  if (!onQuote) {
+    return (
+      <Metric Icon={Repeat2} label="Reposts" count={count} onClick={onRepost} active={active} color="var(--green)" t={t} />
+    );
+  }
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <Metric
+        Icon={Repeat2}
+        label="Reposts"
+        count={count}
+        onClick={(e) => { e?.stopPropagation?.(); setOpen((v) => !v); }}
+        active={active}
+        color="var(--green)"
+        t={t}
+      />
+      {open && (
+        <div role="menu" style={{
+          position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 50,
+          minWidth: 160,
+          background: "var(--bg-card)",
+          border: `1px solid ${t.border}`, borderRadius: 10,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          overflow: "hidden",
+        }}>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onRepost?.(); }}
+            style={menuItemStyle(t)}
+          >
+            <Repeat2 size={14} />
+            <span>{active ? "Undo repost" : "Repost"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onQuote?.(); }}
+            style={menuItemStyle(t)}
+          >
+            <Quote size={14} />
+            <span>Quote</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function menuItemStyle(t) {
+  return {
+    display: "flex", alignItems: "center", gap: 10,
+    width: "100%", padding: "10px 12px",
+    background: "transparent", border: "none",
+    color: t.text, fontSize: 13, textAlign: "left",
+    cursor: "pointer",
+  };
+}
+
+/** Share button — Web Share API on mobile, clipboard fallback. Briefly
+ *  swaps icon to a checkmark on success so the user has feedback. */
+function ShareButton({ post, t }) {
+  const [copied, setCopied] = useState(false);
+  const url = useMemo(() => {
+    if (typeof window === "undefined" || !post?.id) return "";
+    return `${window.location.origin}/post?id=${encodeURIComponent(post.id)}`;
+  }, [post?.id]);
+
+  const onClick = useCallback(async (e) => {
+    e?.stopPropagation?.();
+    if (!url) return;
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: "IronShield post",
+          text: post?.content ? String(post.content).slice(0, 120) : "",
+          url,
+        });
+        return;
+      } catch { /* user cancelled or share failed — fall through to clipboard */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch { /* clipboard blocked — last resort: open the URL in a new tab */
+      try { window.open(url, "_blank", "noopener"); } catch {}
+    }
+  }, [url, post?.content]);
+
+  return (
+    <Metric
+      Icon={copied ? Check : Share2}
+      label="Share"
+      count={null}
+      onClick={onClick}
+      active={copied}
+      color={t.accent}
+      t={t}
+    />
   );
 }

@@ -367,6 +367,62 @@ ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_post_tx TEXT;
 ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS onchain_tx TEXT;
 -- Day 8.2: per-message delivery state. read_at already exists.
 ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+-- v1.1: ciphertext envelope format version. 0 (or NULL) = legacy
+-- nacl.box bytes, no fingerprints. 1 = nacl.box bytes + sender/recipient
+-- fingerprints (Day 8.3 rows). Future versions slot in here without
+-- another schema change. Decoders branch on this column; legacy rows
+-- still decrypt via the v0 path.
+ALTER TABLE feed_dms ADD COLUMN IF NOT EXISTS format_version SMALLINT NOT NULL DEFAULT 0;
+
+-- v1.1: DM safety numbers (out-of-band pubkey verification). One row
+-- per (viewer, peer) — the viewer has compared the peer's pubkey
+-- fingerprint via a side channel and marked it as theirs. We store
+-- the fingerprint AT verify time so a later peer rotation surfaces
+-- as a mismatch ("their key changed since you verified") rather than
+-- silently grandfathering the new key.
+CREATE TABLE IF NOT EXISTS feed_dm_verifications (
+  viewer_wallet     TEXT NOT NULL,
+  peer_wallet       TEXT NOT NULL,
+  peer_pubkey_fp    TEXT NOT NULL,
+  verified_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (viewer_wallet, peer_wallet)
+);
+CREATE INDEX IF NOT EXISTS idx_dm_verifications_viewer ON feed_dm_verifications(viewer_wallet);
+
+-- v1.1: AI-evaluated automation triggers (Day 12.3 deferred). The
+-- worker walks new feed_posts since the last id it evaluated for
+-- this rule, calls classify() per item, and fires the action when
+-- match=true. ai_last_id is the cursor; default 0 means "haven't
+-- evaluated anything yet" so the first tick after enable starts
+-- from the most recent posts (worker clamps to a lookback window
+-- to avoid blasting through the whole archive).
+ALTER TABLE agent_automations ADD COLUMN IF NOT EXISTS ai_last_id INTEGER NOT NULL DEFAULT 0;
+
+-- v1.1: group-chat E2E (sender-keys flavor). Opt-in at group creation
+-- — owner mints a 32-byte symmetric key, wraps it via nacl.box to
+-- each member's dm_pubkey, and POSTs the wraps. Encrypted send/list
+-- branch on whether feed_group_messages.encrypted_content is set; the
+-- existing plaintext `content` column stays for legacy rows AND for
+-- groups that never opted in (existing groups continue to behave as
+-- before).
+ALTER TABLE feed_group_chats ADD COLUMN IF NOT EXISTS e2e_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE feed_group_messages ADD COLUMN IF NOT EXISTS encrypted_content TEXT;
+ALTER TABLE feed_group_messages ADD COLUMN IF NOT EXISTS nonce             TEXT;
+ALTER TABLE feed_group_messages ADD COLUMN IF NOT EXISTS sender_key_fp     TEXT;
+-- One wrapped copy of the group symmetric key per (group, member).
+-- The owner is the only writer (writes their wraps on creation, and
+-- writes new wraps when adding members). Members read their own row
+-- on first decrypt and cache the unwrapped key client-side.
+CREATE TABLE IF NOT EXISTS feed_group_keys (
+  group_id            INTEGER NOT NULL REFERENCES feed_group_chats(id) ON DELETE CASCADE,
+  user_id             INTEGER NOT NULL REFERENCES feed_users(id)       ON DELETE CASCADE,
+  wrapped_key         TEXT    NOT NULL,
+  wrap_nonce          TEXT    NOT NULL,
+  wrapped_by_pubkey   TEXT    NOT NULL,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_group_keys_user ON feed_group_keys(user_id);
 -- Day 8.3: per-message key fingerprints so the recipient can locate
 -- the matching secret key even after their wallet has rotated keys.
 -- 16-hex-char prefix of BLAKE2b(pubkey raw bytes); collision-resistant
@@ -418,6 +474,46 @@ ALTER TABLE feed_posts ADD COLUMN IF NOT EXISTS validated         BOOLEAN DEFAUL
 
 -- Cached staking amount for revenue-share multiplier; refreshed by stakingSync job.
 ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS staked_amount     NUMERIC(40,18) DEFAULT 0;
+
+-- DM presence (Day 8.x follow-up). Updated by feedHub on every WS
+-- disconnect — represents the wall-clock time the user's last
+-- authed socket closed. NULL for users who've never connected.
+-- Online state is derived live from feedHub.hasAuthedSocket(); this
+-- column only carries the offline "last seen" timestamp.
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS last_seen_at      TIMESTAMPTZ;
+
+-- Onboarding completion timestamp. NULL = first-time user; needs to
+-- run through the username/display-name/pfp/banner setup modal. Set
+-- by POST /api/profile/onboard once the modal submits.
+--
+-- Existing rows pre-migration are NULL by default. They'll see the
+-- modal once on next visit — that's a feature, not a bug: they have
+-- auto-generated usernames + display names from their wallet prefix
+-- and the modal is their chance to set real ones. They can submit
+-- with whatever values are pre-filled if they like the defaults.
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS onboarded_at      TIMESTAMPTZ;
+
+-- Referral system. ref_code is the user's invite code (auto-generated
+-- on first /api/rewards/me; customizable via POST /api/rewards/ref-code).
+-- referrer_id points back to the inviter once
+-- /api/rewards/claim-referrer lands a /?ref=<code> visit.
+--
+-- backend/routes/rewards.route.js falls back to an in-process Map when
+-- these columns aren't present — that fallback wipes on every Render
+-- redeploy, which is why pre-this-migration codes never persisted.
+-- ON DELETE SET NULL on referrer_id keeps the invitee's row alive if
+-- the inviter ever deletes their account.
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS ref_code          TEXT;
+ALTER TABLE feed_users ADD COLUMN IF NOT EXISTS referrer_id       INTEGER REFERENCES feed_users(id) ON DELETE SET NULL;
+-- Case-insensitive uniqueness: rewards.route.js looks up via
+-- LOWER(ref_code)=LOWER($1) and POST /ref-code rejects duplicates
+-- through codeInUse(). Partial keeps NULL rows cheap.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_users_ref_code_lower
+  ON feed_users (LOWER(ref_code)) WHERE ref_code IS NOT NULL;
+-- Index for /me's referral count: SELECT COUNT(*) FROM feed_users
+-- WHERE referrer_id=$1.
+CREATE INDEX IF NOT EXISTS idx_feed_users_referrer
+  ON feed_users (referrer_id) WHERE referrer_id IS NOT NULL;
 
 -- Long-form articles. kind = 'post' (default) or 'article'. Articles get a
 -- title and lift the 500-char body limit (handled in posts.route.js).
@@ -1410,3 +1506,22 @@ CREATE TABLE IF NOT EXISTS kit_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_kit_requests_status
   ON kit_requests (status, created_at DESC);
+-- ── Telegram link hardening (post-Day 9) ─────────────────────────────
+-- Pre-hardening, /api/tg/claim accepted a bare `wallet` body field
+-- and /api/tg/add-wallet upserted feed_users.id into the caller's
+-- feed_tg_links row — both with no proof of wallet ownership. That
+-- routed the wallet's private DM/notification fan-out to the caller,
+-- which is the eavesdropping leak the user reported.
+--
+-- The new /claim path stamps `link_code` on every legitimate link
+-- (and rejects anonymous codes). Rows that lack `link_code` therefore
+-- predate the hardening and may carry a borrowed user_id. Nullify so
+-- private fan-out stops; affected users re-link via the website +
+-- /start <code> in TG to restore notifications.
+--
+-- Idempotent: post-fix, every legit row has link_code set, so this
+-- only fires on stale rows. Runs on every boot via schema.sql.
+UPDATE feed_tg_links
+   SET user_id = NULL
+ WHERE link_code IS NULL
+   AND user_id IS NOT NULL;

@@ -222,9 +222,9 @@ export default function useAgent() {
     }, "0");
   }, [callMethod]);
 
-  // Phase 7: install_skill is payable. Attach deposit >= price_yocto.
-  // The contract splits 99/1 (author/platform) and refunds any overpay
-  // back to the caller.
+  // Phase 7 + Day 15: install_skill is payable. Attach deposit >=
+  // price_yocto. The contract splits 85/15 (author/platform — was 99/1
+  // through Phase 9) and refunds any overpay back to the caller.
   const installSkill = useCallback(async (skillId, priceYocto = "0") => {
     return callMethod(
       STAKING_CONTRACT,

@@ -43,6 +43,38 @@ function truncate(addr, left = 6, right = 4) {
   return addr.length <= left + right ? addr : `${addr.slice(0, left)}…${addr.slice(-right)}`;
 }
 
+// Day 18.3 — PRO badge. Fetches /api/auth/me when the wallet changes
+// and renders a small pill if the user is a Pro member. Shared
+// between the Privy and NEAR-only UserMenu variants so both surfaces
+// show the same pill consistently. Renders nothing while loading or
+// for non-Pro users.
+function ProBadge({ nearAddr, t }) {
+  const [isPro, setIsPro] = useState(false);
+  useEffect(() => {
+    if (!nearAddr) { setIsPro(false); return; }
+    let cancelled = false;
+    fetch(`${API}/api/auth/me`, {
+      headers: { "x-wallet": nearAddr },
+    }).then((r) => r.ok ? r.json() : null).then((j) => {
+      if (cancelled) return;
+      setIsPro(Boolean(j?.isPro));
+    }).catch(() => { /* leave non-Pro on failure */ });
+    return () => { cancelled = true; };
+  }, [nearAddr]);
+  if (!isPro) return null;
+  return (
+    <span style={{
+      marginLeft: 6,
+      padding: "1px 6px",
+      borderRadius: 999,
+      background: `linear-gradient(135deg, ${t.accent}, #a855f7)`,
+      color: "#fff",
+      fontSize: 9, fontWeight: 800, letterSpacing: 0.6,
+      verticalAlign: "middle",
+    }}>PRO</span>
+  );
+}
+
 function CopyableAddress({ label, address, t }) {
   const [copied, setCopied] = useState(false);
   if (!address) return null;
@@ -280,6 +312,7 @@ function UserMenuInnerPrivy({ t, open, setOpen, refEl, nearAddr, nearProfile, ne
           <div style={{ padding: "10px 12px", borderBottom: `1px solid ${t.border}` }}>
             <div style={{ fontSize: 13, color: t.text, fontWeight: 700 }}>
               {displayName}
+              <ProBadge nearAddr={nearAddr} t={t} />
             </div>
             {email && email !== displayName && (
               <div style={{ fontSize: 11, color: t.textDim, marginTop: 2 }}>{email}</div>
@@ -399,6 +432,7 @@ function UserMenuInnerNearOnly({ t, open, setOpen, refEl, nearAddr, nearProfile,
           <div style={{ padding: "10px 12px", borderBottom: `1px solid ${t.border}` }}>
             <div style={{ fontSize: 13, color: t.text, fontWeight: 700 }}>
               {displayName}
+              <ProBadge nearAddr={nearAddr} t={t} />
             </div>
           </div>
           <Link

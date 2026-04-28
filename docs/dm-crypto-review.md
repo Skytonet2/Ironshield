@@ -38,14 +38,13 @@ Audit of the existing 1:1 DM end-to-end encryption. Scope: `src/lib/dmCrypto.js`
 ## Threats it does NOT defend
 
 - ❌ XSS in the IronShield frontend → full DM history exfil for the affected user.
-- ❌ Compromised backend DB → swap victim's `dm_pubkey` → MITM on all future messages.
-- ❌ Past-message recovery after key compromise (no FS).
-- ❌ Group-chat confidentiality (server reads plaintext).
+- ❌ Compromised backend DB → swap victim's `dm_pubkey` → MITM on **future** messages (mitigated by safety-number verification — see v1.1.2).
+- ❌ Past-message recovery after key compromise (no FS — see v1.1.4 below).
 - ❌ Cross-device DM continuity (no key sync).
 
 ## Required action in this task
 
-**None.** Nothing is BROKEN. WEAK items are tracked here and become v1.1 work:
+**None.** Nothing is BROKEN. WEAK items are tracked here and many become v1.1 work:
 
 - v1.1: DM safety-number UI (mitigates finding 8 — out-of-band pubkey verification).
 - v1.1: Key sync via wallet-derived keypair or backed-up encrypted blob (mitigates 6, 9).
@@ -57,3 +56,45 @@ Audit of the existing 1:1 DM end-to-end encryption. Scope: `src/lib/dmCrypto.js`
 - **8.2** (read receipts): adds `delivered_at` / `read_at` columns + `dm:state` WS push. No crypto change.
 - **8.3** (key rotation): adds `sender_key_fp` / `recipient_key_fp` per ciphertext. Partially addresses finding 9.
 - **8.4** (media attachments): URL+fingerprint inside the encrypted payload; image bytes themselves remain at an unencrypted URL — explicitly out of scope for v1, tracked here in finding 10's neighborhood.
+
+## v1.1 hardening pass (post-launch)
+
+Five of the six WEAK items above were addressed in a single v1.1 hardening pass. Item 12.4 (forward secrecy) is documented but intentionally **not** shipped — see the analysis at the end.
+
+- **v1.1.6 — finding 10 (format versioning):** new `feed_dms.format_version SMALLINT` column. Default 0 (legacy bytes, no fingerprints) preserves backwards compat; new sends stamp version 1. The column is the future-proofing slot — adding a new version (e.g. AAD-bound, FS-ratcheted) doesn't require another schema migration. `dmCrypto.FORMAT_VERSION` exposes the current value to clients; the encrypt path returns it; the server validates it's in `[0, 16]` to bound the search space for future protocol decoders.
+
+- **v1.1.3 — finding 9 (key rotation UI):** new `<DMKeysSection>` in /settings → Security. Lists the wallet's current dm_pubkey fingerprint, the count of historical keys kept locally, and a confirm-gated "Rotate DM key" button. Rotating mints a fresh keypair, appends it to the localStorage history, and publishes the new public half via the existing `POST /api/profile/dm-pubkey`. Past keys stay in history so older messages still decrypt; clearing site data after a rotation is the only destructive path. Replaces the previous devtools-only flow.
+
+- **v1.1.2 — finding 8 (safety numbers / out-of-band pubkey verification):** new `feed_dm_verifications` table keyed on `(viewer_wallet, peer_wallet)` with the peer's `dm_pubkey` fingerprint at verify time. `<SafetyNumberSection>` in the DM context pane shows the peer's current fingerprint, and three states: not verified (default), verified with current fp matching ("✅ Verified"), and verified with current fp differing ("⚠ Key changed since you verified"). The third state is the load-bearing one — if the backend ever swaps the published `dm_pubkey` for a peer the viewer has previously verified, the UI surfaces the rotation explicitly rather than silently grandfathering the new key. Three new endpoints: `GET /api/dm/verifications/:peerWallet`, `POST /api/dm/verify`, `DELETE /api/dm/verify/:peerWallet`.
+
+- **v1.1.5 — finding 12 (full image-byte encryption):** image attachments now upload as **opaque ciphertext**. The sender mints a fresh 32-byte symmetric key + 24-byte nonce per attachment, runs `nacl.secretbox` over the file bytes client-side, and POSTs the ciphertext to `/api/media/upload?encrypted=1` (bypasses the magic-byte MIME check + sharp/EXIF strip — which can't run on opaque bytes — but keeps the 5MB cap, daily quota, and host cascade). The symmetric key + nonce ride along inside the dmCrypto-encrypted message body alongside the URL, so only the recipient can recover them. Receiver fetches the URL, decrypts to a Uint8Array, wraps in a `Blob`, and renders via `blob:` URL. Day 8.4 bodies (URL-only) still render via the legacy plaintext path. The image bytes at the host are now ciphertext; without the message-embedded key, a host operator (or anyone with the URL) gets random bytes.
+
+- **v1.1.1 — finding 11 (group-chat E2E, sender-keys flavor):** opt-in at group creation via `e2e_enabled` on `feed_group_chats`. Owner mints a 32-byte symmetric `group_key`, wraps a copy to each member by `nacl.box`-encrypting it to that member's published `dm_pubkey`, and POSTs the wraps to `/api/dm/groups/:id/key/distribute`. Members fetch their wrap via `GET /api/dm/groups/:id/key`, unwrap with their own dmCrypto secret, and cache the symmetric key in `localStorage` keyed by `(wallet, group_id)`. Send: `nacl.secretbox` with the group key. Receive: same. Existing groups (e2e_enabled=false) continue plaintext. **Limitations** — single key per group, never rotated, so members joining LATER receive the same key and can read all prior history. This trades retroactive privacy on member-add for protocol simplicity; v1.2 should add per-epoch rotation (TreeKEM or similar). Plaintext content column stays for legacy/non-e2e rows. New columns: `feed_group_messages.encrypted_content`, `nonce`, `sender_key_fp`. New table: `feed_group_keys (group_id, user_id, wrapped_key, wrap_nonce, wrapped_by_pubkey)`.
+
+## Forward secrecy (finding 7) — analysis, not shipped
+
+A symmetric ratchet on top of static `nacl.box` keys is technically possible: derive an initial chain key from `ECDH(my_sk, peer_pk)`, then `chain_key_{n+1} = HKDF(chain_key_n, "next")` and `message_key_n = HKDF(chain_key_n, "msg")`. Sender encrypts with `message_key_n`, includes the message number, recipient derives the same chain. Deleting old chain keys gives forward secrecy on messages going forward from initiation.
+
+The blocker is **state synchronization**, not the math:
+
+1. Each side maintains a chain state in `localStorage`. If the user clears site data, opens incognito, or signs in from a different browser, their chain desyncs from the peer's. Without a recovery path, future messages stop decrypting — and there's no way to recover, because deleting chain keys is the whole point of FS.
+
+2. Multi-device support requires a sync mechanism (Signal solves this with sealed-sender + per-device prekey bundles + key-transparency). IronShield has none of those today; users routinely sign in from desktop and mobile, and we don't have a way to ratchet across devices.
+
+3. Wallet-derived deterministic chain seeds (use `signMessage` with a per-conversation domain string to seed the ratchet) would solve the multi-device problem cleanly: any device with the wallet can re-derive the chain. But the signing required for each new conversation is a UX cost we'd need to weigh — and it shifts the threat model to "wallet-key compromise = full chain exposure," which somewhat undermines the FS gain.
+
+For v1.1, the WEAK label stays. Treating FS as a v1.2 problem is the responsible call: shipping a half-working ratchet that silently loses messages on multi-device use would be worse than the current static-key model.
+
+**Recommended v1.2 path:** wallet-derived deterministic chain seeds. Per-conversation `signMessage` once at conversation creation, hash the signature into a 32-byte chain seed, ratchet from there. Multi-device works because every device with the wallet can re-derive. Does *not* protect against wallet-key compromise — but neither does anything else we ship today, so it's not a regression.
+
+## v1.1 secondary pass (DM key durability + automation polish)
+
+A second hardening cycle landed four more items from the v1.1 backlog. None of them changes the DM crypto's core threat model; they tighten the surface around it.
+
+- **v1.1.9 — finding 6 + 9 (DM key durability):** `walletDeriveChallenge(wallet)` builds a fixed NEP-413 challenge per wallet; `adoptWalletDerivedKeypair(wallet, signedMessage)` hashes the signature with BLAKE2b, slices 32 bytes for the secret seed, and writes a derived keypair into the same localStorage history the random flow uses. Settings → Security exposes a "Derive from wallet" button that runs the round-trip and publishes the resulting public half. *Same wallet on any device re-derives the same keypair* — clearing site data is recoverable, multi-device is one signMessage popup per device, and the wallet's signing key never leaves the wallet. Caveats: wallet-key compromise = full DM history exposure (same risk as before, not a regression — the random flow already has its own XSS exposure), and the domain string `ironshield-dm-key-v1` must stay stable forever (changing it breaks every prior derived seed). Treated as additive, not a replacement: existing random-key users keep their key in history and can opt in at their own pace.
+
+- **v1.1.10 — Day 18.3 (Pro themes):** three new presets — `emerald`, `aurora`, `gold` — defined in `tokens.css` + `PRESET_ACCENTS` + the picker in Appearance. Picker checks `/api/auth/me` `isPro`; non-Pro members see a lock overlay and a click routes to `/rewards#pro` instead of applying the preset. The CSS itself isn't gated (a determined non-Pro could set `data-theme="emerald"` via devtools), since this is cosmetic — real Pro perks live behind `requirePro` on protected routes.
+
+- **v1.1.7 — Day 19 (LiveKit egress S3 fallback):** `egressDestination()` now falls back to the existing R2 envs when `LIVEKIT_EGRESS_S3_BUCKET` isn't set. Most production deploys have R2 already configured for media uploads; deriving the egress destination from `R2_*` collapses the egress wiring from "set six new env vars" to "just have R2 set up." Setting `LIVEKIT_EGRESS_*` still wins when ops want to route egress to a different bucket from media.
+
+- **v1.1.8 — Day 12.3 (AI-evaluated automation triggers):** `agentConnector.classify(predicate, item, wallet)` asks the LLM "does this match?" with a strict-JSON system prompt; budget gated against `wallet_ai_spend` (Day 5.3 cap, returns 402 on overshoot). New worker tick walks each enabled `trigger.type='ai'` rule, fetches `feed_posts` newer than the rule's `ai_last_id` cursor, classifies up to 10 items per tick per rule, and fires the action on `match=true`. First-time activation clamps to "items in the last hour" so a fresh enable doesn't drag the entire archive through the LLM. Schema: `agent_automations.ai_last_id` cursor. Source `recent_posts` is the only one wired in v1.1.8; xfeed/RSS are tracked for v1.2.

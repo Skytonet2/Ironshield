@@ -63,8 +63,18 @@ export const PRESET_ACCENTS = {
   carbon:   "#a3a3a3",  // neutral gray
   ember:    "#f97316",  // orange
   ironclaw: "#ef4444",  // red
+  // v1.1.10 — Pro-only presets. The picker UI gates selection on
+  // is_pro; PRESET_ACCENTS itself stays open so a Pro user keeps
+  // their accent applied after a brief stake drop until the cache
+  // refresh window expires (graceful degradation, not a privilege
+  // escalation — themes are cosmetic, real Pro perks live behind
+  // requirePro on protected routes).
+  emerald:  "#10b981",  // green
+  aurora:   "#a855f7",  // violet w/ cyan glow
+  gold:     "#f59e0b",  // amber
 };
 export const THEME_PRESETS = Object.keys(PRESET_ACCENTS);
+export const PRO_THEME_PRESETS = new Set(["emerald", "aurora", "gold"]);
 
 const accentGlowFor = (hex) => {
   // Convert #RRGGBB → rgba(r,g,b,0.15) for the legacy theme object's
@@ -166,32 +176,64 @@ export function WalletProvider({ children }) {
   // via a /?ref=<code> link (stashed in localStorage by the inline
   // script in layout.js). If so, POST it to claim-referrer so the
   // inviter gets credit, and set a follow-prompt flag so the feed
-  // page can nudge them to follow their inviter. Only fires once per
-  // claim — the backend rejects repeats and we clear the pending
-  // value either way to avoid retrying forever.
+  // page can nudge them to follow their inviter.
+  //
+  // Pending-code lifecycle: clear ONLY on a definitive server reply
+  // (success, or a permanent rejection like "code not found" /
+  // "self_referral" / "already_set"). On transport-level failures
+  // (signing dismissed, popup blocked, offline, 5xx) keep the pending
+  // value so the next wallet-connect attempt retries. The previous
+  // version cleared in `finally`, which meant any one-time hiccup
+  // permanently lost the referral.
+  //
+  // Console logs are intentional here — without them, debugging a
+  // failed claim from the browser is impossible because the network
+  // tab only shows the symptom, not the decision tree.
   useEffect(() => {
     if (!address || typeof window === "undefined") return;
     let ref;
     try { ref = localStorage.getItem("ironshield:ref-pending"); } catch {}
     if (!ref) return;
+    console.log("[referral] claim attempt", { code: ref, wallet: address });
     (async () => {
+      let r, j;
       try {
-        const r = await apiFetch(`/api/rewards/claim-referrer`, {
+        r = await apiFetch(`/api/rewards/claim-referrer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code: ref }),
         });
-        const j = await r.json().catch(() => ({}));
-        if (r.ok && j.claimed && j.referrer) {
-          // Stash the referrer so the feed can render a "follow your
-          // inviter" prompt on the next load.
-          try {
-            localStorage.setItem("ironshield:ref-prompt", JSON.stringify(j.referrer));
-          } catch {}
-        }
-      } catch { /* silent — claim is best-effort */ } finally {
-        try { localStorage.removeItem("ironshield:ref-pending"); } catch {}
+      } catch (err) {
+        // Transport failure (wallet popup dismissed, signing rejected,
+        // network drop). Keep pending for the next attempt.
+        console.warn("[referral] claim transport-failed (will retry on next connect):", err?.message || err);
+        return;
       }
+      try { j = await r.json(); } catch { j = {}; }
+
+      if (r.ok && j.claimed && j.referrer) {
+        console.log("[referral] claim landed", j.referrer);
+        try {
+          localStorage.setItem("ironshield:ref-prompt", JSON.stringify(j.referrer));
+        } catch {}
+        try { localStorage.removeItem("ironshield:ref-pending"); } catch {}
+        return;
+      }
+
+      // Definitive rejection: 4xx with a known reason, OR 200 with
+      // claimed:false (already_set). Permanent — clear pending.
+      const permanent =
+        r.status === 200 && j.claimed === false ||
+        r.status === 400 ||
+        r.status === 404;
+      if (permanent) {
+        console.log("[referral] claim refused (permanent), clearing:", { status: r.status, body: j });
+        try { localStorage.removeItem("ironshield:ref-pending"); } catch {}
+        return;
+      }
+
+      // 401 (signing failed), 403, 5xx, anything else — keep pending.
+      console.warn("[referral] claim non-2xx (will retry on next connect):", { status: r.status, body: j });
     })();
   }, [address]);
 

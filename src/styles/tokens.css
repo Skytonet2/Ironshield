@@ -121,6 +121,36 @@
   --bg-surface: #0f0505;
 }
 
+/* v1.1.10 — IronShield Pro themes. Locked behind is_pro on the
+ * frontend picker; CSS doesn't enforce that itself, so a non-Pro
+ * user setting `data-theme="emerald"` via devtools would still see
+ * the colors. The whole picker is cosmetic — Pro perks are gated by
+ * requirePro on the routes that matter, not by the theme. */
+[data-theme="emerald"] {
+  --accent: #10b981;
+  --accent-dim: rgba(16, 185, 129, 0.10);
+  --accent-border: rgba(16, 185, 129, 0.22);
+  --accent-glow: 0 0 22px rgba(16, 185, 129, 0.18);
+  --bg-app: #03080a;
+  --bg-surface: #050f12;
+}
+[data-theme="aurora"] {
+  --accent: #a855f7;
+  --accent-dim: rgba(168, 85, 247, 0.12);
+  --accent-border: rgba(168, 85, 247, 0.28);
+  --accent-glow: 0 0 24px rgba(168, 85, 247, 0.20), 0 0 60px rgba(56, 189, 248, 0.10);
+  --bg-app: #050310;
+  --bg-surface: #0a0719;
+}
+[data-theme="gold"] {
+  --accent: #f59e0b;
+  --accent-dim: rgba(245, 158, 11, 0.10);
+  --accent-border: rgba(245, 158, 11, 0.24);
+  --accent-glow: 0 0 22px rgba(245, 158, 11, 0.18);
+  --bg-app: #0a0703;
+  --bg-surface: #110b04;
+}
+
 /* === MICRO-INTERACTIONS ============================================
  * Applied globally so new components pick them up for free. Legacy
  * components that already set their own transitions win via specificity.

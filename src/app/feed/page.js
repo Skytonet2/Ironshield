@@ -14,6 +14,8 @@ import FeedCard from "@/components/feed/FeedCard";
 import ComposeBar from "@/components/feed/ComposeBar";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import ReferrerFollowPrompt from "@/components/feed/ReferrerFollowPrompt";
+import QuoteComposerModal from "@/components/feed/QuoteComposerModal";
+import { RefreshCw } from "lucide-react";
 import { m, feedContainerVariants, feedCardVariants } from "@/lib/motion";
 import { TipModal } from "@/components/TipModal";
 import { apiFetch } from "@/lib/apiFetch";
@@ -115,6 +117,9 @@ export default function FeedPage() {
   // broke. Only set when viewing the voices tab.
   const [voicesStatus, setVoicesStatus] = useState("ok");
   const [muted, refreshMuted] = useMutedSet(wallet);
+  // Bump this to force the load effect to re-fire (manual Refresh button).
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const refresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
 
   useEffect(() => {
     const target = TABS.find((x) => x.key === tab) || TABS[0];
@@ -173,7 +178,7 @@ export default function FeedPage() {
       }
     })();
     return () => ctl.abort();
-  }, [tab, wallet]);
+  }, [tab, wallet, refreshNonce]);
 
   const visible = useMemo(() => {
     if (muted.size === 0) return posts;
@@ -304,6 +309,12 @@ export default function FeedPage() {
     setPosts((prev) => [p, ...prev]);
   }, []);
 
+  const [quotePost, setQuotePost] = useState(null);
+  const onQuote = useCallback((post) => {
+    if (!wallet) { walletCtx?.showModal?.(); return; }
+    setQuotePost(post);
+  }, [wallet, walletCtx]);
+
   return (
     <AppShell rightPanel={<FeedRightRail />}>
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "12px 16px" }}>
@@ -313,9 +324,10 @@ export default function FeedPage() {
         <ReferrerFollowPrompt />
         <ComposeBar onPosted={prependPost} />
 
-        {/* Tab strip */}
+        {/* Tab strip + Refresh */}
         <div style={{
           display: "flex",
+          alignItems: "center",
           gap: 2,
           borderBottom: `1px solid ${t.border}`,
           marginBottom: 12,
@@ -344,6 +356,23 @@ export default function FeedPage() {
               </button>
             );
           })}
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            aria-label="Refresh feed"
+            title="Refresh"
+            style={{
+              padding: 8, marginRight: 4, marginBottom: 2,
+              background: "transparent", border: "none",
+              color: loading ? t.textDim : t.textMuted,
+              cursor: loading ? "wait" : "pointer",
+              display: "inline-flex", alignItems: "center",
+            }}
+          >
+            <RefreshCw size={16} style={loading ? { animation: "spin 0.9s linear infinite" } : undefined} />
+          </button>
         </div>
 
         {/* Voices upstream status banner — only on the Voices tab,
@@ -418,6 +447,7 @@ export default function FeedPage() {
                 onDelete={deletePost}
                 onLike={()   => onLike(p)}
                 onRepost={() => onRepost(p)}
+                onQuote={onQuote}
                 onTip={()    => onTip(p)}
                 onReply={(text) => onReply(p, text)}
               />
@@ -425,6 +455,14 @@ export default function FeedPage() {
           ))}
         </m.div>
       </div>
+
+      {quotePost && (
+        <QuoteComposerModal
+          post={quotePost}
+          onClose={() => setQuotePost(null)}
+          onPosted={(p) => prependPost(p)}
+        />
+      )}
 
       {tipPost && (
         <TipModal

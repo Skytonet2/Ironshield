@@ -16,7 +16,11 @@ router.get("/", async (req, res, next) => {
     if (!wallet) return res.json({ notifications: [] });
     const me = await getOrCreateUser(wallet);
     const r = await db.query(
-      `SELECT n.*, u.username AS actor_username, u.display_name AS actor_name, u.pfp_url AS actor_pfp
+      `SELECT n.*,
+              u.username        AS actor_username,
+              u.display_name    AS actor_name,
+              u.pfp_url         AS actor_pfp,
+              u.wallet_address  AS actor_wallet
          FROM feed_notifications n
          LEFT JOIN feed_users u ON u.id = n.actor_id
         WHERE n.user_id=$1

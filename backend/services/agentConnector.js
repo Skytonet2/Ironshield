@@ -574,6 +574,68 @@ ${payload.content || ""}`,
   expectJson: true,
 });
 
+// v1.1 — Day 12.3 AI-evaluated automation triggers.
+//
+// Given a user-defined predicate prompt and a single feed item,
+// asks the model "does this match?" and parses a strict JSON
+// response. Used by automationWorker.aiTick — one classify() call
+// per (rule, item). Cheap by design: max_tokens 200 caps the
+// reply, the system prompt forbids prose around the JSON, and
+// aiBudget gates the call against the wallet's daily cap so a
+// runaway feed source can't blow through the wallet's budget.
+//
+// Returns { match: bool, reason: short string }. Throws on budget
+// exhaustion (caller catches and skips that rule for this tick).
+exports.classify = async (predicate, item, wallet) => {
+  const sys = `You evaluate whether a single feed item matches a user-defined predicate.
+Reply ONLY with JSON: { "match": <true|false>, "reason": "<≤80 chars>" }.
+No prose, no markdown, no code fences.`;
+  const user = `Predicate: ${String(predicate || "").slice(0, 500)}
+
+Item:
+${JSON.stringify(item).slice(0, 1500)}`;
+  if (IRONCLAW_MODE) {
+    const out = await ironclawDispatch({ wallet, systemPrompt: sys, userPrompt: user, expectJson: true, maxTokens: 200 });
+    return normalizeClassify(out);
+  }
+  if (wallet) await aiBudget.checkBudget(wallet);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 200,
+        messages: [
+          { role: "system", content: sys },
+          { role: "user",   content: user },
+        ],
+      }),
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`NEAR AI returned ${res.status}: ${await res.text()}`);
+    const json = await res.json();
+    if (wallet) await aiBudget.recordSpend(wallet, json.usage);
+    const text = json.choices?.[0]?.message?.content || "{}";
+    const clean = text.replace(/```json|```/g, "").trim();
+    return normalizeClassify(JSON.parse(clean));
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.code === "ai-budget-exceeded") throw err;
+    throw new Error(`classify dispatch failed: ${err.message}`);
+  }
+};
+
+function normalizeClassify(obj) {
+  return {
+    match: !!(obj && obj.match === true),
+    reason: String(obj?.reason || "").slice(0, 80),
+  };
+}
+
 // Test seam: returns the actual system prompt that would hit NEAR AI for a
 // given task, without making the network call. Used by Day 4.3's
 // governance-loop evidence script (scripts/day4-evidence.js) to assert that

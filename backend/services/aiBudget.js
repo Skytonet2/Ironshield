@@ -16,8 +16,16 @@
 // near.ai cloud endpoint; if the upstream changes pricing, edit here.
 
 const db = require("../db/client");
+const requirePro = require("../middleware/requirePro");
 
 const DEFAULT_BUDGET_USD = 5.0;
+// Day 18.3: Pro members get a 4× larger daily AI budget. The check sits
+// between the admin override and the wallet_budgets row so an explicit
+// per-wallet cap (set by support, etc.) still wins over the default
+// Pro perk. is_pro hits the chain via the 60s cache in requirePro;
+// failures degrade to the non-Pro path so a flaky RPC can't lock
+// every wallet out.
+const PRO_BUDGET_USD = 20.0;
 
 // $/1K tokens. Source: rough estimate for a 30B-class OSS LLM hosted on
 // near.ai cloud. Update when upstream publishes a real price sheet.
@@ -63,6 +71,13 @@ async function getBudget(wallet) {
   ).catch(() => ({ rows: [] }));
   if (admin.rows[0]?.daily_ai_budget_usd != null) {
     return Number(admin.rows[0].daily_ai_budget_usd);
+  }
+  // Day 18.3 — Pro perk. Catch & degrade so a chain RPC blip doesn't
+  // make every wallet's AI budget lookup fail.
+  try {
+    if (await requirePro.isPro(wallet)) return PRO_BUDGET_USD;
+  } catch (err) {
+    console.warn("[aiBudget] is_pro check failed, falling back:", err.message);
   }
   const r = await db.query(
     "SELECT daily_ai_budget_usd FROM wallet_budgets WHERE wallet = $1 LIMIT 1",
