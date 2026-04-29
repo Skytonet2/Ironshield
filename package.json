@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "deploy:pages": "node scripts/deploy-pages.mjs",
     "e2e": "playwright test",
     "bot": "node bot/index.js",
     "backend": "node backend/server.js",

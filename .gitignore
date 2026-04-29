@@ -64,3 +64,4 @@ agent/activeMission.json
 /playwright-report/
 /test-results/
 /playwright/.cache/
+.deploy/
