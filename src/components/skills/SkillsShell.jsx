@@ -509,13 +509,7 @@ export default function SkillsShell({ children }) {
   return (
     <div
       data-app-shell="ready"
-      /* Outermost shell wrapper uses --bg-app (CSS var) instead of t.bg
-         (JS theme value) so BgToggle's html[data-bg="light"] rule can
-         override it. Visually identical in dark mode (--bg-app and
-         DARK.bg are both #080b16). Header / sidebar / drawer below
-         intentionally keep t.bg so they stay dark in light mode —
-         "theme reserved" means flip the gutter only. */
-      style={{ background: "var(--bg-app)", color: t.text, minHeight: "100vh" }}
+      style={{ background: t.bg, color: t.text, minHeight: "100vh" }}
     >
       <TopNav
         t={t}
