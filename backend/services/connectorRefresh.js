@@ -75,8 +75,10 @@ function start({ tickMs = TICK_MS } = {}) {
   _timer = setInterval(_tick, tickMs);
   if (typeof _timer.unref === "function") _timer.unref();
   // Kick a tick on boot so a deploy after a long quiet period doesn't
-  // wait the full interval before catching expiring tokens.
-  setTimeout(() => { _tick().catch(() => {}); }, 5_000);
+  // wait the full interval before catching expiring tokens. Unref so a
+  // process trying to shut down within the first 5s isn't held open.
+  const bootTimer = setTimeout(() => { _tick().catch(() => {}); }, 5_000);
+  if (typeof bootTimer.unref === "function") bootTimer.unref();
 }
 
 function stop() {
