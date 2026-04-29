@@ -20,6 +20,7 @@
 
 const credentialStore = require("../connectors/credentialStore");
 const connectors      = require("../connectors");
+const telemetry       = require("./telemetry");
 
 const TICK_MS            = 5 * 60 * 1000;  // 5 min
 const REFRESH_WINDOW_MS  = 10 * 60 * 1000; // refresh anything expiring inside 10 min
@@ -55,11 +56,15 @@ async function _tick() {
             payload:   fresh.payload,
             expiresAt: fresh.expiresAt || null,
           });
+          telemetry.bumpFireAndForget("refresh.success", row.connector_name);
         }
+        // refresh returning null (e.g. linkedin's no-automated-refresh
+        // contract) is intentional — count as neither success nor failure.
       } catch (e) {
         console.warn(
           `[connectorRefresh] ${row.connector_name} for ${row.user_wallet}: ${e.message}`
         );
+        telemetry.bumpFireAndForget("refresh.failure", row.connector_name);
         // Don't bubble — one bad row shouldn't stop the rest.
       }
     }

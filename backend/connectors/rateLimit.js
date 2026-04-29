@@ -16,6 +16,15 @@
 const QUOTAS = new Map();        // name -> { capacity, refillMs, scope }
 const BUCKETS = new Map();       // `${name}:${key}` -> { tokens, last, queue }
 
+// Lazy telemetry — same pattern as connectors/index.js.
+let _telemetry = null;
+function _bump(event, label) {
+  if (!_telemetry) {
+    try { _telemetry = require("../services/telemetry"); } catch { _telemetry = { bumpFireAndForget: () => {} }; }
+  }
+  _telemetry.bumpFireAndForget(event, label);
+}
+
 const MAX_QUEUE = 32;            // hard cap so a runaway agent can't OOM
 const MIN_WAIT_MS = 25;
 const MAX_WAIT_MS = 5_000;
@@ -93,6 +102,7 @@ function acquire(name, walletOrPlatform = "platform") {
     if (b.queue >= MAX_QUEUE) {
       const err = new Error(`rateLimit: ${name}/${key} queue full (${MAX_QUEUE})`);
       err.code = "RATE_LIMIT_QUEUE_FULL";
+      _bump("rate_limit.queue_full", name);
       reject(err);
       return;
     }

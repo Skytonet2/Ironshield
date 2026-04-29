@@ -16,6 +16,14 @@
 // outbound calls bypassing rateLimit.acquire (Tier 4 constraint).
 
 const rateLimit = require("./rateLimit");
+// Lazy-required so a missing telemetry/db doesn't break connector boot.
+let _telemetry = null;
+function _bump(event, label) {
+  if (!_telemetry) {
+    try { _telemetry = require("../services/telemetry"); } catch { _telemetry = { bumpFireAndForget: () => {} }; }
+  }
+  _telemetry.bumpFireAndForget(event, label);
+}
 
 const REGISTRY = new Map();
 
@@ -66,6 +74,7 @@ async function invoke(name, action, ctx = {}) {
   if (!mod) throw new Error(`unknown connector: ${name}`);
   const wallet = ctx.wallet || "platform";
   await rateLimit.acquire(name, wallet);
+  _bump("connector.invoke", name);
   return mod.invoke(action, ctx);
 }
 

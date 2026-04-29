@@ -69,4 +69,16 @@ router.post("/stats", requireWallet, requireAdmin, async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /api/admin/event-counters — connector-activity telemetry. Admin
+// allowlist only (operator visibility, not user-facing). Labels are
+// connector names / kit slugs — never wallets.
+router.get("/event-counters", requireWallet, requireAdmin, async (req, res, next) => {
+  try {
+    const telemetry = require("../services/telemetry");
+    const limit = Number(req.query.limit) || 200;
+    const counters = await telemetry.list({ limit });
+    res.json({ counters });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

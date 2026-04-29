@@ -333,6 +333,7 @@ async function runKitHandler(req, res, deps = {}) {
       return res.status(403).json({ error: "Only poster or claimant may run a Kit" });
     }
     const run = await kr.runKit({ mission_id: id });
+    try { require("../services/telemetry").bumpFireAndForget("mission.run_kit", mission.kit_slug || ""); } catch {}
     return res.json({ ok: true, run });
   } catch (e) {
     const status =
