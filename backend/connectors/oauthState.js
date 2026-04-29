@@ -72,7 +72,11 @@ function fresh({ wallet, connector, withPkce = false }) {
   return { state, verifier, challenge, cookie: sign(payload), payload };
 }
 
-/** Express helpers: set cookie on res / read cookie from req. */
+/** Express helpers: set cookie on res / read cookie from req.
+ *
+ *  Uses res.append (Express 4) instead of res.setHeader so any prior
+ *  Set-Cookie header on the response (e.g. a session cookie set by
+ *  upstream middleware) survives — setHeader would clobber it. */
 function setCookie(res, value) {
   // SameSite=Lax so the cookie survives the provider's GET redirect
   // back to our callback. Path scoped to /api/connectors so it doesn't
@@ -86,7 +90,7 @@ function setCookie(res, value) {
     `Max-Age=${Math.floor(TTL_MS / 1000)}`,
   ];
   if (secure) parts.push("Secure");
-  res.setHeader("Set-Cookie", parts.join("; "));
+  res.append("Set-Cookie", parts.join("; "));
 }
 function clearCookie(res) {
   const secure = process.env.NODE_ENV === "production";
@@ -98,7 +102,7 @@ function clearCookie(res) {
     "Max-Age=0",
   ];
   if (secure) parts.push("Secure");
-  res.setHeader("Set-Cookie", parts.join("; "));
+  res.append("Set-Cookie", parts.join("; "));
 }
 function readCookie(req) {
   const raw = req.headers?.cookie || "";

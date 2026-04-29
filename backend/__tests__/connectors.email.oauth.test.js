@@ -25,7 +25,8 @@ function fakeReqRes(over = {}) {
     send(b)   { res.body = b; return res; },
     redirect(u) { res.statusCode = 302; res.body = u; return res; },
     setHeader(k, v) { headers[k] = v; },
-    appendHeader(k, v) { headers[k] = v; },
+    // Express 4-style append: accumulates Set-Cookie values across calls.
+    append(k, v) { headers[k] = headers[k] ? [].concat(headers[k], v) : v; },
     end() {},
     _headers: headers,
   };
@@ -53,7 +54,10 @@ test("email/oauth-google: start with env returns a Google authorize URL + scope 
   assert.equal(u.hostname, "accounts.google.com");
   assert.match(u.searchParams.get("scope"), /https:\/\/mail\.google\.com\//);
   assert.equal(u.searchParams.get("access_type"), "offline");
-  assert.ok(res._headers["Set-Cookie"], "Set-Cookie should be set");
+  assert.ok(
+    [].concat(res._headers["Set-Cookie"] || []).some(Boolean),
+    "Set-Cookie should be set"
+  );
 });
 
 test("email/oauth-microsoft: start without env returns 503", () => {
