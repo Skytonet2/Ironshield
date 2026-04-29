@@ -32,7 +32,12 @@ async function _tick() {
   if (_running) return; // overlap guard
   _running = true;
   try {
-    const expiring = await credentialStore.findExpiring({ withinMs: REFRESH_WINDOW_MS });
+    // Pull at most MAX_PER_TICK rows from the DB — no point fetching
+    // more than we'd process this tick. Next tick picks up the rest.
+    const expiring = await credentialStore.findExpiring({
+      withinMs: REFRESH_WINDOW_MS,
+      limit: MAX_PER_TICK,
+    });
     if (!expiring.length) return;
     let processed = 0;
     for (const row of expiring) {
