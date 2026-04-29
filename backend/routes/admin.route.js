@@ -81,4 +81,18 @@ router.get("/event-counters", requireWallet, requireAdmin, async (req, res, next
   } catch (e) { next(e); }
 });
 
+// POST /api/admin/classifieds-drift/run — fire the drift check for
+// every configured classifieds site on demand. Heavyweight (spawns
+// Chromium per site, ~10s each, serial via the connector mutex).
+// Operator should call this when investigating empty-result reports
+// from a Realtor / Car-Sales kit. Weekly cron lands separately in
+// classifiedsDrift.start().
+router.post("/classifieds-drift/run", requireWallet, requireAdmin, async (req, res, next) => {
+  try {
+    const drift = require("../services/classifiedsDrift");
+    const out = await drift.runOnce();
+    res.json(out);
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
