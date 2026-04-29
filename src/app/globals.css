@@ -1,8 +1,17 @@
-/* --page-bg: outermost page background only. Theme tokens (accents,
-   cards, text) intentionally unaffected — a deliberate "swap the
-   gutter, not the UI" toggle. Driven by html[data-bg] (see BgToggle.jsx). */
+/* --page-bg + --bg-app: outermost page background only. Theme tokens
+   (accents, cards, text) intentionally unaffected — a deliberate
+   "swap the gutter, not the UI" toggle. Driven by html[data-bg]
+   (see BgToggle.jsx).
+   --bg-app is also overridden here because both AppShell and
+   SkillsShell paint a full-viewport wrapper using --bg-app; without
+   this override the wrapper covers the body bg and the toggle has
+   no visible effect. tokens.css owns the dark default; this just
+   adds the light branch. */
 :root { --page-bg: #080b12; }
-html[data-bg="light"] { --page-bg: #ffffff; }
+html[data-bg="light"] {
+  --page-bg: #ffffff;
+  --bg-app:  #ffffff;
+}
 
 html, body {
   background: var(--page-bg); margin: 0; padding: 0; min-height: 100vh;
