@@ -821,7 +821,7 @@ router.post("/send", requireWallet, async (req, res, next) => {
         const actorRow = actor.rows[0] || {};
         notifyUser(toId, {
           title: `📞 ${name} is calling`,
-          body: "Tap to answer — IronShield call",
+          body: "Tap to answer — AZUKA call",
           url: `/#/Feed?dm=${conversationId}&call=incoming`,
           tag: `call-${conversationId}`,
           actions: [
@@ -853,7 +853,7 @@ router.post("/send", requireWallet, async (req, res, next) => {
       try {
         const tg = require("../services/tgNotify");
         const text = isCall
-          ? `📞 *${name}* is calling you\nOpen IronShield to answer.`
+          ? `📞 *${name}* is calling you\nOpen AZUKA to answer.`
           : `💬 *${name}* sent you a DM\n_Reply here to respond on-site._\n[Open thread](https://ironshield.near.page/#/Feed?dm=${conversationId})`;
         tg.notifyFeedUser(toId, "dms", text, {
           replyMapConversationId: isCall ? null : conversationId,

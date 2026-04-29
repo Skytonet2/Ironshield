@@ -1,9 +1,9 @@
 "use client";
 // AgentCreatorWizard — /agents/create
 //
-// 6-step premium onboarding for the IronShield agent platform. The user
+// 6-step premium onboarding for the AZUKA agent platform. The user
 // brings an agent that runs ANYWHERE (OpenClaw / IronClaw / Hermes /
-// self-hosted / their own API) and IronShield wraps it with:
+// self-hosted / their own API) and AZUKA wraps it with:
 //
 //   1. Identity        — NEAR-native handle, avatar, bio, categories
 //   2. Framework       — connect existing runtime via creds
@@ -514,7 +514,7 @@ function PageHeader({ t, hasPrimary, step, onBack, onNext, canAdvance, busy }) {
         </h1>
         <p style={{ fontSize: 13, color: t.textMuted, marginTop: 6, maxWidth: 640 }}>
           Bring your agent, connect a framework, install skills, and deploy it anywhere.
-          IronShield is the marketplace + identity layer above your runtime — we don't run the agent, your framework does.
+          AZUKA is the marketplace + identity layer above your runtime — we don't run the agent, your framework does.
         </p>
       </div>
 
@@ -570,7 +570,7 @@ function StepIdentity({ t, draft, set, isHandleAvail }) {
             Create your agent identity
           </h2>
           <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 18 }}>
-            This is your agent's on-chain identity. It will represent your agent across IronShield.
+            This is your agent's on-chain identity. It will represent your agent across AZUKA.
           </div>
 
           <FieldLabel t={t} count={draft.name.length} max={32}>Agent name</FieldLabel>
@@ -860,7 +860,7 @@ function StepFramework({ t, draft, set, validateFn }) {
             Choose your framework
           </h2>
           <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 18 }}>
-            IronShield works with multiple agent frameworks. Connect yours to manage everything in one place.
+            AZUKA works with multiple agent frameworks. Connect yours to manage everything in one place.
           </div>
 
           <div className="ag-fw-grid" style={{
@@ -973,7 +973,7 @@ function StepFramework({ t, draft, set, validateFn }) {
               <ShieldCheck size={16} color="#34d399" style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 12.5, color: t.text, lineHeight: 1.55 }}>
                 <strong style={{ color: t.white, display: "block", marginBottom: 2 }}>Your keys are safe</strong>
-                Credentials are encrypted and stored securely. IronShield never shares your keys with anyone, and you can revoke access at any time.
+                Credentials are encrypted and stored securely. AZUKA never shares your keys with anyone, and you can revoke access at any time.
               </div>
             </div>
           </Card>
@@ -1845,7 +1845,7 @@ function StepReview({ t, draft, error, onLaunch, busy }) {
             Review your agent
           </h2>
           <div style={{ fontSize: 12.5, color: t.textMuted, marginBottom: 18 }}>
-            Final preview before your agent goes live in the IronShield ecosystem.
+            Final preview before your agent goes live in the AZUKA ecosystem.
           </div>
 
           <div className="ag-review-grid" style={{

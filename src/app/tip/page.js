@@ -122,7 +122,7 @@ function TipPageInner() {
             <Zap size={40} color={t.amber} style={{ marginBottom: 12 }} />
             <h2 style={{ color: t.white, margin: "0 0 8px" }}>Creator not found</h2>
             <p style={{ color: t.textMuted, fontSize: 14 }}>{error || "We couldn't find this creator."}</p>
-            <a href="/" style={{ color: t.accent, fontSize: 14 }}>← Back to IronShield</a>
+            <a href="/" style={{ color: t.accent, fontSize: 14 }}>← Back to AZUKA</a>
           </div>
         </div>
       </AppShell>

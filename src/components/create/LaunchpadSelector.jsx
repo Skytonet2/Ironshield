@@ -2,14 +2,14 @@
 // LaunchpadSelector — the Phase 5 CREATE modal (spec §6).
 //
 // Step 1: chain tabs (NEAR / Solana — BNB opted out per earlier call)
-// + platform cards. IronShield Pad is our own; everything else is an
+// + platform cards. AZUKA Pad is our own; everything else is an
 // external redirect with ?ref=ironshield UTM so we can measure referral
 // funnel downstream.
 //
 // Why no step 2+3 in here today: the existing NewsCoinPage already
 // implements the full token-details → review → factory-call flow for
 // NEAR. Rebuilding it inline would duplicate ~700 lines of wallet +
-// NEP-141 wiring for zero product gain. Instead IronShield Pad (NEAR)
+// NEP-141 wiring for zero product gain. Instead AZUKA Pad (NEAR)
 // deep-links into /?page=NewsCoin with pre-fill query params that
 // NewsCoinPage picks up. Future phase can lift the form into this
 // modal once the legacy router retires.
@@ -28,7 +28,7 @@ const PLATFORMS = {
   near: [
     {
       id: "ironshield",
-      name: "IronShield Pad",
+      name: "AZUKA Pad",
       tag: "native",
       desc: "Our custom bonding curve on NEAR. 0% platform fee for $IRONCLAW holders. Full on-site launch + trading.",
       internal: "/?page=NewsCoin",
@@ -51,7 +51,7 @@ const PLATFORMS = {
   sol: [
     {
       id: "ironshield",
-      name: "IronShield Pad",
+      name: "AZUKA Pad",
       tag: "soon",
       desc: "Our bonding curve on Solana — 0% fee for $IRONCLAW holders. Launch coming Q2.",
       disabled: true,
@@ -114,7 +114,7 @@ export default function LaunchpadSelector({ onClose, prefill = null, initialChai
     }
     if (platform.url) {
       // External: open in a new tab so we don't blow away the user's
-      // current IronShield session.
+      // current AZUKA session.
       window.open(withParams(platform.url, prefill), "_blank", "noopener,noreferrer");
       onClose?.();
     }
@@ -197,7 +197,7 @@ export default function LaunchpadSelector({ onClose, prefill = null, initialChai
         </div>
 
         <p style={{ margin: "0 0 14px", fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
-          Pick a chain, then a launchpad. IronShield Pad keeps the launch native to our product;
+          Pick a chain, then a launchpad. AZUKA Pad keeps the launch native to our product;
           external launchers open in a new tab with your {prefill ? "pre-fill" : "defaults"}.
         </p>
 

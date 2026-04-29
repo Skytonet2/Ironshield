@@ -1,4 +1,4 @@
-// IronShield Service Worker — v4-push-only.
+// AZUKA Service Worker — v4-push-only.
 //
 // Why this shape: v1–v2 ran a full stale-while-revalidate fetch layer
 // and ended up holding broken chunk responses across deploys, which
@@ -43,7 +43,7 @@ self.addEventListener("activate", (event) => {
 //     swallowed there). ────────────────────────────────────────────
 self.addEventListener("push", (event) => {
   let data = {
-    title: "IronShield",
+    title: "AZUKA",
     body: "You have a new notification",
     tag: "general",
     kind: "general",

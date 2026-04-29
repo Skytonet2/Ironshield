@@ -39,7 +39,7 @@ async function handle(bot, msg) {
 
   await bot.sendMessage(
     chatId,
-    `💸 *Ready to tip*\n\nTo: \`${handle}\`\nAmount: *${parsed.amount} ${parsed.token}*\n\nTap to confirm on IronShield — your wallet signs the transfer.`,
+    `💸 *Ready to tip*\n\nTo: \`${handle}\`\nAmount: *${parsed.amount} ${parsed.token}*\n\nTap to confirm on AZUKA — your wallet signs the transfer.`,
     { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } }
   );
 }

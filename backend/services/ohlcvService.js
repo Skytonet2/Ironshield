@@ -146,7 +146,7 @@ async function fetchPikespeakSwaps({ poolId, limit = 1000 }) {
       signal: ctl.signal,
       headers: {
         "x-api-key": key,
-        "User-Agent": "IronShield/ohlcv",
+        "User-Agent": "AZUKA/ohlcv",
         "Accept": "application/json",
       },
     });

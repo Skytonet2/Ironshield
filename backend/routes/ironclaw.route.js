@@ -1,6 +1,6 @@
 // backend/routes/ironclaw.route.js
 //
-// HTTP surface for the IronClaw ↔ IronShield bridge. Three endpoints:
+// HTTP surface for the IronClaw ↔ AZUKA bridge. Three endpoints:
 //
 //   POST /api/ironclaw/bridge/inbound
 //     Webhook from a linked ironclaw.com agent (or any external relay

@@ -8,7 +8,7 @@
 // Layout (desktop ≥ 1024px):
 //   ┌─ TopNav (56px) ──────────────────────────────────────────────┐
 //   ├ LeftSidebar (240px) ┬ Main ─────────────────────────────────┤
-//   │  IronShield Skills  │  {children}                           │
+//   │  AZUKA Skills  │  {children}                           │
 //   │  Discover           │                                       │
 //   │  Categories         │                                       │
 //   │  ...                │                                       │
@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 
-// Top tabs lead with My Agents because IronShield is a launchpad +
+// Top tabs lead with My Agents because AZUKA is a launchpad +
 // command center for agents — the marketplace is the value-add, not
 // the primary surface. Order matters: leftmost tab = product's
 // primary action.
@@ -52,7 +52,7 @@ const SIDEBAR_PRIMARY = [
   { key: "trending",     label: "Trending",         Icon: TrendingUp, href: "/skills/trending"   },
 ];
 
-// CREATE block — the launchpad surfaces. IronShield's primary product is
+// CREATE block — the launchpad surfaces. AZUKA's primary product is
 // the agent flow (launch + manage); the skills marketplace is the
 // value-add. Putting these here makes /agents/create discoverable from
 // anywhere in the shell instead of buried as a route only the wizard CTA
@@ -130,7 +130,7 @@ function TopNav({ t, onToggleDrawer, onOpenConnect }) {
       {/* Wordmark — links to /agents/me (the launchpad/command-center
           home), not /skills. The shell is no longer skills-only; it's
           the agent-platform shell, with the marketplace as one section. */}
-      <Link href="/agents/me" aria-label="IronShield" style={{
+      <Link href="/agents/me" aria-label="AZUKA" style={{
         display: "inline-flex", alignItems: "center", gap: 10,
         textDecoration: "none", color: t.white,
       }}>
@@ -143,7 +143,7 @@ function TopNav({ t, onToggleDrawer, onOpenConnect }) {
           <Zap size={16} color="#fff" strokeWidth={2.6} />
         </span>
         <span style={{ fontWeight: 800, letterSpacing: -0.3, fontSize: 16, whiteSpace: "nowrap" }}>
-          IronShield
+          AZUKA
         </span>
       </Link>
 
@@ -322,7 +322,7 @@ function LeftSidebar({ t, onClose }) {
       {/* Back-out — the SkillsShell is a self-contained section of the
           larger app. Without an explicit exit, users land in here from
           a sidebar link in AppShell and have no way home. This pins
-          a subtle "Back to IronShield" row to the top of the sidebar. */}
+          a subtle "Back to AZUKA" row to the top of the sidebar. */}
       <Link href="/feed" style={{
         display: "inline-flex", alignItems: "center", gap: 8,
         padding: "8px 14px", borderRadius: 10,
@@ -332,7 +332,7 @@ function LeftSidebar({ t, onClose }) {
         background: "transparent",
       }}>
         <ArrowLeft size={13} />
-        Back to IronShield
+        Back to AZUKA
       </Link>
 
       {/* Mobile-only section nav — the top tabs (My Agents / Marketplace /

@@ -56,10 +56,10 @@ async function runOnce(bot) {
       ? `💰 *$${d.tips.usd}* in tips (${d.tips.n})`
       : "";
 
-    const text = `☀️ *Your 24h digest*\n\n${notifLines}${tipLine ? "\n\n" + tipLine : ""}\n\nOpen IronShield to catch up.`;
+    const text = `☀️ *Your 24h digest*\n\n${notifLines}${tipLine ? "\n\n" + tipLine : ""}\n\nOpen AZUKA to catch up.`;
     bot.sendMessage(row.tg_chat_id, text, {
       parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "Open IronShield", url: "https://ironshield.near.page" }]] },
+      reply_markup: { inline_keyboard: [[{ text: "Open AZUKA", url: "https://ironshield.near.page" }]] },
     }).catch(() => {});
   }
 }

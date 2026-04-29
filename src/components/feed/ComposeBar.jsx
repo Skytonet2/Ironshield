@@ -224,7 +224,7 @@ export default function ComposeBar({ onPosted }) {
     const payload = { text: content };
     if (mediaUrls.length) {
       // NEAR Social's convention is a single `image.url` field; extra media
-      // rides along in our own `mediaUrls` key for IronShield-aware clients.
+      // rides along in our own `mediaUrls` key for AZUKA-aware clients.
       payload.image = { url: mediaUrls[0] };
       if (mediaUrls.length > 1) payload.mediaUrls = mediaUrls;
     }

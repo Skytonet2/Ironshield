@@ -11,7 +11,7 @@ test("home page loads with brand mark", async ({ page }) => {
   await page.goto("/");
   // The Next.js export embeds <title> at build time; checking it
   // proves we're hitting the deployed bundle, not a Cloudflare 404.
-  await expect(page).toHaveTitle(/IronShield/i);
+  await expect(page).toHaveTitle(/AZUKA/i);
 });
 
 test("/feed route returns 200", async ({ page }) => {

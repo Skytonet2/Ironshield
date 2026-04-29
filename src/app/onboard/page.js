@@ -6,7 +6,7 @@
 // one (the wallet header attaches the session to the wallet so /onboard
 // resumes on revisit).
 //
-// Brand: matches IronShield dark aesthetic via tokens.css CSS vars.
+// Brand: matches AZUKA dark aesthetic via tokens.css CSS vars.
 // No external chat-UI dependency — the bubble layout is a thin custom
 // shell so it slots into the existing app shell without conflicting
 // fonts or message-bubble libraries.

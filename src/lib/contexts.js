@@ -596,7 +596,7 @@ function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
                 WebkitBackgroundClip: "text", backgroundClip: "text",
                 WebkitTextFillColor: "transparent", color: "transparent",
                 fontWeight: 700,
-              }}>IronShield</span>.
+              }}>AZUKA</span>.
             </p>
           </div>
         </div>

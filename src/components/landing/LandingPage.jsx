@@ -1,5 +1,5 @@
 "use client";
-// IronShield landing page — marketing shell, not the app shell.
+// AZUKA landing page — marketing shell, not the app shell.
 //
 // Sections:
 //   1. Scroll-aware navbar (transparent → glass on scroll)
@@ -69,7 +69,7 @@ const FEATURES = [
   { label: "Social Feed",     Icon: MessageCircle, hint: "Real-time updates, alpha, and community conversations." },
   { label: "AI Automations",  Icon: Sparkles,      hint: "Create powerful workflows and on-chain automations." },
   { label: "Earn Rewards",    Icon: Star,          hint: "Complete missions, earn XP, and unlock exclusive rewards." },
-  { label: "Govern Together", Icon: Shield,        hint: "Vote on proposals and shape the future of IronShield." },
+  { label: "Govern Together", Icon: Shield,        hint: "Vote on proposals and shape the future of AZUKA." },
 ];
 
 const STATS = [
@@ -216,7 +216,7 @@ function Navbar() {
           textDecoration: "none", color: "#fff",
         }}>
           <BrandMark size={28} />
-          <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.3 }}>IronShield</span>
+          <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.3 }}>AZUKA</span>
         </a>
 
         <nav style={{ display: "flex", gap: 6, marginLeft: 20 }} className="ix-desk-only">
@@ -395,7 +395,7 @@ function Hero() {
               margin: "0 0 22px", maxWidth: 520,
             }}
           >
-            IronShield is the all-in-one platform for Web3 builders, traders, and communities.
+            AZUKA is the all-in-one platform for Web3 builders, traders, and communities.
             Social, earn, automate, and scale with AI agents and on-chain tools.
           </m.p>
 
@@ -537,7 +537,7 @@ function HeroMascot() {
         <div style={{ animation: "ix-breathe 5s ease-in-out infinite" }}>
           <img
             src="/mascot.webp"
-            alt="IronShield mascot"
+            alt="AZUKA mascot"
             width={520} height={780}
             style={{ width: "100%", height: "auto", display: "block" }}
             loading="eager"
@@ -786,7 +786,7 @@ function ProductPreview() {
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px" }}>
             <BrandMark size={18} />
-            <span style={{ fontSize: 12, fontWeight: 800 }}>IronShield</span>
+            <span style={{ fontSize: 12, fontWeight: 800 }}>AZUKA</span>
           </div>
           {[
             ["Feed", true], ["NewsCoin"], ["Automations"], ["Rewards"],
@@ -810,7 +810,7 @@ function ProductPreview() {
             border: "1px solid rgba(168,85,247,0.3)",
             fontSize: 10, color: "#fff",
           }}>
-            <div style={{ fontWeight: 800, marginBottom: 2 }}>IronShield Pro</div>
+            <div style={{ fontWeight: 800, marginBottom: 2 }}>AZUKA Pro</div>
             <div style={{ color: "rgba(230,236,247,0.65)" }}>Unlock advanced analytics and exclusive features.</div>
             <div style={{
               marginTop: 6, display: "inline-block",
@@ -1278,7 +1278,7 @@ function EmailSubscribe() {
       }}>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", marginBottom: 3 }}>
-            Stay updated with IronShield
+            Stay updated with AZUKA
           </div>
           <div style={{ fontSize: 13, color: "rgba(230,236,247,0.6)" }}>
             Get the latest updates, product drops, and alpha straight to your inbox.
@@ -1382,7 +1382,7 @@ function Footer() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <BrandMark size={28} />
-            <span style={{ fontSize: 16, fontWeight: 800 }}>IronShield</span>
+            <span style={{ fontSize: 16, fontWeight: 800 }}>AZUKA</span>
           </div>
           <p style={{ fontSize: 13, color: "rgba(230,236,247,0.55)", lineHeight: 1.6, margin: 0, maxWidth: 320 }}>
             The Web3 Social Operating System. Connect. Create. Automate. Govern. All in One Place.
@@ -1415,7 +1415,7 @@ function Footer() {
         fontSize: 12, color: "rgba(230,236,247,0.45)",
         display: "flex", flexWrap: "wrap", gap: 10,
       }}>
-        <span>© {new Date().getFullYear()} IronShield.</span>
+        <span>© {new Date().getFullYear()} AZUKA.</span>
         <span>All rights reserved.</span>
       </div>
     </footer>
@@ -1457,7 +1457,7 @@ function FeatureGrid() {
             fontSize: 15, color: "rgba(230,236,247,0.6)",
             margin: "0 auto", maxWidth: 560, lineHeight: 1.55,
           }}>
-            Four pillars that make IronShield the most complete platform for Web3 social,
+            Four pillars that make AZUKA the most complete platform for Web3 social,
             automation, and governance.
           </p>
         </div>
@@ -1534,7 +1534,7 @@ function FeatureCard({ card, index }) {
 
 const TESTIMONIALS = [
   { name: "0xBuilder", handle: "@0xbuilder", role: "Smart contract engineer",
-    quote: "IronShield is the first platform where I can ship, vote, and earn from one dashboard. The agent automations alone pay for themselves.",
+    quote: "AZUKA is the first platform where I can ship, vote, and earn from one dashboard. The agent automations alone pay for themselves.",
     rating: 5 },
   { name: "DeFiQueen", handle: "@defiqueen", role: "DeFi strategist",
     quote: "The community-run AI feels like actual governance, not theater. My portfolio automations caught two reversals before I even woke up.",

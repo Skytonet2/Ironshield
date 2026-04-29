@@ -1,5 +1,5 @@
 "use client";
-// Reset to Defaults — clears every IronShield-prefixed localStorage key
+// Reset to Defaults — clears every AZUKA-prefixed localStorage key
 // so the UI returns to its first-run state. Doesn't touch auth state
 // or wallet connections; those live under their own prefixes and are
 // managed from Wallets / Disconnect.
@@ -17,7 +17,7 @@ export default function ResetTab() {
   const [err, setErr] = useState(null);
 
   const onReset = () => {
-    if (!window.confirm("Reset all IronShield preferences on this device? This affects theme, notifications, keywords, pinned items. Auth state is untouched.")) return;
+    if (!window.confirm("Reset all AZUKA preferences on this device? This affects theme, notifications, keywords, pinned items. Auth state is untouched.")) return;
     setErr(null);
     try {
       const toRemove = [];
@@ -39,7 +39,7 @@ export default function ResetTab() {
       <div>
         <h2 style={tabTitle(t)}>Reset to Defaults</h2>
         <p style={{ color: t.textDim, fontSize: 13, margin: "4px 0 0", lineHeight: 1.55 }}>
-          Clears every IronShield preference on this device — theme, notifications, keywords, cached states, and similar. The page will reload so the app re-initializes from defaults.
+          Clears every AZUKA preference on this device — theme, notifications, keywords, cached states, and similar. The page will reload so the app re-initializes from defaults.
         </p>
       </div>
 

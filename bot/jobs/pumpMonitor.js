@@ -34,7 +34,7 @@ async function runOnce(bot) {
       if (!volHit && !pctHit) continue;
 
       const pctStr = pPrev > 0 ? `${(((pNow - pPrev) / pPrev) * 100).toFixed(1)}%` : "n/a";
-      const text = `📈 *${c.ticker}* is pumping!\n${volHit ? `• Volume ${(vol10 / (base || 1)).toFixed(1)}× baseline\n` : ""}${pctHit ? `• Price ${pctStr} in 10 min\n` : ""}\n[Open on IronShield](https://ironshield.near.page/#/NewsCoin?id=${c.id})`;
+      const text = `📈 *${c.ticker}* is pumping!\n${volHit ? `• Volume ${(vol10 / (base || 1)).toFixed(1)}× baseline\n` : ""}${pctHit ? `• Price ${pctStr} in 10 min\n` : ""}\n[Open on AZUKA](https://ironshield.near.page/#/NewsCoin?id=${c.id})`;
 
       // Fan out to pump-enabled users & watchers
       const { rows: recipients } = await db.query(`

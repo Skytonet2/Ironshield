@@ -11,7 +11,7 @@ import { STAKING_CONTRACT } from "@/hooks/useNear";
 // ── Role registry mirrors agent/ironclaw/roles.js IDs ─────────────
 const ROLE_META = {
   alpha_hunt:         { label: "Alpha Hunter",      icon: TrendingUp,     color: "#22c55e", short: "Scans NEAR + AI-x-crypto for early plays." },
-  treasury_manager:   { label: "Treasury Manager",  icon: Wallet,         color: "#0ea5e9", short: "Audits the IronShield treasury daily."   },
+  treasury_manager:   { label: "Treasury Manager",  icon: Wallet,         color: "#0ea5e9", short: "Audits the AZUKA treasury daily."   },
   content_engine:     { label: "Content Engine",    icon: Megaphone,      color: "#f59e0b", short: "Ships 5 community content tasks per day." },
   bounty_coordinator: { label: "Bounty Coordinator",icon: Trophy,         color: "#a855f7", short: "Proposes scoped bounties in $CLAW."      },
   deal_flow_scout:    { label: "Deal Flow Scout",   icon: Handshake,      color: "#ec4899", short: "Surfaces partnership candidates."        },

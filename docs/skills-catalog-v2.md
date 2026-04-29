@@ -1,6 +1,6 @@
-# IronShield Skills Catalog (v2 — 200 more skills)
+# AZUKA Skills Catalog (v2 — 200 more skills)
 
-> Volume 2 of the IronShield Skills SDK backlog. v1 covered the
+> Volume 2 of the AZUKA Skills SDK backlog. v1 covered the
 > platform's unique primitives (NewsCoin, IronFeed, governance,
 > rooms, DMs). v2 covers the broader automation surface area
 > a skill can reach today via the agent runtime — DeFi yield,
@@ -13,7 +13,7 @@
 - 🔴 = needs a substantial new platform capability (specify)
 
 **Notes on scope.** v2 leans more on external APIs and less on
-IronShield-internal data. Anything calling a third-party API not
+AZUKA-internal data. Anything calling a third-party API not
 wired into `.env.example` (Notion, Slack, Etherscan, Snapshot,
 Gitcoin Passport, etc.) is marked 🟡 with the missing piece named.
 The skill author can BYO key inside the skill's HTTP runner, but
@@ -311,7 +311,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟢 — RPC reads on multisig/treasury contracts.
 
 ### `dao-delegate-cross-finder`
-**Pitch.** Finds a delegate active across multiple DAOs whose vote pattern aligns with your stated values. Different from v1's IronShield-only delegate finder — cross-DAO scope.
+**Pitch.** Finds a delegate active across multiple DAOs whose vote pattern aligns with your stated values. Different from v1's AZUKA-only delegate finder — cross-DAO scope.
 **Inputs.** `{ daos: string[], values_profile?: object }`
 **Outputs.** `{ candidates: [{ delegate, alignment_pct, daos_active_in }] }`
 **Pricing.** 1 NEAR per call.
@@ -347,7 +347,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟡 — varies per DAO; some have RetroFunding/Charm registries.
 
 ### `dao-quorum-aggregator`
-**Pitch.** Lists every cross-DAO proposal short of quorum within 24h of close. Different from v1's IronShield-only quorum-watcher.
+**Pitch.** Lists every cross-DAO proposal short of quorum within 24h of close. Different from v1's AZUKA-only quorum-watcher.
 **Inputs.** `{ daos: string[] }`
 **Outputs.** `{ short_of_quorum: [{ dao, proposal, gap, deadline }] }`
 **Pricing.** 2 NEAR/month.
@@ -858,7 +858,7 @@ the platform is honest about which integrations are first-class.
 ## 7. Data sync & integrations (14 skills)
 
 ### `notion-sync`
-**Pitch.** Pushes posts/holdings/missions/governance state into a Notion database. Treats Notion like an external view of your IronShield activity.
+**Pitch.** Pushes posts/holdings/missions/governance state into a Notion database. Treats Notion like an external view of your AZUKA activity.
 **Inputs.** `{ notion_token: string, database_id: string, source: "posts"|"holdings"|"missions" }`
 **Outputs.** `{ synced_count, last_synced_at }`
 **Pricing.** 4 NEAR/month.
@@ -885,7 +885,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟡 — Google Sheets API; needs SA setup helper.
 
 ### `slack-notifier`
-**Pitch.** Pushes alerts to a Slack channel via incoming webhook. For ops teams running an IronShield-driven workflow.
+**Pitch.** Pushes alerts to a Slack channel via incoming webhook. For ops teams running an AZUKA-driven workflow.
 **Inputs.** `{ webhook_url: string, events: string[] }`
 **Outputs.** `{ sent_count }`
 **Pricing.** 2 NEAR/month.
@@ -903,7 +903,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟢 — webhook POST.
 
 ### `zapier-bridge`
-**Pitch.** Webhook out to Zapier with chosen IronShield events. Lets non-devs wire 4,000+ Zapier-connected apps to IronShield triggers.
+**Pitch.** Webhook out to Zapier with chosen AZUKA events. Lets non-devs wire 4,000+ Zapier-connected apps to AZUKA triggers.
 **Inputs.** `{ zap_url: string, event_filters: string[] }`
 **Outputs.** `{ delivered_count }`
 **Pricing.** 3 NEAR/month.
@@ -966,7 +966,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟢 — `agent_automation_runs` table reads.
 
 ### `obsidian-vault-sync`
-**Pitch.** Syncs your IronShield notes (DM threads, post drafts, mission notes) to a local Obsidian vault as Markdown. For users who run their second-brain locally.
+**Pitch.** Syncs your AZUKA notes (DM threads, post drafts, mission notes) to a local Obsidian vault as Markdown. For users who run their second-brain locally.
 **Inputs.** `{ vault_path_token: string, source: string }`
 **Outputs.** `{ files_written, last_sync_at }`
 **Pricing.** 3 NEAR/month.
@@ -975,7 +975,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟡 — needs an Obsidian Sync-compatible HTTP endpoint or local agent.
 
 ### `s3-archiver`
-**Pitch.** Archives your IronShield content (posts, DMs you can decrypt, mission audit logs) to your own S3/R2 bucket on a schedule. Personal data sovereignty without leaving the platform.
+**Pitch.** Archives your AZUKA content (posts, DMs you can decrypt, mission audit logs) to your own S3/R2 bucket on a schedule. Personal data sovereignty without leaving the platform.
 **Inputs.** `{ s3_bucket: string, s3_creds: object, source: string, cadence: "daily"|"weekly" }`
 **Outputs.** `{ archived_size_mb, last_archive_at }`
 **Pricing.** 4 NEAR/month.
@@ -1324,7 +1324,7 @@ the platform is honest about which integrations are first-class.
 ## 11. Community management (12 skills)
 
 ### `community-onboarding-flow`
-**Pitch.** Multi-step onboarding for a project's new members (verify holding → join group → take quiz → get role). Different from v1's IronShield onboarding — for project owners running their own community.
+**Pitch.** Multi-step onboarding for a project's new members (verify holding → join group → take quiz → get role). Different from v1's AZUKA onboarding — for project owners running their own community.
 **Inputs.** `{ project_token: string, steps: object[] }`
 **Outputs.** `{ onboarded_count, drop_off_per_step }`
 **Pricing.** 8 NEAR/month per project.
@@ -1387,7 +1387,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟢 — composite reads.
 
 ### `community-survey-runner`
-**Pitch.** Runs polls/surveys across DMs and rooms; analyzes results. Beats third-party tools because the audience is your verified IronShield identity.
+**Pitch.** Runs polls/surveys across DMs and rooms; analyzes results. Beats third-party tools because the audience is your verified AZUKA identity.
 **Inputs.** `{ questions: object[], audience: object }`
 **Outputs.** `{ responses, summary }`
 **Pricing.** 2 NEAR per survey.
@@ -1436,7 +1436,7 @@ the platform is honest about which integrations are first-class.
 ## 12. Education & certification (10 skills)
 
 ### `tutorial-runner`
-**Pitch.** Interactive tutorials for IronShield features that track completion (e.g. "build your first NewsCoin trade"). Hands-on, not video.
+**Pitch.** Interactive tutorials for AZUKA features that track completion (e.g. "build your first NewsCoin trade"). Hands-on, not video.
 **Inputs.** `{ tutorial_slug: string }`
 **Outputs.** `{ steps_completed, badge_earned? }`
 **Pricing.** Free (funnel skill).
@@ -1642,7 +1642,7 @@ the platform is honest about which integrations are first-class.
 ## 14. Sales & outreach automation (14 skills)
 
 ### `prospect-list-builder`
-**Pitch.** Builds a list of relevant prospects from public IronShield data (verified posters in a niche, NFT-holder cohorts, recent NewsCoin creators). Different from generic scrapers — cryptonative-only audience.
+**Pitch.** Builds a list of relevant prospects from public AZUKA data (verified posters in a niche, NFT-holder cohorts, recent NewsCoin creators). Different from generic scrapers — cryptonative-only audience.
 **Inputs.** `{ filters: object, max_count: number }`
 **Outputs.** `{ prospects: [{ wallet, handle, why }] }`
 **Pricing.** 1 NEAR per 100 prospects.
@@ -1714,7 +1714,7 @@ the platform is honest about which integrations are first-class.
 **Status.** 🟡 — needs `proposal_template` storage.
 
 ### `email-sequence-runner`
-**Pitch.** Multi-step email sequences with branching ("if reply → stop"; "if click → branch B"). Email outside IronShield via your existing mailer (Mailgun/SendGrid).
+**Pitch.** Multi-step email sequences with branching ("if reply → stop"; "if click → branch B"). Email outside AZUKA via your existing mailer (Mailgun/SendGrid).
 **Inputs.** `{ list_id: string, sequence: object[], mailer_creds: object }`
 **Outputs.** `{ delivered, opened, replied }`
 **Pricing.** 6 NEAR/month.
@@ -1877,7 +1877,7 @@ the platform is honest about which integrations are first-class.
 **Pricing.** 5 NEAR setup, 1 NEAR/month.
 **Categories.** `personal-finance`, `legacy`, `security`
 **Tags.** `[inheritance, deadman, legacy]`
-**Status.** 🔴 — needs an encrypted-storage + dead-man-switch contract template (no native primitive on IronShield today).
+**Status.** 🔴 — needs an encrypted-storage + dead-man-switch contract template (no native primitive on AZUKA today).
 
 ---
 

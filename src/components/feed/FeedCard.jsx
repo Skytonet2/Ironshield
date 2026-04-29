@@ -780,7 +780,7 @@ function ShareButton({ post, t }) {
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
         await navigator.share({
-          title: "IronShield post",
+          title: "AZUKA post",
           text: post?.content ? String(post.content).slice(0, 120) : "",
           url,
         });

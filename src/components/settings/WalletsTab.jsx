@@ -52,7 +52,7 @@ export default function WalletsTab() {
       <div>
         <h2 style={tabTitle(t)}>Wallets</h2>
         <p style={{ color: t.textDim, fontSize: 13, margin: "4px 0 0", lineHeight: 1.55 }}>
-          Every wallet connected to this session. IronShield never sees your
+          Every wallet connected to this session. AZUKA never sees your
           private keys — addresses live on the chain you connected with.
         </p>
       </div>

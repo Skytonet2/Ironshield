@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "IronShield Skills Catalog (v2 — 200 more skills)",
-    "blurb": "Volume 2 of the IronShield Skills SDK backlog. v1 covered the platform's unique primitives (NewsCoin, IronFeed, governance, rooms, DMs). v2 covers the broader automation surface area a skill can reach today via the agent runtime — DeFi yield, NFTs, multi-DAO ops, dev tools, sales workflows, document handling, and more. None of these duplicate v1.",
+    "title": "AZUKA Skills Catalog (v2 — 200 more skills)",
+    "blurb": "Volume 2 of the AZUKA Skills SDK backlog. v1 covered the platform's unique primitives (NewsCoin, IronFeed, governance, rooms, DMs). v2 covers the broader automation surface area a skill can reach today via the agent runtime — DeFi yield, NFTs, multi-DAO ops, dev tools, sales workflows, document handling, and more. None of these duplicate v1.",
     "total": 200
   },
   "categories": [
@@ -674,7 +674,7 @@
         },
         {
           "slug": "dao-delegate-cross-finder",
-          "pitch": "Finds a delegate active across multiple DAOs whose vote pattern aligns with your stated values. Different from v1's IronShield-only delegate finder — cross-DAO scope.",
+          "pitch": "Finds a delegate active across multiple DAOs whose vote pattern aligns with your stated values. Different from v1's AZUKA-only delegate finder — cross-DAO scope.",
           "inputs": "`{ daos: string[], values_profile?: object }`",
           "outputs": "`{ candidates: [{ delegate, alignment_pct, daos_active_in }] }`",
           "pricing": "1 NEAR per call.",
@@ -756,7 +756,7 @@
         },
         {
           "slug": "dao-quorum-aggregator",
-          "pitch": "Lists every cross-DAO proposal short of quorum within 24h of close. Different from v1's IronShield-only quorum-watcher.",
+          "pitch": "Lists every cross-DAO proposal short of quorum within 24h of close. Different from v1's AZUKA-only quorum-watcher.",
           "inputs": "`{ daos: string[] }`",
           "outputs": "`{ short_of_quorum: [{ dao, proposal, gap, deadline }] }`",
           "pricing": "2 NEAR/month.",
@@ -1899,7 +1899,7 @@
       "skills": [
         {
           "slug": "notion-sync",
-          "pitch": "Pushes posts/holdings/missions/governance state into a Notion database. Treats Notion like an external view of your IronShield activity.",
+          "pitch": "Pushes posts/holdings/missions/governance state into a Notion database. Treats Notion like an external view of your AZUKA activity.",
           "inputs": "`{ notion_token: string, database_id: string, source: \"posts\"|\"holdings\"|\"missions\" }`",
           "outputs": "`{ synced_count, last_synced_at }`",
           "pricing": "4 NEAR/month.",
@@ -1956,7 +1956,7 @@
         },
         {
           "slug": "slack-notifier",
-          "pitch": "Pushes alerts to a Slack channel via incoming webhook. For ops teams running an IronShield-driven workflow.",
+          "pitch": "Pushes alerts to a Slack channel via incoming webhook. For ops teams running an AZUKA-driven workflow.",
           "inputs": "`{ webhook_url: string, events: string[] }`",
           "outputs": "`{ sent_count }`",
           "pricing": "2 NEAR/month.",
@@ -1994,7 +1994,7 @@
         },
         {
           "slug": "zapier-bridge",
-          "pitch": "Webhook out to Zapier with chosen IronShield events. Lets non-devs wire 4,000+ Zapier-connected apps to IronShield triggers.",
+          "pitch": "Webhook out to Zapier with chosen AZUKA events. Lets non-devs wire 4,000+ Zapier-connected apps to AZUKA triggers.",
           "inputs": "`{ zap_url: string, event_filters: string[] }`",
           "outputs": "`{ delivered_count }`",
           "pricing": "3 NEAR/month.",
@@ -2132,7 +2132,7 @@
         },
         {
           "slug": "obsidian-vault-sync",
-          "pitch": "Syncs your IronShield notes (DM threads, post drafts, mission notes) to a local Obsidian vault as Markdown. For users who run their second-brain locally.",
+          "pitch": "Syncs your AZUKA notes (DM threads, post drafts, mission notes) to a local Obsidian vault as Markdown. For users who run their second-brain locally.",
           "inputs": "`{ vault_path_token: string, source: string }`",
           "outputs": "`{ files_written, last_sync_at }`",
           "pricing": "3 NEAR/month.",
@@ -2152,7 +2152,7 @@
         },
         {
           "slug": "s3-archiver",
-          "pitch": "Archives your IronShield content (posts, DMs you can decrypt, mission audit logs) to your own S3/R2 bucket on a schedule. Personal data sovereignty without leaving the platform.",
+          "pitch": "Archives your AZUKA content (posts, DMs you can decrypt, mission audit logs) to your own S3/R2 bucket on a schedule. Personal data sovereignty without leaving the platform.",
           "inputs": "`{ s3_bucket: string, s3_creds: object, source: string, cadence: \"daily\"|\"weekly\" }`",
           "outputs": "`{ archived_size_mb, last_archive_at }`",
           "pricing": "4 NEAR/month.",
@@ -2927,7 +2927,7 @@
       "skills": [
         {
           "slug": "community-onboarding-flow",
-          "pitch": "Multi-step onboarding for a project's new members (verify holding → join group → take quiz → get role). Different from v1's IronShield onboarding — for project owners running their own community.",
+          "pitch": "Multi-step onboarding for a project's new members (verify holding → join group → take quiz → get role). Different from v1's AZUKA onboarding — for project owners running their own community.",
           "inputs": "`{ project_token: string, steps: object[] }`",
           "outputs": "`{ onboarded_count, drop_off_per_step }`",
           "pricing": "8 NEAR/month per project.",
@@ -3067,7 +3067,7 @@
         },
         {
           "slug": "community-survey-runner",
-          "pitch": "Runs polls/surveys across DMs and rooms; analyzes results. Beats third-party tools because the audience is your verified IronShield identity.",
+          "pitch": "Runs polls/surveys across DMs and rooms; analyzes results. Beats third-party tools because the audience is your verified AZUKA identity.",
           "inputs": "`{ questions: object[], audience: object }`",
           "outputs": "`{ responses, summary }`",
           "pricing": "2 NEAR per survey.",
@@ -3177,7 +3177,7 @@
       "skills": [
         {
           "slug": "tutorial-runner",
-          "pitch": "Interactive tutorials for IronShield features that track completion (e.g. \"build your first NewsCoin trade\"). Hands-on, not video.",
+          "pitch": "Interactive tutorials for AZUKA features that track completion (e.g. \"build your first NewsCoin trade\"). Hands-on, not video.",
           "inputs": "`{ tutorial_slug: string }`",
           "outputs": "`{ steps_completed, badge_earned? }`",
           "pricing": "Free (funnel skill).",
@@ -3632,7 +3632,7 @@
       "skills": [
         {
           "slug": "prospect-list-builder",
-          "pitch": "Builds a list of relevant prospects from public IronShield data (verified posters in a niche, NFT-holder cohorts, recent NewsCoin creators). Different from generic scrapers — cryptonative-only audience.",
+          "pitch": "Builds a list of relevant prospects from public AZUKA data (verified posters in a niche, NFT-holder cohorts, recent NewsCoin creators). Different from generic scrapers — cryptonative-only audience.",
           "inputs": "`{ filters: object, max_count: number }`",
           "outputs": "`{ prospects: [{ wallet, handle, why }] }`",
           "pricing": "1 NEAR per 100 prospects.",
@@ -3792,7 +3792,7 @@
         },
         {
           "slug": "email-sequence-runner",
-          "pitch": "Multi-step email sequences with branching (\"if reply → stop\"; \"if click → branch B\"). Email outside IronShield via your existing mailer (Mailgun/SendGrid).",
+          "pitch": "Multi-step email sequences with branching (\"if reply → stop\"; \"if click → branch B\"). Email outside AZUKA via your existing mailer (Mailgun/SendGrid).",
           "inputs": "`{ list_id: string, sequence: object[], mailer_creds: object }`",
           "outputs": "`{ delivered, opened, replied }`",
           "pricing": "6 NEAR/month.",
@@ -4158,7 +4158,7 @@
           ],
           "status": {
             "kind": "red",
-            "reason": "needs an encrypted-storage + dead-man-switch contract template (no native primitive on IronShield today)."
+            "reason": "needs an encrypted-storage + dead-man-switch contract template (no native primitive on AZUKA today)."
           }
         }
       ]

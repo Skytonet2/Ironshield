@@ -1,6 +1,6 @@
 # Local testing environment
 
-A throw-away copy of IronShield that runs entirely on your laptop —
+A throw-away copy of AZUKA that runs entirely on your laptop —
 test Postgres, test backend, test frontend. Everything resets every
 time you tear it down. Use it for breaking-things experiments where
 you don't want to touch the live deploy.

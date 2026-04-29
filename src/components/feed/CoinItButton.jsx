@@ -115,7 +115,7 @@ function CoinItModal({
 
       // Hand off to the launchpad selector pre-filled with the user's
       // edited name/ticker. Closes the Coin It → launch funnel fully;
-      // external platforms open in a new tab, IronShield Pad deep-
+      // external platforms open in a new tab, AZUKA Pad deep-
       // links into the NewsCoin flow.
       setHandoff({
         name:   name.trim(),

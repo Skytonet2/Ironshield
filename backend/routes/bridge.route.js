@@ -13,7 +13,7 @@
 //
 // Phase 5-3 adds /submit (signed intent → 1click /deposit) once the
 // NEP-413 signMessage wiring in wallet-selector is tested across the
-// wallets IronShield ships with.
+// wallets AZUKA ships with.
 
 const express = require("express");
 const router = express.Router();

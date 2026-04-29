@@ -25,12 +25,12 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata = {
-  title: "IronShield | NEAR Protocol",
-  description: "AI Security. On-Chain. Unstoppable.",
+  title: "AZUKA | Agent Zone for Universal Kommerce & Automation",
+  description: "Agent Zone for Universal Kommerce & Automation. On-Chain. Unstoppable.",
   icons: {
-    // Mascot raster is now the single brand mark. The 346KB PNG gives
-    // browsers and OS launchers enough pixels for crisp rendering at
-    // every tile size; smaller surfaces pick mascot-sm.png via the
+    // Mascot raster is the brand mark. The 346KB PNG gives browsers
+    // and OS launchers enough pixels for crisp rendering at every
+    // tile size; smaller surfaces pick mascot-sm.png via the
     // manifest's 256×256 entry.
     icon:     "/mascot.png",
     apple:    "/mascot.png",
@@ -40,7 +40,7 @@ export const metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "IronShield",
+    title: "AZUKA",
   },
   other: {
     "mobile-web-app-capable": "yes",

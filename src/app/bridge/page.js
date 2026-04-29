@@ -222,7 +222,7 @@ export default function BridgePage() {
           marginTop: 14, color: t.textDim, fontSize: 12,
         }}>
           <Shield size={12} />
-          Secured by IronShield Protocol
+          Secured by AZUKA Protocol
         </div>
 
         {picker && (
@@ -546,7 +546,7 @@ function ReviewModal({ from, to, amount, fromUsd, toUsd, networkFeeUsd, estTimeL
               {err || "Something went wrong."}
             </div>
             <div style={{ fontSize: 12, color: t.textDim, marginBottom: 14, lineHeight: 1.5 }}>
-              If this keeps happening you can also bridge directly via <a href="https://near.com/bridge" target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "none" }}>near.com/bridge <ExternalLink size={10} style={{ verticalAlign: -1 }} /></a> — IronShield uses the same underlying NEAR Intents protocol.
+              If this keeps happening you can also bridge directly via <a href="https://near.com/bridge" target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "none" }}>near.com/bridge <ExternalLink size={10} style={{ verticalAlign: -1 }} /></a> — AZUKA uses the same underlying NEAR Intents protocol.
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button

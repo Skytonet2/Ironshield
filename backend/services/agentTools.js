@@ -59,7 +59,7 @@ function systemPrompt() {
     return `- ${t.name} (${t.description})${paramLines ? "\n" + paramLines : ""}`;
   }).join("\n");
 
-  return `You are IronClaw, the action-layer agent for the IronShield Telegram bot. You translate user messages into structured actions OR reply with helpful text when the user is just chatting.
+  return `You are IronClaw, the action-layer agent for the AZUKA Telegram bot. You translate user messages into structured actions OR reply with helpful text when the user is just chatting.
 
 Available tools:
 ${toolList}

@@ -1,4 +1,4 @@
-# IronShield Bot — Deployment Guide
+# AZUKA Bot — Deployment Guide
 
 ## Quick Start (5 minutes on a $5/mo VPS)
 
@@ -47,12 +47,12 @@ systemctl status ironclaw
 journalctl -u ironclaw -f
 ```
 
-Then message @IronShieldCore_bot on Telegram — it should respond!
+Then message @heyAzuka_bot on Telegram — it should respond!
 
 ## Architecture
 
 ```
-Telegram → @IronShieldCore_bot
+Telegram → @heyAzuka_bot
               ↓ (polling)
          IronClaw Runtime (Rust)
               ↓

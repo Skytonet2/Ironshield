@@ -167,7 +167,7 @@ export default function UserMenu() {
   // If Privy isn't configured AND there's no NEAR wallet connected,
   // render the disabled placeholder. If Privy isn't configured but the
   // user has a NEAR wallet, we can still show the profile-linked
-  // avatar — that user's fully signed in from IronShield's POV.
+  // avatar — that user's fully signed in from AZUKA's POV.
   if (!isPrivyConfigured && !nearAddr) {
     return (
       <button

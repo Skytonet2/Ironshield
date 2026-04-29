@@ -83,7 +83,7 @@ router.post("/engagement", requireWallet, async (req, res, next) => {
 // GET /api/feed/voices?limit=30
 //
 // The Voices tab — a mixed stream of two sources:
-//   1. Native IronShield posts flagged as Voice
+//   1. Native AZUKA posts flagged as Voice
 //      (feed_posts.media_type = 'VOICE' OR kind = 'voice')
 //   2. Recent tweets from the 200-handle Voices preset via Nitter
 //      (shaped into the same post object as native posts, so the

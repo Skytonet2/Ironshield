@@ -1,5 +1,5 @@
 /* =====================================================================
- * tokens.css — IronShield design tokens
+ * tokens.css — AZUKA design tokens
  *
  * Two theme systems coexist while we migrate:
  *
@@ -121,7 +121,7 @@
   --bg-surface: #0f0505;
 }
 
-/* v1.1.10 — IronShield Pro themes. Locked behind is_pro on the
+/* v1.1.10 — AZUKA Pro themes. Locked behind is_pro on the
  * frontend picker; CSS doesn't enforce that itself, so a non-Pro
  * user setting `data-theme="emerald"` via devtools would still see
  * the colors. The whole picker is cosmetic — Pro perks are gated by

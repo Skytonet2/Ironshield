@@ -4,7 +4,7 @@
 // The control plane for one agent. Reads on-chain identity, stats,
 // installed skills, and the framework connection from the backend.
 // Sandbox chat dispatches through whichever framework the user
-// selected at launch — IronShield doesn't host the runtime.
+// selected at launch — AZUKA doesn't host the runtime.
 //
 // Layout matches the design pass:
 //   • Header: identity + 4 status pills (deployment / platforms /

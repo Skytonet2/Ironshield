@@ -1,4 +1,4 @@
-# IronShield Signed-Message Auth Contract
+# AZUKA Signed-Message Auth Contract
 
 **Status:** v1, Day 1 of launch sprint. Replaces the unsigned `x-wallet` header (`backend/services/feedHelpers.js:24`) on every mutating backend route.
 
@@ -12,7 +12,7 @@ Today every mutating route trusts a bare `x-wallet` header. An attacker can `cur
 
 - Each request carries a cryptographic proof that the holder of `wallet`'s key signed *this exact request* (method + path + body).
 - Replays of a captured request fail.
-- Sigs captured from another NEAR app cannot be reused against IronShield.
+- Sigs captured from another NEAR app cannot be reused against AZUKA.
 - The server never trusts a client-supplied account id — it derives it from the signature.
 
 **Out of scope for v1:** EVM, Solana, and Google sign-ins. Those wallets cannot produce NEP-413 signatures; users connected via those paths get read-only access until v1.1 adds a per-chain scheme.
@@ -50,7 +50,7 @@ SignMessageParams {
 
 then signs `sha256(borsh(...))` with the user's Ed25519 access key. Verifier reproduces the same bytes and calls `KeyPair.verify`.
 
-The values IronShield uses:
+The values AZUKA uses:
 
 - **`message`** = the body-binding string defined in §2.3.
 - **`nonce`** = the raw 32 bytes whose base64url form is sent as `x-nonce`.
@@ -300,7 +300,7 @@ $HASH"
 ## 8. UX notes (informational)
 
 - Meteor / HERE / HOT / Intear all support `signMessage` via NEP-413. They sign **silently** with the dApp's function-call access key — no popup per request once the wallet is connected. This is why §4 step 6 must accept FunctionCall keys.
-- A wallet without an active FCAK (e.g., MyNEAR) will pop up its UI on every signed request. That's a poor UX but a wallet-side issue — IronShield's contract is unchanged.
+- A wallet without an active FCAK (e.g., MyNEAR) will pop up its UI on every signed request. That's a poor UX but a wallet-side issue — AZUKA's contract is unchanged.
 
 ---
 

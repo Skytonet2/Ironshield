@@ -1,5 +1,5 @@
 "use client";
-// /feed — IronFeed, the social surface for IronShield.
+// /feed — IronFeed, the social surface for AZUKA.
 //
 // Tabs: For You | Following | Alpha | News | IronClaw Alerts | Voices
 // — plus a composer at the top and a Your Deploys panel in the right
@@ -393,7 +393,7 @@ export default function FeedPage() {
             </div>
             <div style={{ color: t.textDim }}>
               {voicesStatus === "not_configured"
-                ? "The X-bridge isn't configured on this backend — only native IronShield posts show below."
+                ? "The X-bridge isn't configured on this backend — only native AZUKA posts show below."
                 : "The upstream Nitter instance isn't responding right now. Native posts still work; X-sourced tweets will come back when upstream recovers."}
             </div>
           </div>

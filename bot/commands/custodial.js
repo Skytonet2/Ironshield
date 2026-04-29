@@ -17,7 +17,7 @@ const { tg, BACKEND } = require("../services/backend");
 const BRIDGE_URL = `${BACKEND.replace(/\/api.*$/, "")}`;  // frontend base
 
 const CUSTODIAL_EXPLAINER = `
-🔐 *How your IronShield trading account works*
+🔐 *How your AZUKA trading account works*
 
 When you linked, we minted a fresh NEAR implicit account just for
 this bot. Think of it like Venmo for crypto — fast and

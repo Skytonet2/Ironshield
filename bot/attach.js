@@ -1,4 +1,4 @@
-// bot/attach.js — mount the IronShield Telegram bot inside the main
+// bot/attach.js — mount the AZUKA Telegram bot inside the main
 // backend's Express app instead of running it as a separate process.
 //
 // Why: render.yaml declares an `ironshield-worker-bot` service but

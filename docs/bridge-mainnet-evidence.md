@@ -1,6 +1,6 @@
 # Day 14 — Bridge end-to-end evidence
 
-End-to-end proof that one bridge route — **NEAR → SOL via NEAR Intents 1-click** — works through IronShield's `bridge.route.js` proxy and a NEP-141 wrap+transfer sequence on `wrap.near`. This is the artifact backing `v0.95.0-beta`.
+End-to-end proof that one bridge route — **NEAR → SOL via NEAR Intents 1-click** — works through AZUKA's `bridge.route.js` proxy and a NEP-141 wrap+transfer sequence on `wrap.near`. This is the artifact backing `v0.95.0-beta`.
 
 ## Why mainnet (not testnet)
 
@@ -66,7 +66,7 @@ So:
 - Our `fee` value is normalized from `20` → `10` (10 bps = 0.10%, half of what we requested).
 - An additional 30-bps fee for a 1-click solver-side recipient (`5880ad...9247dd`) is appended.
 
-Day 14 spec's verify check (`appFees: [{recipient: "fees.ironshield.near", fee: 20}]`) does not literally match. The substantive intent — IronShield earns a platform fee on every bridge — holds, with a current rate of 10 bps instead of 20. Whether to negotiate the 20-bps allocation back, accept 10 bps as the upstream-imposed rate, or split with the solver-side recipient is a product call, not a Day 14 blocker.
+Day 14 spec's verify check (`appFees: [{recipient: "fees.ironshield.near", fee: 20}]`) does not literally match. The substantive intent — AZUKA earns a platform fee on every bridge — holds, with a current rate of 10 bps instead of 20. Whether to negotiate the 20-bps allocation back, accept 10 bps as the upstream-imposed rate, or split with the solver-side recipient is a product call, not a Day 14 blocker.
 
 ## Defects in `BridgeModal.jsx` exposed by this run
 
@@ -84,7 +84,7 @@ The on-`main` BridgeModal's `bridge()` function has **two latent defects** that 
      ? nearCtx.address
      : (PLACEHOLDER_RECIPIENT[toToken.blockchain] || nearCtx.address);
    ```
-   `PLACEHOLDER_RECIPIENT` is a chain-of-format-valid dummies (e.g. `7ZbEHHu4...XYZ` for Solana) used for **dry quotes only**. The live `bridge()` path uses the same map — so any user bridging NEAR → SOL (or NEAR → ETH, NEAR → BTC, etc.) would have sent real funds to a wallet IronShield does not control. Fix: surface a `recipient` text input for non-NEAR destinations, validate-non-empty before allowing the Bridge button.
+   `PLACEHOLDER_RECIPIENT` is a chain-of-format-valid dummies (e.g. `7ZbEHHu4...XYZ` for Solana) used for **dry quotes only**. The live `bridge()` path uses the same map — so any user bridging NEAR → SOL (or NEAR → ETH, NEAR → BTC, etc.) would have sent real funds to a wallet AZUKA does not control. Fix: surface a `recipient` text input for non-NEAR destinations, validate-non-empty before allowing the Bridge button.
 
 The recipient bug is the more dangerous of the two. A reproducer run from the existing UI without these fixes would either lose the funds (if the placeholder happens to be a real wallet someone owns) or stall in 1-click's solver since the depositAddress storage panic also catches placeholder runs at action 4.
 

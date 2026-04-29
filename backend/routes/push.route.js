@@ -54,7 +54,7 @@ router.post("/test", requireWallet, async (req, res, next) => {
       });
     }
     await notifyUser(user.id, {
-      title: "IronShield",
+      title: "AZUKA",
       body: "Push is working — you'll see real alerts here.",
       url: "/",
       tag: "test",

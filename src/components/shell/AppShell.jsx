@@ -334,10 +334,10 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
         />
       </div>
 
-      {/* IronShield Pro upgrade card — sticks to the bottom of the
-          rail. Gradient fill, subtle glow, premium call-to-action.
-          Pro tier launches with v1.0.0 (Day 21). Until then this links
-          to a stub section on /rewards rather than 404'ing. */}
+      {/* AZUKA Pro upgrade card — sticks to the bottom of the rail.
+          Gradient fill, subtle glow, premium call-to-action. Pro tier
+          launches with v1.0.0 (Day 21). Until then this links to a
+          stub section on /rewards rather than 404'ing. */}
       <a
         href="/rewards#pro"
         style={{
@@ -350,7 +350,7 @@ function Sidebar({ pathname, onAction, isMobile, drawerOpen, onClose }) {
         }}
       >
         <div style={{ fontSize: 13, fontWeight: 800, color: t.white, letterSpacing: -0.2 }}>
-          IronShield Pro
+          AZUKA Pro
         </div>
         <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, lineHeight: 1.45 }}>
           Unlock advanced analytics and exclusive features.

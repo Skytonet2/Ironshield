@@ -41,7 +41,7 @@ async function notifyUser(userId, payload) {
     if (!r.rows.length) return;
 
     const data = JSON.stringify({
-      title: payload.title || "IronShield",
+      title: payload.title || "AZUKA",
       body: payload.body || "",
       url: payload.url || "/",
       tag: payload.tag || "general",
@@ -140,7 +140,7 @@ async function createAndPush({ userId, actorId = null, postId = null, type, body
     const pushUrl  = url || (postId ? `/#/Feed?post=${postId}` : "/");
 
     await notifyUser(userId, {
-      title: "IronShield",
+      title: "AZUKA",
       body: pushBody,
       url: pushUrl,
       tag: type,
@@ -160,7 +160,7 @@ async function createAndPush({ userId, actorId = null, postId = null, type, body
       tg.notifyFeedUser(
         userId,
         settingKey,
-        `🔔 *${pushBody}*\n[Open on IronShield](https://ironshield.near.page${pushUrl})`,
+        `🔔 *${pushBody}*\n[Open on AZUKA](https://ironshield.near.page${pushUrl})`,
       ).catch(() => {});
     } catch { /* bot token not set */ }
   } catch (e) {

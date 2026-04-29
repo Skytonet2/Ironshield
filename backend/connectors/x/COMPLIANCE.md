@@ -22,7 +22,7 @@
 - 429 from X → upstream rate limit. We don't retry inside the connector — the rate hub already throttles us; a 429 means we underestimated the user's existing burn from outside our app.
 
 ## PII / data handling
-- Tweet bodies, search queries, and user IDs flow through but are not persisted in IronShield logs.
+- Tweet bodies, search queries, and user IDs flow through but are not persisted in AZUKA logs.
 - `access_token` and `refresh_token` are NEVER logged. Decrypt path runs server-side only.
 - DM bodies are end-to-end visible to X — we are not a privacy-preserving channel.
 

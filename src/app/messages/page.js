@@ -1,5 +1,5 @@
 "use client";
-// /messages — IronShield DM inbox.
+// /messages — AZUKA DM inbox.
 //
 // Two-pane layout: conversation list on the left, thread on the right.
 // Mobile stacks to one pane at a time (list ↔ thread).
@@ -1857,7 +1857,7 @@ function AttachmentCard({ chip, t }) {
           {data.summary || `${(data.side || "").toUpperCase()} ${data.symbol}`}
         </div>
         <div style={{ fontSize: 11, color: t.textDim }}>
-          Tap to review and deploy on IronShield Automations
+          Tap to review and deploy on AZUKA Automations
         </div>
       </a>
     );
@@ -2173,7 +2173,11 @@ function ContextPane({ t, conv, profile, prefs, onPref, onClose, open }) {
     const out = [];
     if (profile?.verified) out.push({ key: "verified", label: "Verified", color: "#60a5fa", Icon: Check });
     if (profile?.accountType === "pro" || profile?.accountType === "ironshield_pro") {
-      out.push({ key: "pro", label: "IronShield Pro", color: "#a855f7", Icon: Crown });
+      // DB value `ironshield_pro` is grandfathered — keep matching it
+      // alongside "pro" so existing rows still light up. The label is
+      // AZUKA Pro now (the new umbrella brand); the underlying
+      // entitlement string is unchanged.
+      out.push({ key: "pro", label: "AZUKA Pro", color: "#a855f7", Icon: Crown });
     }
     if ((profile?.followers ?? 0) >= 500) {
       out.push({ key: "whale", label: "Top Trader", color: "#10b981", Icon: TrendingUp });

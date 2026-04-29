@@ -1,4 +1,4 @@
-// bot/index.js — IronShield Telegram bot entrypoint
+// bot/index.js — AZUKA Telegram bot entrypoint
 //
 // Two modes:
 //   - polling (dev default): TelegramBot's long-poll loop pulls updates.

@@ -30,7 +30,7 @@
 - 10 (App not approved) → the production scope is in beta. Code path is correct but blocked at the platform layer until review passes.
 
 ## PII / data handling
-- Group post bodies and Messenger message bodies flow through but are not persisted in IronShield logs.
+- Group post bodies and Messenger message bodies flow through but are not persisted in AZUKA logs.
 - Tokens never logged.
 - Page DM recipients (PSIDs) are persisted only inside the calling Kit's mission audit log, not as a global table. Kit-level retention follows the mission's lifetime.
 

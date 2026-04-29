@@ -1,7 +1,7 @@
 "use client";
 // SearchOverlay — `/`-triggered global search. Four result sections:
 //
-//   Users      (people on IronShield — match username OR wallet)
+//   Users      (people on AZUKA — match username OR wallet)
 //   Tokens     (GeckoTerminal, scoped to active chain)
 //   Settings   (fuzzy match over tab keys + labels)
 //   Actions    (Quick Scan, Bridge, Create — route shortcuts)

@@ -48,7 +48,7 @@ const CONTENT_MISSIONS = [
     id: "content-video",
     emoji: "🎬",
     title: "Short Video (1560s)",
-    description: "Film a quick demo, review, or explainer about IronShield or IronClaw. Short and snappy wins.",
+    description: "Film a quick demo, review, or explainer about AZUKA or IronClaw. Short and snappy wins.",
     points: "5002,000",
     difficulty: "Medium",
     category: "Video",
@@ -58,7 +58,7 @@ const CONTENT_MISSIONS = [
     id: "content-meme",
     emoji: "🖼️",
     title: "IronClaw Meme",
-    description: "Create a meme using IronClaw or IronShield branding. Original art gets bonus multipliers.",
+    description: "Create a meme using IronClaw or AZUKA branding. Original art gets bonus multipliers.",
     points: "100500",
     difficulty: "Easy",
     category: "Meme",
@@ -68,7 +68,7 @@ const CONTENT_MISSIONS = [
     id: "content-thread",
     emoji: "🧵",
     title: "Twitter Thread (35 tweets)",
-    description: "Write a clear thread explaining IronShield, governance, or IronClaw agent. Link is your proof.",
+    description: "Write a clear thread explaining AZUKA, governance, or IronClaw agent. Link is your proof.",
     points: "3001,000",
     difficulty: "Medium",
     category: "Thread",
@@ -881,7 +881,7 @@ function AssignTaskModal({ t, task, onClose, onAssigned, assignTask }) {
           value={description}
           onChange={(e) => setDescription(e.target.value.slice(0, 280))}
           rows={4}
-          placeholder="e.g. Post a Twitter thread about IronShield governance this week, mention @IronClawHQ"
+          placeholder="e.g. Post a Twitter thread about AZUKA governance this week, mention @IronClawHQ"
           style={{
             width: "100%", background: t.bgSurface, border: `1px solid ${t.border}`,
             borderRadius: 10, padding: "12px 14px", color: t.text, fontSize: 13,

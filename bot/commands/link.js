@@ -3,7 +3,7 @@
 const { tg } = require("../services/backend");
 const { detectWallet, shortWallet } = require("../utils/wallet");
 
-const WELCOME = `🛡️ *Welcome to IronShield*
+const WELCOME = `🛡️ *Welcome to AZUKA*
 
 I'm IronClaw — your on-site companion for alerts, portfolio, tips & more.
 

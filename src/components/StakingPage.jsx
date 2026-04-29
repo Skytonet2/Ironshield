@@ -342,7 +342,7 @@ export default function StakingPage({ openWallet }) {
       <div style={{ background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16, padding: 32, marginBottom: 20 }}>
         <div style={{ fontSize: 20, fontWeight: 700, color: t.white, marginBottom: 6 }}>How Staking Works</div>
         <p style={{ fontSize: 14, color: t.textMuted, marginBottom: 28, lineHeight: 1.6 }}>
-          Protocol fees from IronShield subscriptions and ecosystem activity are pooled and distributed proportionally to stakers based on their tier multiplier. No inflation: real revenue sharing.
+          Protocol fees from AZUKA subscriptions and ecosystem activity are pooled and distributed proportionally to stakers based on their tier multiplier. No inflation: real revenue sharing.
         </p>
         <div className="grid-wrap-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 32 }}>
           {[

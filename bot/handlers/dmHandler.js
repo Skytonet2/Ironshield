@@ -38,7 +38,7 @@ async function handleDM(bot, msg) {
       // wallet before persisting the reply.
       const r = await tg.reply(msg.reply_to_message.message_id, msg.from?.id, msg.text || "");
       if (r.ok) {
-        await bot.sendMessage(msg.chat.id, "✅ Reply sent to IronShield.");
+        await bot.sendMessage(msg.chat.id, "✅ Reply sent to AZUKA.");
         return;
       }
     } catch { /* fall through */ }

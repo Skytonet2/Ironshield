@@ -21,7 +21,7 @@ function computeManifestHash(body) {
   return crypto.createHash("sha256").update(stable).digest("hex");
 }
 
-/** Insert a new manifest version. Called by curators / IronShield team
+/** Insert a new manifest version. Called by curators / AZUKA team
  *  when shipping a new skill or bumping an existing one. The on-chain
  *  Skill row must already exist — manifests are an off-chain attachment. */
 async function upsertManifest({

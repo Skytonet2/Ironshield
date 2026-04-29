@@ -49,13 +49,13 @@ export default function SkillsDocsPage() {
           fontWeight: 800, color: t.white, letterSpacing: -0.4,
         }}>Skills — Documentation</h1>
         <p style={{ fontSize: 13, color: t.textMuted, marginTop: 6 }}>
-          Authoring, installing, and verifying skills on the IronShield contract.
+          Authoring, installing, and verifying skills on the AZUKA contract.
         </p>
       </header>
 
       <Section t={t} icon={BookOpen} title="Looking for ideas?">
         <p style={{ margin: "0 0 8px" }}>
-          The Skills Catalog lists 400 plausible skills you can build on top of IronShield —
+          The Skills Catalog lists 400 plausible skills you can build on top of AZUKA —
           grouped by category, with pricing notes and a status flag so you know which ones ship
           today vs. need a missing piece.
         </p>
@@ -110,7 +110,7 @@ export default function SkillsDocsPage() {
           Verified skills get a blue check on the marketplace and rank above unverified ones in
           the default sort. Only the contract owner can set the verified flag
           (<Code>set_skill_verified</Code>) — authors can't self-verify. Apply by opening an issue
-          on the IronShield repo with the skill id and a short description of what it does.
+          on the AZUKA repo with the skill id and a short description of what it does.
         </p>
       </Section>
 

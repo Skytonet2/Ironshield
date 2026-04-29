@@ -1,5 +1,5 @@
 "use client";
-// IronShield brand system — one source, five smart implementations.
+// AZUKA brand system — one source, five smart implementations.
 //
 //   BrandPrimary   → landing hero / marketing. Premium gradient shield
 //                    framing the 3D mascot raster, with a purple halo.
@@ -97,7 +97,7 @@ export function BrandPrimary({
     </span>
   );
   if (asLink) {
-    return <Link href={href} aria-label="IronShield — home" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>;
+    return <Link href={href} aria-label="AZUKA — home" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>;
   }
   return inner;
 }
@@ -133,12 +133,12 @@ export function BrandMark({ size = 28, withWordmark = false, href, asLink = fals
     >
       {glyph}
       <span style={{ fontSize: Math.max(13, Math.round(size * 0.55)), fontWeight: 700, letterSpacing: -0.2, color: "inherit" }}>
-        IronShield
+        AZUKA
       </span>
     </span>
   ) : glyph;
   if (asLink && href) {
-    return <Link href={href} aria-label="IronShield" style={{ textDecoration: "none", color: "inherit" }}>{content}</Link>;
+    return <Link href={href} aria-label="AZUKA" style={{ textDecoration: "none", color: "inherit" }}>{content}</Link>;
   }
   return content;
 }
@@ -149,7 +149,7 @@ export function BrandAppIcon({ size = 64, className, style }) {
   return (
     <img
       src="/brand/app-icon.svg"
-      alt="IronShield"
+      alt="AZUKA"
       className={className}
       width={size}
       height={size}
@@ -160,7 +160,7 @@ export function BrandAppIcon({ size = 64, className, style }) {
 
 /* ─────────── 4. Loading (splash / in-flight) ─────────── */
 
-export function BrandLoading({ size = 96, label = "Loading IronShield…", pulse = true, className, style }) {
+export function BrandLoading({ size = 96, label = "Loading AZUKA…", pulse = true, className, style }) {
   // Monochrome-ish crest that drives off `color` on the wrapper. Pulses
   // a purple glow by default; set pulse={false} for static contexts
   // (e.g. a small inline spinner where subtle is better).
@@ -225,7 +225,7 @@ export function BrandLoading({ size = 96, label = "Loading IronShield…", pulse
 /* ─────────── 5. Social Avatar ─────────── */
 
 // Renders the crest + halo as a self-contained 1:1 tile — used anywhere
-// the app needs a default brand avatar (OG fallback, sidebar "IronShield
+// the app needs a default brand avatar (OG fallback, sidebar "AZUKA
 // Official" account, Telegram bot card, etc.). Shape-agnostic: if the
 // host applies border-radius to the wrapper, the underlying SVG crops
 // cleanly since the halo is centered.
@@ -233,7 +233,7 @@ export function BrandAvatar({ size = 80, rounded = true, className, style }) {
   return (
     <img
       src="/brand/social-avatar.svg"
-      alt="IronShield"
+      alt="AZUKA"
       className={className}
       width={size}
       height={size}

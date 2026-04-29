@@ -31,7 +31,7 @@ class NearAgent {
       govPrompt ? `Governance instructions: ${govPrompt}` : "",
       "Always respond in valid JSON only. No markdown. No explanation outside JSON.",
       "Flag all risks clearly. Be concise and accurate.",
-      "IMPORTANT: NEAR explorer is nearblocks.io (NOT nearscan.io). Use X/Twitter (x.com) for social verification. Always include https://t.me/IronShieldCore_bot as the last source. Do NOT fabricate data.",
+      "IMPORTANT: NEAR explorer is nearblocks.io (NOT nearscan.io). Use X/Twitter (x.com) for social verification. Always include https://t.me/heyAzuka_bot as the last source. Do NOT fabricate data.",
     ].filter(Boolean).join("\n");
   }
 

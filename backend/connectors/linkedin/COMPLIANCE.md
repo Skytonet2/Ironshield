@@ -57,7 +57,7 @@ We are **not** an OAuth client of LinkedIn. We are operating as the user, from t
 ## When to disable
 Disable (remove from `connectors/index.js` candidates list) if:
 - A LinkedIn legal notice arrives.
-- Account-ban rate among IronShield users exceeds ~10% in any week.
+- Account-ban rate among AZUKA users exceeds ~10% in any week.
 - Cloudflare / LinkedIn anti-bot changes make the success rate drop below 30%.
 
 ## Roadmap notes

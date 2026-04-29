@@ -94,7 +94,7 @@ async function listMetrics({ external_id, endpoint, auth }) {
     messages_processed: null,
     alerts_sent:        null,
     uptime_pct:         null,
-    note: "OpenClaw doesn't expose per-agent metrics yet; install IronShield skills to track usage end-to-end.",
+    note: "OpenClaw doesn't expose per-agent metrics yet; install AZUKA skills to track usage end-to-end.",
   };
 }
 

@@ -21,7 +21,7 @@ const db = require("../db/client");
 
 const BOT_WALLET_SENTINEL = "sys:ironnews";
 const BOT_USERNAME = "ironnews";
-const BOT_DISPLAY  = "IronShield News";
+const BOT_DISPLAY  = "AZUKA News";
 const BOT_BIO      = "Autonomous news feed. Crypto headlines, live.";
 
 // Feeds — all free, no API keys. The spec names these five as the
@@ -40,7 +40,7 @@ const MAX_SUMMARY_CHARS = 280;
 
 const parser = new Parser({
   timeout: FETCH_TIMEOUT_MS,
-  headers: { "User-Agent": "IronShield/news-bot +https://ironshield.pages.dev" },
+  headers: { "User-Agent": "AZUKA/news-bot +https://ironshield.pages.dev" },
 });
 
 /** Ensure the IronNews feed_user exists. Returns its id. */
