@@ -62,6 +62,22 @@ test("facebook connector: invoke rejects unknown action", async () => {
   );
 });
 
+test("facebook connector: DB hiccup surfaces as FACEBOOK_CRED_LOOKUP_FAILED, not 'connect first'", async () => {
+  const credStore = require("../connectors/credentialStore");
+  const orig = credStore.getDecrypted;
+  credStore.getDecrypted = async () => { throw new Error("ECONNRESET"); };
+  try {
+    let err;
+    try { await fb.invoke("groups_read", { wallet: "alice.near", params: { groupId: "g1" } }); }
+    catch (e) { err = e; }
+    assert.ok(err);
+    assert.equal(err.code, "FACEBOOK_CRED_LOOKUP_FAILED");
+    assert.match(err.message, /try again shortly/);
+  } finally {
+    credStore.getDecrypted = orig;
+  }
+});
+
 test("facebook oauth: callback returns 503 when app creds are missing", async () => {
   const saved = {
     id: process.env.FACEBOOK_APP_ID,

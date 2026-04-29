@@ -113,8 +113,12 @@ async function loadKitContext(mission_id) {
     err.code = "MISSION_NOT_KIT";
     throw err;
   }
+  // Explicit column lists (NOT SELECT *) so a future schema migration
+  // that adds/renames a column doesn't silently change the shape this
+  // service consumes downstream.
   const { rows: kitRows } = await db.query(
-    "SELECT * FROM agent_kits WHERE slug = $1 LIMIT 1",
+    `SELECT slug, bundled_skill_ids
+       FROM agent_kits WHERE slug = $1 LIMIT 1`,
     [mission.kit_slug],
   );
   const kit = kitRows[0] || null;
@@ -128,7 +132,8 @@ async function loadKitContext(mission_id) {
   let deployment = null;
   if (mission.claimant_wallet) {
     const { rows: depRows } = await db.query(
-      `SELECT * FROM kit_deployments
+      `SELECT preset_config_json
+         FROM kit_deployments
          WHERE kit_slug = $1 AND agent_owner_wallet = $2
          ORDER BY created_at DESC LIMIT 1`,
       [mission.kit_slug, mission.claimant_wallet],

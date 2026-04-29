@@ -32,7 +32,12 @@ async function _tick() {
   if (_running) return; // overlap guard
   _running = true;
   try {
-    const expiring = await credentialStore.findExpiring({ withinMs: REFRESH_WINDOW_MS });
+    // Pull at most MAX_PER_TICK rows from the DB — no point fetching
+    // more than we'd process this tick. Next tick picks up the rest.
+    const expiring = await credentialStore.findExpiring({
+      withinMs: REFRESH_WINDOW_MS,
+      limit: MAX_PER_TICK,
+    });
     if (!expiring.length) return;
     let processed = 0;
     for (const row of expiring) {
@@ -70,8 +75,10 @@ function start({ tickMs = TICK_MS } = {}) {
   _timer = setInterval(_tick, tickMs);
   if (typeof _timer.unref === "function") _timer.unref();
   // Kick a tick on boot so a deploy after a long quiet period doesn't
-  // wait the full interval before catching expiring tokens.
-  setTimeout(() => { _tick().catch(() => {}); }, 5_000);
+  // wait the full interval before catching expiring tokens. Unref so a
+  // process trying to shut down within the first 5s isn't held open.
+  const bootTimer = setTimeout(() => { _tick().catch(() => {}); }, 5_000);
+  if (typeof bootTimer.unref === "function") bootTimer.unref();
 }
 
 function stop() {

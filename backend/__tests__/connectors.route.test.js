@@ -105,6 +105,22 @@ test("connectors.route — POST /:name/connect rejects empty payload with 400", 
   assert.match(body.error, /payload/);
 });
 
+test("connectors.route — POST /:name/connect rejects oversized payload with 413", async () => {
+  const layer = router.stack.find(
+    (l) => l.route?.path === "/:name/connect" && l.route?.methods?.post
+  );
+  const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+  // 64KB cap — build a payload that's just past it.
+  const big = { junk: "x".repeat(65 * 1024) };
+  let status, body;
+  await handler(
+    { params: { name: "x" }, body: { payload: big }, wallet: "alice.near" },
+    { status(c) { status = c; return this; }, json(b) { body = b; } }
+  );
+  assert.equal(status, 413);
+  assert.match(body.error, /payload too large/);
+});
+
 test("connectors.route — POST /tg/inbound enforces shared secret + emits", async () => {
   const layer = router.stack.find(
     (l) => l.route?.path === "/tg/inbound" && l.route?.methods?.post

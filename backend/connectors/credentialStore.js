@@ -103,14 +103,21 @@ async function remove({ wallet, connector }) {
   return rowCount > 0;
 }
 
-/** Return rows whose expires_at is within the lookahead window. */
-async function findExpiring({ withinMs = 5 * 60 * 1000 } = {}) {
+/** Return rows whose expires_at is within the lookahead window.
+ *
+ *  `limit` caps the number of rows returned (default 50, max 500).
+ *  Without it, a long backend downtime could surface hundreds of
+ *  expired rows in one query — the connectorRefresh worker only
+ *  processes MAX_PER_TICK=25 per tick anyway, so paging at the SQL
+ *  layer keeps the wire traffic small. */
+async function findExpiring({ withinMs = 5 * 60 * 1000, limit = 50 } = {}) {
   const { rows } = await db.query(
     `SELECT user_wallet, connector_name, expires_at FROM connector_credentials
        WHERE expires_at IS NOT NULL
          AND expires_at < NOW() + ($1 || ' milliseconds')::interval
-       ORDER BY expires_at ASC`,
-    [String(withinMs)]
+       ORDER BY expires_at ASC
+       LIMIT $2`,
+    [String(withinMs), Math.max(1, Math.min(500, limit))]
   );
   return rows;
 }

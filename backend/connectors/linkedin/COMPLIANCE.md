@@ -12,6 +12,8 @@ We picked (2) because the Freelancer Hunter and Background Checker Kits both lis
 ## Auth model
 **Session cookies, not API tokens.** The user pastes their `li_at` cookie value (extracted from their browser DevTools while logged into linkedin.com) into the connect form. Stored encrypted per-wallet in `connector_credentials` with payload `{ li_at, csrf? }`.
 
+**No automated refresh.** Cookies expire (typically ~30 days, sometimes sooner if LinkedIn detects unusual activity). LinkedIn doesn't issue refresh tokens, and "Sign In with LinkedIn" OAuth doesn't expose the API surface this connector needs. The `refresh()` method on the connector returns `null` so the periodic refresh worker doesn't log spam. When the cookie dies, the user gets a checkpoint redirect on next invoke and must re-paste a fresh `li_at` via `/api/connectors/linkedin/connect`. **Treat this connector as a 30-day disposable session** — design downstream UX around expected reconnects.
+
 We are **not** an OAuth client of LinkedIn. We are operating as the user, from the server side, with their explicit consent.
 
 ## ToS posture (read this carefully)

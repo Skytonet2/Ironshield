@@ -29,7 +29,17 @@ const API = "https://graph.facebook.com/v19.0";
 
 async function tokens(wallet) {
   if (!wallet || wallet === "platform") return null;
-  const row = await credentialStore.getDecrypted({ wallet, connector: "facebook" }).catch(() => null);
+  let row;
+  try {
+    row = await credentialStore.getDecrypted({ wallet, connector: "facebook" });
+  } catch (e) {
+    // Distinguish DB hiccup from missing-row so the caller doesn't
+    // send the user back through OAuth on a transient outage.
+    console.warn(`[facebook] credentialStore lookup failed for ${wallet}:`, e.message);
+    const err = new Error("facebook: credential lookup unavailable — try again shortly");
+    err.code = "FACEBOOK_CRED_LOOKUP_FAILED";
+    throw err;
+  }
   return row?.payload || null; // { access_token, page_tokens?: { id: token } }
 }
 

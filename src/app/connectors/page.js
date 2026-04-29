@@ -18,6 +18,7 @@ export default function ConnectorsPage() {
   const [error, setError] = useState(null);
   const [active, setActive] = useState(null); // connector name being connected
   const [banner, setBanner] = useState(null); // { kind: "ok"|"err", connector, message }
+  const [unauth, setUnauth] = useState(false); // /me returned 401 — wallet not connected
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -32,8 +33,16 @@ export default function ConnectorsPage() {
       if (mineRes && mineRes.ok) {
         const j = await mineRes.json();
         setMine(Array.isArray(j.connections) ? j.connections : []);
+        setUnauth(false);
+      } else if (mineRes && (mineRes.status === 401 || mineRes.status === 403)) {
+        // Wallet not connected — distinguish from "signed in but empty"
+        // so the UI can prompt the user to sign in instead of pretending
+        // they have no connections.
+        setMine([]);
+        setUnauth(true);
       } else {
-        setMine([]); // not signed in or 401 — show empty "my" panel
+        setMine([]);
+        setUnauth(false);
       }
     } catch (e) {
       setError(e.message);
@@ -132,6 +141,16 @@ export default function ConnectorsPage() {
             <button type="button" onClick={() => setBanner(null)} style={bannerDismissStyle} aria-label="Dismiss">
               <XIcon size={12} />
             </button>
+          </div>
+        )}
+
+        {!loading && unauth && (
+          <div style={bannerInfoStyle}>
+            <AlertCircle size={14} />
+            <span style={{ flex: 1 }}>
+              Connect your wallet to see which accounts you've already linked.
+              You can still browse the directory below.
+            </span>
           </div>
         )}
 
@@ -284,6 +303,12 @@ const bannerErrStyle = {
   borderRadius: 10,
   background: "rgba(255,77,77,0.08)", border: "1px solid rgba(255,77,77,0.3)",
   color: "var(--red)", fontSize: 12.5,
+};
+const bannerInfoStyle = {
+  display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", marginBottom: 14,
+  borderRadius: 10,
+  background: "rgba(96, 165, 250, 0.08)", border: "1px solid rgba(96, 165, 250, 0.3)",
+  color: "var(--text-2)", fontSize: 12.5,
 };
 const bannerDismissStyle = {
   background: "transparent", border: "none", color: "inherit", cursor: "pointer",

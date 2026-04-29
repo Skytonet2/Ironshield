@@ -99,6 +99,14 @@ router.get( "/email/oauth/microsoft/callback",                emailMicrosoftOaut
 // specific; we don't enforce schema here. The connector's invoke()
 // throws a clear "config missing in credentials" error if the user
 // supplied a wrong shape, which the UX surfaces back to them.
+//
+// Size cap: payload is capped at 64KB serialised. Real credentials
+// (OAuth tokens, page-token bundles, mailbox creds, session cookies)
+// fit well under 10KB; 64KB leaves room for unusual cases without
+// letting a wallet-authed client store arbitrary blobs. This is in
+// addition to the global express.json({ limit: '256kb' }) ceiling.
+const CONNECT_PAYLOAD_MAX_BYTES = 64 * 1024;
+
 router.post("/:name/connect", requireWallet, async (req, res) => {
   const { name } = req.params;
   const mod = connectors.get(name);
@@ -106,6 +114,14 @@ router.post("/:name/connect", requireWallet, async (req, res) => {
   const { payload, expires_at } = req.body || {};
   if (!payload || typeof payload !== "object" || Object.keys(payload).length === 0) {
     return res.status(400).json({ error: "payload (object with at least one field) required" });
+  }
+  // Cheap byte-length check on the serialised payload. Buffer.byteLength
+  // matches what credentialStore.encrypt will end up writing.
+  const size = Buffer.byteLength(JSON.stringify(payload), "utf8");
+  if (size > CONNECT_PAYLOAD_MAX_BYTES) {
+    return res.status(413).json({
+      error: `payload too large (${size} bytes, max ${CONNECT_PAYLOAD_MAX_BYTES})`,
+    });
   }
   try {
     const row = await credentialStore.upsert({
