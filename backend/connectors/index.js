@@ -87,6 +87,7 @@ function loadBuiltins() {
     "./x",
     "./facebook",
     "./jiji",
+    "./classifieds",
     "./email",
     "./whatsapp",
     "./linkedin",
