@@ -87,7 +87,7 @@ async function callback(req, res) {
     return res.status(400).send("oauth state mismatch — possible CSRF, please retry");
   }
   if (req.query.error) {
-    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(String(req.query.error))}&connector=email`));
+    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(oauthState.safeErrorTag(req.query.error))}&connector=email`));
   }
   if (!req.query.code) return res.status(400).send("missing oauth code");
 
@@ -106,7 +106,7 @@ async function callback(req, res) {
   });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j?.access_token) {
-    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(j?.error || "token-exchange-failed")}&connector=email`));
+    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(oauthState.safeErrorTag(j?.error || "token-exchange-failed"))}&connector=email`));
   }
 
   const userEmail = await _userinfo(j.access_token).catch(() => null);

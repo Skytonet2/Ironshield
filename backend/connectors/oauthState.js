@@ -32,6 +32,17 @@ function frontendRedirect(path) {
   return `${FRONTEND_URL}${path}`;
 }
 
+/** Defang a provider-supplied error string before putting it in our
+ *  redirect URL. Trims to 80 chars, keeps only word chars + a small
+ *  safe punctuation set. encodeURIComponent already prevents injection
+ *  but a 5KB upstream error or weird Unicode would still make a useless
+ *  URL — this caps the noise. */
+function safeErrorTag(s) {
+  if (s == null) return "unknown";
+  const cleaned = String(s).replace(/[^\w\-:.\s]/g, "").trim().slice(0, 80);
+  return cleaned || "unknown";
+}
+
 function _key() {
   const k = process.env.OAUTH_STATE_SECRET || process.env.CUSTODIAL_ENCRYPT_KEY;
   if (!k) throw new Error("oauthState: OAUTH_STATE_SECRET (or CUSTODIAL_ENCRYPT_KEY) must be set");
@@ -130,5 +141,5 @@ module.exports = {
   COOKIE_NAME, TTL_MS, FRONTEND_URL,
   sign, verify, fresh,
   setCookie, clearCookie, readCookie,
-  frontendRedirect,
+  frontendRedirect, safeErrorTag,
 };

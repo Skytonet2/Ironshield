@@ -88,6 +88,18 @@ test("oauthState.frontendRedirect returns an absolute URL with the configured or
   assert.equal(url.includes("//"), true, "double-slash from protocol");
 });
 
+test("oauthState.safeErrorTag: caps length, strips weird chars, defaults", () => {
+  assert.equal(oauthState.safeErrorTag(null),       "unknown");
+  assert.equal(oauthState.safeErrorTag(undefined),  "unknown");
+  assert.equal(oauthState.safeErrorTag(""),         "unknown");
+  assert.equal(oauthState.safeErrorTag("access_denied"),  "access_denied");
+  // Strip emoji + control chars; preserve alphanumerics + safe punct.
+  assert.equal(oauthState.safeErrorTag("nope 💀"),  "nope");
+  // Cap at 80 chars.
+  const long = "x".repeat(500);
+  assert.equal(oauthState.safeErrorTag(long).length, 80);
+});
+
 test("oauthState.frontendRedirect: leading slash is normalised", () => {
   const a = oauthState.frontendRedirect("/connectors");
   const b = oauthState.frontendRedirect("connectors");

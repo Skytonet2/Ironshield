@@ -1526,6 +1526,22 @@ CREATE TABLE IF NOT EXISTS kit_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_kit_requests_status
   ON kit_requests (status, created_at DESC);
+-- ── Event counters (Phase 10 Tier 5 — observability) ────────────────
+-- Tiny aggregate counter table for "is anyone using this?" telemetry.
+-- bump(event, label) atomically increments via INSERT ... ON CONFLICT.
+-- Labels are connector names / kit slugs etc. — NEVER user wallets.
+-- This is operator-facing summary telemetry, not per-user analytics.
+CREATE TABLE IF NOT EXISTS event_counters (
+  event_name  TEXT          NOT NULL,
+  label       TEXT          NOT NULL DEFAULT '',
+  count       BIGINT        NOT NULL DEFAULT 0,
+  first_seen  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  last_seen   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (event_name, label)
+);
+CREATE INDEX IF NOT EXISTS idx_event_counters_last_seen
+  ON event_counters (last_seen DESC);
+
 -- ── Telegram link hardening (post-Day 9) ─────────────────────────────
 -- Pre-hardening, /api/tg/claim accepted a bare `wallet` body field
 -- and /api/tg/add-wallet upserted feed_users.id into the caller's

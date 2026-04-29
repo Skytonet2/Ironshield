@@ -65,7 +65,7 @@ async function callback(req, res) {
     return res.status(400).send("oauth state mismatch — possible CSRF, please retry");
   }
   if (req.query.error) {
-    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(String(req.query.error))}&connector=x`));
+    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(oauthState.safeErrorTag(req.query.error))}&connector=x`));
   }
   if (!req.query.code) {
     return res.status(400).send("missing oauth code");
@@ -90,7 +90,7 @@ async function callback(req, res) {
   const text = await r.text();
   let j; try { j = JSON.parse(text); } catch { j = null; }
   if (!r.ok || !j?.access_token) {
-    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(j?.error || "token-exchange-failed")}&connector=x`));
+    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(oauthState.safeErrorTag(j?.error || "token-exchange-failed"))}&connector=x`));
   }
 
   await credentialStore.upsert({

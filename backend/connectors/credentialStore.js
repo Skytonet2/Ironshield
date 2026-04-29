@@ -114,7 +114,7 @@ async function findExpiring({ withinMs = 5 * 60 * 1000, limit = 50 } = {}) {
   const { rows } = await db.query(
     `SELECT user_wallet, connector_name, expires_at FROM connector_credentials
        WHERE expires_at IS NOT NULL
-         AND expires_at < NOW() + ($1 || ' milliseconds')::interval
+         AND expires_at < NOW() + make_interval(secs => $1::numeric / 1000.0)
        ORDER BY expires_at ASC
        LIMIT $2`,
     [String(withinMs), Math.max(1, Math.min(500, limit))]

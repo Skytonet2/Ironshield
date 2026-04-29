@@ -21,6 +21,7 @@ const router = express.Router();
 const requireWallet = require("../middleware/requireWallet");
 const connectors = require("../connectors");
 const credentialStore = require("../connectors/credentialStore");
+const telemetry = require("../services/telemetry");
 const whatsappWebhook = require("../connectors/whatsapp/webhook");
 const xOauth        = require("../connectors/x/oauth");
 const facebookOauth = require("../connectors/facebook/oauth");
@@ -130,6 +131,7 @@ router.post("/:name/connect", requireWallet, async (req, res) => {
       payload,
       expiresAt: expires_at || null,
     });
+    telemetry.bumpFireAndForget("connector.connect", name);
     res.json({ ok: true, connection: row });
   } catch (e) {
     console.warn(`[connectors:/${name}/connect] error:`, e.message);
