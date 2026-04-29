@@ -54,6 +54,30 @@ router.post("/whatsapp/webhook",
   whatsappWebhook.handleEvent
 );
 
+// Telegram inbound HTTP fallback — for split deployments where the bot
+// runs in a process separate from the backend and can't push events on
+// the in-process eventBus. Co-located deploys never hit this path; the
+// bot's bot/attach.js prefers in-process emit. Gated by the same shared
+// secret as POST /api/missions/:id/mirror.
+router.post("/tg/inbound", async (req, res) => {
+  const expected = process.env.ORCHESTRATOR_SHARED_SECRET;
+  const provided = req.headers["x-orchestrator-secret"];
+  if (!expected || provided !== expected) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const b = req.body || {};
+  if (!b.text || typeof b.text !== "string") {
+    return res.status(400).json({ error: "missing text" });
+  }
+  try {
+    require("../services/eventBus").emit("connector:tg:message", b);
+    res.json({ ok: true });
+  } catch (e) {
+    console.warn("[connectors:/tg/inbound] emit failed:", e.message);
+    res.status(500).json({ error: "emit failed" });
+  }
+});
+
 // OAuth flows — start needs the wallet (to bind the cookie); callback
 // is a top-level GET from the provider, so it auths via the signed
 // cookie set during start. Each connector implements its own pair.

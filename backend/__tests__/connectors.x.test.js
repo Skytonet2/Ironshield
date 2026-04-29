@@ -55,3 +55,31 @@ test("x connector: search without bearer throws no-token error", async () => {
     /no bearer\/user token/
   );
 });
+
+test("x oauth: callback returns 503 when client creds are missing", async () => {
+  // Save + clear the env so _config() throws.
+  const saved = {
+    id: process.env.X_CLIENT_ID,
+    secret: process.env.X_CLIENT_SECRET,
+    redir: process.env.X_OAUTH_REDIRECT_URI,
+  };
+  delete process.env.X_CLIENT_ID;
+  delete process.env.X_CLIENT_SECRET;
+  delete process.env.X_OAUTH_REDIRECT_URI;
+  try {
+    const xOauth = require("../connectors/x/oauth");
+    let status, body;
+    const res = {
+      status(c) { status = c; return res; },
+      send(b)   { body = b; return res; },
+      redirect() { return res; },
+    };
+    await xOauth.callback({ query: {}, headers: {} }, res);
+    assert.equal(status, 503);
+    assert.match(body, /x oauth/);
+  } finally {
+    if (saved.id)     process.env.X_CLIENT_ID = saved.id;
+    if (saved.secret) process.env.X_CLIENT_SECRET = saved.secret;
+    if (saved.redir)  process.env.X_OAUTH_REDIRECT_URI = saved.redir;
+  }
+});

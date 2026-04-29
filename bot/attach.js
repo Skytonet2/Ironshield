@@ -36,8 +36,48 @@ const { recordMessage }  = require("./commands/summary");
 // Phase 10 Tier 5 — bridge inbound TG messages to the scout_tg
 // skill's ring buffer. Lazy-required so a bot deploy without the
 // backend connector framework loaded still boots.
+//
+// Two-tier delivery:
+//   1. In-process eventBus (fast, zero-RTT) when backend is co-located.
+//   2. HTTP POST fallback to BACKEND_INBOUND_URL when the bot runs in a
+//      separate Render service. Gated by ORCHESTRATOR_SHARED_SECRET.
+//   3. If neither works, log a one-shot warning so an operator notices
+//      that scout_tg's ring buffer will never fill.
 let _connectorEventBus = null;
 try { _connectorEventBus = require("../backend/services/eventBus"); } catch { /* optional */ }
+const _BACKEND_INBOUND_URL = (process.env.BACKEND_INBOUND_URL || "").replace(/\/$/, "");
+const _ORCH_SECRET = process.env.ORCHESTRATOR_SHARED_SECRET || "";
+let _fallbackWarned = false;
+
+async function _emitTgMessage(envelope) {
+  // Fast path — in-process bus.
+  if (_connectorEventBus?.emit) {
+    try { _connectorEventBus.emit("connector:tg:message", envelope); return; }
+    catch { /* fall through to HTTP */ }
+  }
+  // HTTP fallback — only if both env vars are set.
+  if (_BACKEND_INBOUND_URL && _ORCH_SECRET) {
+    try {
+      await fetch(`${_BACKEND_INBOUND_URL}/api/connectors/tg/inbound`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-orchestrator-secret": _ORCH_SECRET,
+        },
+        body: JSON.stringify(envelope),
+      });
+      return;
+    } catch (e) {
+      // Don't break the primary handler.
+      console.warn("[bot] tg/inbound HTTP fallback failed:", e.message);
+      return;
+    }
+  }
+  if (!_fallbackWarned) {
+    _fallbackWarned = true;
+    console.warn("[bot] WARNING: backend eventBus not loadable AND HTTP fallback unset (BACKEND_INBOUND_URL + ORCHESTRATOR_SHARED_SECRET). scout_tg ring buffer will not fill — Freelancer Hunter Kit's TG scout will be permanently degraded.");
+  }
+}
 const agentState = require("../backend/db/agentState");
 
 const priceMonitor    = require("./jobs/priceMonitor");
@@ -119,22 +159,18 @@ function attachBot(app) {
       const isCommand = msg.text?.startsWith("/");
       if (!isCommand && msg.text) recordMessage(msg);
       // Fan out non-command messages to the scout_tg skill's ring
-      // buffer. Both group + private messages — the Freelancer Hunter
-      // Kit cares about either, and the buffer trims to MAX_BUFFER.
-      // Best-effort: a missing/broken event bus shouldn't kill the
-      // primary bot dispatch.
-      if (!isCommand && msg.text && _connectorEventBus?.emit) {
-        try {
-          _connectorEventBus.emit("connector:tg:message", {
-            chat_id:    msg.chat.id,
-            chat_title: msg.chat.title || null,
-            chat_type:  msg.chat.type,
-            from_user:  msg.from?.first_name || null,
-            from_username: msg.from?.username || null,
-            text:       msg.text,
-            message_id: msg.message_id,
-          });
-        } catch { /* swallow — never break the primary handler */ }
+      // buffer via _emitTgMessage (in-process bus → HTTP fallback).
+      // Best-effort: failures don't kill the primary bot dispatch.
+      if (!isCommand && msg.text) {
+        _emitTgMessage({
+          chat_id:    msg.chat.id,
+          chat_title: msg.chat.title || null,
+          chat_type:  msg.chat.type,
+          from_user:  msg.from?.first_name || null,
+          from_username: msg.from?.username || null,
+          text:       msg.text,
+          message_id: msg.message_id,
+        }).catch(() => {});
       }
       if (isCommand)      await handleCommand(bot, msg);
       else if (isGroup)   await handleMessage(bot, msg);
