@@ -20,7 +20,18 @@ const APP_BEARER = process.env.X_BEARER_TOKEN || "";
 
 async function userToken(wallet) {
   if (!wallet || wallet === "platform") return null;
-  const row = await credentialStore.getDecrypted({ wallet, connector: "x" }).catch(() => null);
+  let row;
+  try {
+    row = await credentialStore.getDecrypted({ wallet, connector: "x" });
+  } catch (e) {
+    // DB hiccup is not the same as "no token on file" — surface a
+    // distinct error so callers don't tell the user to re-do OAuth
+    // when the storage layer is just sleepy.
+    console.warn(`[x] credentialStore lookup failed for ${wallet}:`, e.message);
+    const err = new Error("x: credential lookup unavailable — try again shortly");
+    err.code = "X_CRED_LOOKUP_FAILED";
+    throw err;
+  }
   return row?.payload?.access_token || null;
 }
 

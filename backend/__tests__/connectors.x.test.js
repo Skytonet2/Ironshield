@@ -56,6 +56,22 @@ test("x connector: search without bearer throws no-token error", async () => {
   );
 });
 
+test("x connector: DB hiccup surfaces as X_CRED_LOOKUP_FAILED, not 'connect first'", async () => {
+  const credStore = require("../connectors/credentialStore");
+  const orig = credStore.getDecrypted;
+  credStore.getDecrypted = async () => { throw new Error("ECONNRESET"); };
+  try {
+    let err;
+    try { await x.invoke("post", { wallet: "alice.near", params: { text: "hi" } }); }
+    catch (e) { err = e; }
+    assert.ok(err);
+    assert.equal(err.code, "X_CRED_LOOKUP_FAILED");
+    assert.match(err.message, /try again shortly/);
+  } finally {
+    credStore.getDecrypted = orig;
+  }
+});
+
 test("x oauth: callback returns 503 when client creds are missing", async () => {
   // Save + clear the env so _config() throws.
   const saved = {
