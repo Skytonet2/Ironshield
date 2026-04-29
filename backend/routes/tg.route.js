@@ -20,7 +20,7 @@ const db = require("../db/client");
 const requireWallet = require("../middleware/requireWallet");
 const requireBotSig = require("../middleware/requireBotSig");
 
-const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || "IronShieldCore_bot";
+const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || "heyAzuka_bot";
 
 function newCode() {
   return crypto.randomBytes(4).toString("hex").toUpperCase();

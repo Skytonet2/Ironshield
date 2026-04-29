@@ -475,7 +475,7 @@ export default function BridgeModal({ onClose }) {
           <span style={{ textAlign: "right", color: t.text }}>
             {quote?.amountOutUsd ? fmtUsd(quote.amountOutUsd) : "—"}
           </span>
-          <span>IronShield fee</span>
+          <span>AZUKA fee</span>
           <span style={{ textAlign: "right", color: t.text }}>0.20%</span>
           <span>ETA</span>
           <span style={{ textAlign: "right", color: t.text }}>

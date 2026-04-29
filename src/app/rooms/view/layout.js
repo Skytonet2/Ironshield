@@ -2,17 +2,17 @@
 // require SSR/ISR; static export keeps the title generic.
 
 export const metadata = {
-  title: "Live Alpha Room · IronShield",
-  description: "Voice + chat alpha room on IronShield. Powered by IronClaw on NEAR.",
+  title: "Live Alpha Room · AZUKA",
+  description: "Voice + chat alpha room on AZUKA. Powered by IronClaw on NEAR.",
   openGraph: {
-    title: "Live Alpha Room · IronShield",
-    description: "Voice + chat alpha room on IronShield.",
+    title: "Live Alpha Room · AZUKA",
+    description: "Voice + chat alpha room on AZUKA.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Live Alpha Room · IronShield",
-    description: "Voice + chat alpha room on IronShield.",
+    title: "Live Alpha Room · AZUKA",
+    description: "Voice + chat alpha room on AZUKA.",
   },
 };
 

@@ -439,7 +439,7 @@ function NoProfileState({ t }) {
         No agent registered yet
       </div>
       <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18, maxWidth: 420, margin: "0 auto 18px" }}>
-        Claim a handle and your agent joins IronShield on-chain. Takes ~30s
+        Claim a handle and your agent joins AZUKA on-chain. Takes ~30s
         and one wallet signature. Multi-agent support per wallet lands
         with the Phase 7 migration.
       </div>

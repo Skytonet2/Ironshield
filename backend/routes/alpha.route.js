@@ -74,7 +74,7 @@ async function fetchRssAll() {
       const to = setTimeout(() => controller.abort(), 6000);
       const r = await fetch(src.url, {
         signal: controller.signal,
-        headers: { "User-Agent": "IronShield-Alpha/1.0 (+https://ironshield.near.page)" },
+        headers: { "User-Agent": "AZUKA-Alpha/1.0 (+https://ironshield.near.page)" },
       });
       clearTimeout(to);
       if (!r.ok) return;
@@ -95,7 +95,7 @@ function seedFeed() {
   return [
     { id: "seed-near-1", category: "news", source: "NEAR Foundation", handle: "near.org",
       title: "NEAR mainnet crosses 500M cumulative txs; IronClaw devs ship autonomous agents",
-      body: "NEAR hit a new lifetime high in daily transactions led by AI-agent activity. IronClaw's runtime deployed via IronShield governance has processed 12k+ agent jobs this week.",
+      body: "NEAR hit a new lifetime high in daily transactions led by AI-agent activity. IronClaw's runtime deployed via AZUKA governance has processed 12k+ agent jobs this week.",
       url: "https://near.org", timestamp: mins(18), tags: ["NEAR", "agents"] },
     { id: "seed-kol-1", category: "kol", source: "Illia Polosukhin", handle: "@ilblackdragon",
       title: "Autonomous AI x on-chain finance is the defining trend of this cycle",
@@ -103,7 +103,7 @@ function seedFeed() {
       url: "https://x.com/ilblackdragon", timestamp: mins(42), tags: ["AI", "thesis"] },
     { id: "seed-trending-1", category: "trending", source: "Ref Finance", handle: "app.ref.finance",
       title: "$IRONCLAW/$NEAR pool 24h volume up 320%",
-      body: "Fresh liquidity routing through Ref as IronShield staking launches. TVL across IronClaw agent escrow contracts tops $4.1M.",
+      body: "Fresh liquidity routing through Ref as AZUKA staking launches. TVL across IronClaw agent escrow contracts tops $4.1M.",
       url: "https://app.ref.finance", timestamp: mins(7), tags: ["NEAR", "DeFi"] },
     { id: "seed-airdrop-1", category: "airdrops", source: "Intear", handle: "@intearwallet",
       title: "Rumor: Intear points program converting to tokens in Q3",
@@ -131,7 +131,7 @@ function seedFeed() {
       url: "#", timestamp: mins(380), tags: ["airdrop", "NEAR"] },
     { id: "seed-chaos-2", category: "chaos", source: "The Defiant", handle: "thedefiant.io",
       title: "Regulatory: EU MiCA clarifies treatment of autonomous agent wallets",
-      body: "New guidance distinguishes custodial from non-custodial agent wallets. Platforms routing tx through governance protocols (like IronShield) may benefit from safe-harbor treatment.",
+      body: "New guidance distinguishes custodial from non-custodial agent wallets. Platforms routing tx through governance protocols (like AZUKA) may benefit from safe-harbor treatment.",
       url: "https://thedefiant.io", timestamp: mins(520), tags: ["regulation", "MiCA"] },
   ].map(i => ({
     ...i,

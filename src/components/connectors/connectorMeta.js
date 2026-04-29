@@ -8,7 +8,7 @@
 export const CONNECTOR_META = {
   tg: {
     label:    "Telegram",
-    blurb:    "Notifications + outbound messaging via the IronShield bot.",
+    blurb:    "Notifications + outbound messaging via the AZUKA bot.",
     color:    "#229ED9",
     flow:     "platform", // wired via TELEGRAM_BOT_TOKEN; users don't connect personally.
     fields:   [],

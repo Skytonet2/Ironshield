@@ -36,7 +36,7 @@ async function handle(bot, msg) {
     `☀️ *Your 24h digest*\n\n${notifLines}${tipLine}`,
     {
       parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: [[{ text: "Open IronShield", url: "https://ironshield.near.page" }]] },
+      reply_markup: { inline_keyboard: [[{ text: "Open AZUKA", url: "https://ironshield.near.page" }]] },
     }
   );
 }

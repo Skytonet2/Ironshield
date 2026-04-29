@@ -1,4 +1,4 @@
-# IronShield / NewsCoin — Account Registry
+# AZUKA / NewsCoin — Account Registry
 
 Single source of truth for every NEAR account the system uses.
 **Only addresses here. Never private keys.**

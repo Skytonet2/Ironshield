@@ -55,7 +55,7 @@ function api(path, { method = "GET", body, wallet, raw } = {}) {
     // If the backend isn't deployed (SPA HTML fallback or CDN 404 page), don't
     // crash the UI with "Unexpected token '<'". Surface a clean, recognizable error.
     if (text.trimStart().startsWith("<")) {
-      const err = new Error("Backend unavailable — some features (DMs, AI, calls) need the IronShield backend online.");
+      const err = new Error("Backend unavailable — some features (DMs, AI, calls) need the AZUKA backend online.");
       err.backendDown = true;
       throw err;
     }
@@ -199,7 +199,7 @@ function useMentionSuggestions(content, wallet) {
 }
 
 
-function ComposePost({ wallet, selector, onPosted, placeholder = "What's happening in IronShield?" }) {
+function ComposePost({ wallet, selector, onPosted, placeholder = "What's happening in AZUKA?" }) {
   const t = useTheme();
   const fileRef = useRef(null);
   const taRef = useRef(null);
@@ -1501,7 +1501,7 @@ function AgentDeployModal({ wallet, selector, onClose }) {
 
         <label style={{ color: t.textMuted, fontSize: 12, fontWeight: 600 }}>Repost rules</label>
         <textarea value={cfg.repostRules} onChange={e => setCfg({ ...cfg, repostRules: e.target.value })}
-          placeholder="Repost anything mentioning @ironclaw or IronShield."
+          placeholder="Repost anything mentioning @ironclaw or AZUKA."
           style={{ ...inputStyle(t), minHeight: 50 }} />
       </div>
 
@@ -1601,7 +1601,7 @@ function AdBoostModal({ post, wallet, selector, onClose }) {
 
 /* ───────────────────── DM (search + invite) ───────────────────── */
 function buildDmCallInvite(conversationId) {
-  return `[[IRONCALL:${conversationId}:${Date.now().toString(36)}]] Join me in a secure IronShield voice call.`;
+  return `[[IRONCALL:${conversationId}:${Date.now().toString(36)}]] Join me in a secure AZUKA voice call.`;
 }
 
 function parseSpecialDmMessage(text = "") {
@@ -1610,7 +1610,7 @@ function parseSpecialDmMessage(text = "") {
   return {
     type: "call_invite",
     conversationId: Number(match[1]),
-    note: match[3] || "Join me in a secure IronShield voice call.",
+    note: match[3] || "Join me in a secure AZUKA voice call.",
   };
 }
 
@@ -2703,7 +2703,7 @@ function RightRail({ onDeployAgent, onOpenOrg, wallet, openWallet, onOpenProfile
         <div style={{ padding: 16 }}>
           <p style={{ color: t.textMuted, fontSize: 13, margin: 0, lineHeight: 1.5 }}>
             Let your agent post, find alpha, and act: even when you're not here. Personality &amp; schedule
-            configured on IronShield, runtime on IronClaw.
+            configured on AZUKA, runtime on IronClaw.
           </p>
           <button onClick={() => wallet ? onDeployAgent() : openWallet?.()} style={{
             marginTop: 12, width: "100%", padding: "10px 16px", borderRadius: 999,

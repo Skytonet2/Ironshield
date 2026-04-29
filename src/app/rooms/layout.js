@@ -3,16 +3,16 @@
 // room route ships with generateStaticParams.
 
 export const metadata = {
-  title: "Live Alpha Rooms · IronShield",
+  title: "Live Alpha Rooms · AZUKA",
   description: "Join hosted voice + chat rooms where stakers share alpha. Powered by IronClaw on NEAR.",
   openGraph: {
-    title: "Live Alpha Rooms · IronShield",
+    title: "Live Alpha Rooms · AZUKA",
     description: "Hosted alpha rooms — stake $IRONCLAW, share calls, get tipped.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Live Alpha Rooms · IronShield",
+    title: "Live Alpha Rooms · AZUKA",
     description: "Hosted alpha rooms — stake $IRONCLAW, share calls, get tipped.",
   },
 };

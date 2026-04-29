@@ -474,7 +474,7 @@ function RuntimeDetails({ t, runtime, builtinDef, skill }) {
     return (
       <>
         <Common>
-          Runs in IronShield's orchestrator. Calls your connected agent for any LLM step — your framework, your privacy.
+          Runs in AZUKA's orchestrator. Calls your connected agent for any LLM step — your framework, your privacy.
         </Common>
         <div style={{
           marginTop: 12, padding: "8px 10px",

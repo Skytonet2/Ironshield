@@ -18,7 +18,7 @@ export default function EcosystemPage() {
       <div style={{ textAlign: "center", marginBottom: 52 }}>
         <Badge>ECOSYSTEM</Badge>
         <h1 style={{ fontSize: 36, fontWeight: 700, color: t.white, marginTop: 12 }}>Built on NEAR. Open to All.</h1>
-        <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10 }}>Strategic allies powering the IronShield network.</p>
+        <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10 }}>Strategic allies powering the AZUKA network.</p>
       </div>
 
       {sent && (
@@ -37,7 +37,7 @@ export default function EcosystemPage() {
             <Badge color={t.green}>OFFICIAL PARTNER</Badge>
           </div>
           <p style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.65, maxWidth: 560 }}>
-            IronShield is built natively on NEAR Protocol: the blockchain of choice for scalable, low-cost, developer-friendly Web3 infrastructure. Sub-second finality, Rust contracts, and a thriving ecosystem.
+            AZUKA is built natively on NEAR Protocol: the blockchain of choice for scalable, low-cost, developer-friendly Web3 infrastructure. Sub-second finality, Rust contracts, and a thriving ecosystem.
           </p>
           <div style={{ display: "flex", gap: 20, marginTop: 14, flexWrap: "wrap" }}>
             {[
@@ -79,7 +79,7 @@ export default function EcosystemPage() {
         <div style={{ padding: "24px 28px", borderBottom: `1px solid ${t.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: t.white }}>Request a Partnership</div>
-            <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>Building something aligned with IronShield? Let's talk.</div>
+            <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>Building something aligned with AZUKA? Let's talk.</div>
           </div>
           <Btn primary onClick={() => setShowForm(!showForm)} style={{ fontSize: 13 }}>
             {showForm ? <X size={14} /> : <Plus size={14} />}{showForm ? "Close" : "Apply"}

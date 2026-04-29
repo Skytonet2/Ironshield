@@ -1,4 +1,4 @@
-// bot/services/backend.js — thin fetch wrapper around the IronShield API
+// bot/services/backend.js — thin fetch wrapper around the AZUKA API
 const fetch = require("node-fetch");
 const crypto = require("crypto");
 

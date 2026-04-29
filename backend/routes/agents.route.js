@@ -1,6 +1,6 @@
 // backend/routes/agents.route.js
 //
-// IronShield agent control plane — connection management for the
+// AZUKA agent control plane — connection management for the
 // hybrid skill model. We're a launchpad over OpenClaw / IronClaw /
 // self-hosted agents; the on-chain register_agent + register_sub_agent
 // hold canonical identity, this module manages the per-framework

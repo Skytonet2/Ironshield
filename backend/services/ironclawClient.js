@@ -1,7 +1,7 @@
 // backend/services/ironclawClient.js
 //
 // Thin client for the IronClaw agent runtime (NEAR AI Cloud product).
-// IronShield runs ON TOP of IronClaw — we are not re-implementing an
+// AZUKA runs ON TOP of IronClaw — we are not re-implementing an
 // agent runtime here. This module just talks to our hosted agent at
 // {IRONCLAW_BASE_URL} using the scoped gateway token.
 //

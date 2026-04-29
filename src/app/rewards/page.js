@@ -199,7 +199,7 @@ export default function RewardsPage() {
                   marginTop: 4,
                 }}
               >
-                app.ironshield.io/@{short}
+                app.azuka.io/@{short}
                 <CopyIcon size={11} />
               </a>
               <button
@@ -676,9 +676,9 @@ function ReferralsTab({ t, address, stats, onCode }) {
 
   const share = async () => {
     if (!link) return;
-    const text = `I'm on IronShield — connect, create, automate, and earn. Use my link:`;
+    const text = `I'm on AZUKA — connect, create, automate, and earn. Use my link:`;
     if (navigator.share) {
-      try { await navigator.share({ title: "IronShield", text, url: link }); return; } catch { /* fall through */ }
+      try { await navigator.share({ title: "AZUKA", text, url: link }); return; } catch { /* fall through */ }
     }
     copy();
   };
@@ -907,7 +907,7 @@ function ProUpgradeSection({ t }) {
       }}>
         <Crown size={16} style={{ color: t.accent }} />
         <div style={{ fontSize: 14, fontWeight: 800, color: t.text, letterSpacing: -0.2 }}>
-          IronShield Pro
+          AZUKA Pro
         </div>
         {status.isPro && (
           <span style={{

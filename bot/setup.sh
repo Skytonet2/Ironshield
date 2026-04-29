@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # ═══════════════════════════════════════════════════════════════
-#  IronShield Bot — Automated VPS Setup Script
-#  Deploys @IronShieldCore_bot on IronClaw with Google Gemini
+#  AZUKA Bot — Automated VPS Setup Script
+#  Deploys @heyAzuka_bot on IronClaw with Google Gemini
 #  Run as root on a fresh Ubuntu 22.04+ / Debian 12+ VPS
 # ═══════════════════════════════════════════════════════════════
 
 echo ""
 echo "  ╔═══════════════════════════════════════════════╗"
-echo "  ║   IronShield Bot — IronClaw Setup             ║"
+echo "  ║   AZUKA Bot — IronClaw Setup             ║"
 echo "  ║   Powered by NEAR AI + Google Gemini (2M ctx) ║"
 echo "  ╚═══════════════════════════════════════════════╝"
 echo ""
@@ -126,18 +126,18 @@ cat > /root/.ironclaw/channels/telegram.capabilities.json << TGEOF
   "delivery": "polling",
   "dm_policy": "open",
   "respond_to_all_group_messages": true,
-  "bot_username": "IronShieldCore_bot",
+  "bot_username": "heyAzuka_bot",
   "allowed_commands": ["/start", "/help", "/scan", "/report", "/status"]
 }
 TGEOF
 
-# ─── IronShield identity / personality ──────────────────────
+# ─── AZUKA identity / personality ──────────────────────
 mkdir -p /root/.ironclaw/identity
 
 cat > /root/.ironclaw/identity/identity.md << 'IDEOF'
-# IronShield AI Agent
+# AZUKA AI Agent
 
-You are **IronShield**, the AI security guardian for the IronClaw ecosystem on NEAR Protocol.
+You are **AZUKA**, the AI security guardian for the IronClaw ecosystem on NEAR Protocol.
 
 ## Your Role
 - Protect Telegram communities from scams, phishing, rug pulls, and impersonation attacks
@@ -153,7 +153,7 @@ You are **IronShield**, the AI security guardian for the IronClaw ecosystem on N
 
 ## Key Knowledge
 - IronClaw: Secure open-source AI agent runtime built on NEAR Protocol (github.com/nearai/ironclaw)
-- IronShield: The security layer of the IronClaw ecosystem
+- AZUKA: The security layer of the IronClaw ecosystem
 - $IRONCLAW: NEP-141 utility token — stake to earn NEAR from protocol fees
 - Staking contract: MasterChef-style reward distribution at ironshield.near
 - Website: https://ironshield.near.page
@@ -181,7 +181,7 @@ echo "🔧 Creating systemd service..."
 
 cat > /etc/systemd/system/ironclaw.service << 'SVCEOF'
 [Unit]
-Description=IronShield Bot (IronClaw Agent)
+Description=AZUKA Bot (IronClaw Agent)
 After=network.target postgresql.service
 Requires=postgresql.service
 
@@ -206,7 +206,7 @@ systemctl enable ironclaw
 # ─── Final instructions ─────────────────────────────────────
 echo ""
 echo "  ╔═══════════════════════════════════════════════════════╗"
-echo "  ║   ✅ IronShield Bot Setup Complete!                   ║"
+echo "  ║   ✅ AZUKA Bot Setup Complete!                   ║"
 echo "  ╠═══════════════════════════════════════════════════════╣"
 echo "  ║                                                       ║"
 echo "  ║  Before starting, you need TWO API keys:              ║"
@@ -230,7 +230,7 @@ echo "  ║                                                       ║"
 echo "  ║  Check logs:                                          ║"
 echo "  ║     journalctl -u ironclaw -f                         ║"
 echo "  ║                                                       ║"
-echo "  ║  Bot: @IronShieldCore_bot                             ║"
+echo "  ║  Bot: @heyAzuka_bot                             ║"
 echo "  ║  LLM: Google Gemini (2M token context)                ║"
 echo "  ║  Mode: Polling (no tunnel needed)                     ║"
 echo "  ║                                                       ║"

@@ -1,4 +1,4 @@
-# IronShield E2E suite (Day 20)
+# AZUKA E2E suite (Day 20)
 
 Playwright-based browser tests against the live frontend.
 

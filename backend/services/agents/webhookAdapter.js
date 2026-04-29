@@ -4,7 +4,7 @@
 // custom builds, anything else). The user provides:
 //
 //   • endpoint  — base URL we POST to
-//   • auth      — HMAC signing secret (we send X-IronShield-Signature)
+//   • auth      — HMAC signing secret (we send X-AZUKA-Signature)
 //
 // Their endpoint is expected to:
 //
@@ -29,7 +29,7 @@ function sign(secret, body) {
 
 function signedHeaders(secret, body) {
   const headers = { "Content-Type": "application/json" };
-  if (secret) headers["X-IronShield-Signature"] = sign(secret, body);
+  if (secret) headers["X-AZUKA-Signature"] = sign(secret, body);
   return headers;
 }
 
@@ -112,7 +112,7 @@ async function listMetrics() {
     messages_processed: null,
     alerts_sent:        null,
     uptime_pct:         null,
-    note: "Self-hosted agents don't have a uniform metrics surface. Install IronShield skills for end-to-end usage tracking.",
+    note: "Self-hosted agents don't have a uniform metrics surface. Install AZUKA skills for end-to-end usage tracking.",
   };
 }
 

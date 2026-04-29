@@ -22,7 +22,7 @@ const PRESETS = [
   { key: "carbon",   label: "Carbon",   bg: "#060606", accent: "#a3a3a3" },
   { key: "ember",    label: "Ember",    bg: "#080503", accent: "#f97316" },
   { key: "ironclaw", label: "IronClaw", bg: "#080303", accent: "#ef4444" },
-  // v1.1.10 — IronShield Pro presets. Locked for non-Pro members.
+  // v1.1.10 — AZUKA Pro presets. Locked for non-Pro members.
   { key: "emerald",  label: "Emerald",  bg: "#03080a", accent: "#10b981", pro: true },
   { key: "aurora",   label: "Aurora",   bg: "#050310", accent: "#a855f7", pro: true },
   { key: "gold",     label: "Gold",     bg: "#0a0703", accent: "#f59e0b", pro: true },
@@ -104,7 +104,7 @@ export default function AppearanceTab() {
                   }
                   setTheme(p.key);
                 }}
-                title={locked ? "IronShield Pro theme — click to upgrade" : p.label}
+                title={locked ? "AZUKA Pro theme — click to upgrade" : p.label}
                 style={{
                   position: "relative",
                   padding: 10,

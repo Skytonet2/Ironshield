@@ -97,7 +97,7 @@ async function handleStartWithOnboardingHook(bot, msg) {
 }
 
 async function helpHandler(bot, msg) {
-  const message = `*IronShield Bot — Commands*
+  const message = `*AZUKA Bot — Commands*
 
 🔗 *Onboarding*
 • /onboard — IronGuide picks the right agent for you
@@ -142,7 +142,7 @@ async function statusHandler(bot, msg) {
   const uptime = process.uptime();
   const h = Math.floor(uptime / 3600);
   const m = Math.floor((uptime % 3600) / 60);
-  const text = `🛡 *IronShield Status*\n\n✅ Bot: Online\n⏱ Uptime: ${h}h ${m}m\n🤖 Engine: NEAR AI\n📡 Mode: Polling\n\nSite: ironshield.near.page`;
+  const text = `🛡 *AZUKA Status*\n\n✅ Bot: Online\n⏱ Uptime: ${h}h ${m}m\n🤖 Engine: NEAR AI\n📡 Mode: Polling\n\nSite: ironshield.near.page`;
   await bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" });
 }
 

@@ -22,7 +22,7 @@
 const db = require("../../db/client");
 const { classify, pickKit } = require("./classifier");
 
-const SYSTEM_PROMPT = `You are IronGuide — the IronShield concierge. Your job is to interview a new user with short, plain-language questions to figure out the right Kit for them. Ask one question at a time. Keep questions under 20 words. Avoid jargon. After 3-4 questions you should have enough to suggest a Kit.
+const SYSTEM_PROMPT = `You are IronGuide — the AZUKA concierge. Your job is to interview a new user with short, plain-language questions to figure out the right Kit for them. Ask one question at a time. Keep questions under 20 words. Avoid jargon. After 3-4 questions you should have enough to suggest a Kit.
 
 Topics to cover (in this order):
 1. What kind of business / activity they want help with.
@@ -215,7 +215,7 @@ async function finalizeRecommendation(session, messages, classified, llmSummary 
 
   const closingMsg = kit
     ? `Got it. Based on what you told me, the **${kit.title}** Kit fits best — ${kit.description.slice(0, 160)}. Tap "Deploy this Kit" to wire it up in one click.`
-    : `Got it — but no existing Kit fits this profile yet. I've logged it for the IronShield team to look at, and you'll see it appear in your inbox when one is ready. In the meantime you can browse the live Kits.`;
+    : `Got it — but no existing Kit fits this profile yet. I've logged it for the AZUKA team to look at, and you'll see it appear in your inbox when one is ready. In the meantime you can browse the live Kits.`;
   messages.push({ role: "assistant", content: closingMsg, ts: Date.now() });
 
   if (kit) {

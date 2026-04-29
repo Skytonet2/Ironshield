@@ -100,7 +100,7 @@ async function tryHost_uguu(fileBuf, filename, mimeType) {
     method: "POST",
     headers: {
       "content-type": `multipart/form-data; boundary=${boundary}`,
-      "user-agent": "IronShield/1.0 (+https://ironshield.near.page)",
+      "user-agent": "AZUKA/1.0 (+https://ironshield.near.page)",
     },
     body,
   }, PER_HOST_TIMEOUT_MS);
@@ -123,7 +123,7 @@ async function tryHost_0x0st(fileBuf, filename, mimeType) {
     headers: {
       "content-type": `multipart/form-data; boundary=${boundary}`,
       // 0x0.st asks for a user agent — it 403s on requests without one.
-      "user-agent": "IronShield/1.0 (+https://ironshield.near.page)",
+      "user-agent": "AZUKA/1.0 (+https://ironshield.near.page)",
     },
     body,
   }, PER_HOST_TIMEOUT_MS);

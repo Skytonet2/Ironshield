@@ -571,7 +571,7 @@ router.post("/suggest", requireWallet, async (req, res, next) => {
     }
 
     const systemPrompt =
-      "You are IronClaw, the AI agent for IronShield. Given this news headline, " +
+      "You are IronClaw, the AI agent for AZUKA. Given this news headline, " +
       "suggest a creative, catchy coin name (max 32 chars) and ticker symbol (3-6 chars, uppercase). " +
       "The coin represents a tradeable bet on this news story's virality. " +
       "Respond in JSON: {name, ticker}";

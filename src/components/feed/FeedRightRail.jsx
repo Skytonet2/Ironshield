@@ -7,12 +7,12 @@
 //                       profile. Shows a "Sign in" variant when no
 //                       wallet is connected.
 //   2. Trending Topics — 5 rows of #topic · N posts + rising/cooling
-//                       arrow. Seeded from an IronShield-branded list
+//                       arrow. Seeded from an AZUKA-branded list
 //                       for now; swaps to the backend's
 //                       /api/feed/trending endpoint once it lands.
 //   3. Who to Follow  — 3 rows of suggested accounts with a Follow
 //                       button. POSTs /api/social/follow.
-//   4. IronShield Tips — static promo block that routes into Staking.
+//   4. AZUKA Tips — static promo block that routes into Staking.
 //
 // Everything is glass-card styled (semi-transparent, subtle border,
 // inner glow). Kept lightweight so the rail stays snappy.
@@ -180,7 +180,7 @@ export default function FeedRightRail() {
                 border: `1px solid rgba(168,85,247,0.35)`,
                 color: "#c084fc", fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
               }}>
-                <Sparkles size={10} /> IronShield Pro
+                <Sparkles size={10} /> AZUKA Pro
               </div>
             )}
 
@@ -295,7 +295,7 @@ export default function FeedRightRail() {
           so the rail stays tidy for new users. */}
       <YourDeploysCard t={t} glass={glassCard(t)} address={address} />
 
-      {/* IronShield Tips */}
+      {/* AZUKA Tips */}
       <section style={{
         ...glassCard(t),
         background: "linear-gradient(135deg, rgba(59,130,246,0.1), rgba(14,165,233,0.05)), var(--bg-card)",
@@ -312,7 +312,7 @@ export default function FeedRightRail() {
           </div>
           <div>
             <div style={{ fontSize: 13, color: t.text, fontWeight: 700, marginBottom: 2 }}>
-              IronShield Tips
+              AZUKA Tips
             </div>
             <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.45, marginBottom: 8 }}>
               Stake $IRON to earn rewards and unlock governance voting.

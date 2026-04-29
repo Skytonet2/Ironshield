@@ -221,7 +221,7 @@ export default function OnboardingModal({ initial, onComplete, onClose }) {
           <h2 id="onboarding-title" style={{
             margin: 0, fontSize: 18, fontWeight: 800, color: t.text, letterSpacing: -0.2,
           }}>
-            Welcome to IronShield
+            Welcome to AZUKA
           </h2>
           <p style={{ margin: "4px 0 14px", fontSize: 12, color: t.textDim, lineHeight: 1.5 }}>
             Pick a username and display name. Pictures are optional — you can add or change them anytime in settings.

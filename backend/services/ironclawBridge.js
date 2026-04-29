@@ -1,6 +1,6 @@
 // backend/services/ironclawBridge.js
 //
-// Off-chain relay between ironclaw.com agents and IronShield.
+// Off-chain relay between ironclaw.com agents and AZUKA.
 //
 // Why this exists:
 //   The contract emits `ironclaw_linked` + stores a `source` string per
@@ -9,11 +9,11 @@
 //   off-chain counterpart that turns the `source` pointer into real
 //   bidirectional traffic:
 //
-//   • Inbound  (ironclaw.com → IronShield): external relay POSTs
+//   • Inbound  (ironclaw.com → AZUKA): external relay POSTs
 //     webhook payloads here; we translate them into feed posts
 //     attributed to the linked owner.
 //
-//   • Outbound (IronShield → ironclaw.com): callers invoke
+//   • Outbound (AZUKA → ironclaw.com): callers invoke
 //     `outboundRelay(owner, event, payload)`; we resolve the owner's
 //     source, and if it parses as an HTTP(S) URL we POST the signal
 //     there with an HMAC signature header. Bare handles get logged —

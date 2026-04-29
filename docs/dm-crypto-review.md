@@ -37,7 +37,7 @@ Audit of the existing 1:1 DM end-to-end encryption. Scope: `src/lib/dmCrypto.js`
 
 ## Threats it does NOT defend
 
-- ❌ XSS in the IronShield frontend → full DM history exfil for the affected user.
+- ❌ XSS in the AZUKA frontend → full DM history exfil for the affected user.
 - ❌ Compromised backend DB → swap victim's `dm_pubkey` → MITM on **future** messages (mitigated by safety-number verification — see v1.1.2).
 - ❌ Past-message recovery after key compromise (no FS — see v1.1.4 below).
 - ❌ Cross-device DM continuity (no key sync).
@@ -79,7 +79,7 @@ The blocker is **state synchronization**, not the math:
 
 1. Each side maintains a chain state in `localStorage`. If the user clears site data, opens incognito, or signs in from a different browser, their chain desyncs from the peer's. Without a recovery path, future messages stop decrypting — and there's no way to recover, because deleting chain keys is the whole point of FS.
 
-2. Multi-device support requires a sync mechanism (Signal solves this with sealed-sender + per-device prekey bundles + key-transparency). IronShield has none of those today; users routinely sign in from desktop and mobile, and we don't have a way to ratchet across devices.
+2. Multi-device support requires a sync mechanism (Signal solves this with sealed-sender + per-device prekey bundles + key-transparency). AZUKA has none of those today; users routinely sign in from desktop and mobile, and we don't have a way to ratchet across devices.
 
 3. Wallet-derived deterministic chain seeds (use `signMessage` with a per-conversation domain string to seed the ratchet) would solve the multi-device problem cleanly: any device with the wallet can re-derive the chain. But the signing required for each new conversation is a UX cost we'd need to weigh — and it shifts the threat model to "wallet-key compromise = full chain exposure," which somewhat undermines the FS gain.
 

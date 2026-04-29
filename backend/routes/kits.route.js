@@ -3,7 +3,7 @@
 // Phase 10 — Agent Economy: Kit catalog (read-only at v1).
 //
 // At v1 there are no live Kits — Phase 1 is pure infrastructure. This
-// route surfaces the catalog as soon as the IronShield team writes the
+// route surfaces the catalog as soon as the AZUKA team writes the
 // first row into agent_kits. Authoring is owner-only on-chain
 // (register_kit) and the off-chain mirror is populated by the same
 // team through direct SQL or the indexer.

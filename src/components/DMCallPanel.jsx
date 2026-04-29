@@ -185,7 +185,7 @@ export default function DMCallPanel({
         });
         const raw = await r.text();
         if (raw.trimStart().startsWith("<")) {
-          throw new Error("Voice calls need the IronShield backend online (LiveKit token service).");
+          throw new Error("Voice calls need the AZUKA backend online (LiveKit token service).");
         }
         let j; try { j = JSON.parse(raw); } catch { throw new Error(`Bad response from call service (${r.status})`); }
         if (!r.ok) throw new Error(j.error || `token ${r.status}`);

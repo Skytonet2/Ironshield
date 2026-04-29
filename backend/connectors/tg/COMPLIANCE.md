@@ -1,7 +1,7 @@
 # TG connector — compliance posture
 
 ## Auth model
-Shared platform bot token (`TELEGRAM_BOT_TOKEN`). The bot acts on behalf of IronShield, not on behalf of an end-user's Telegram identity. Per-user delivery is gated by `feed_tg_links` — a user must have linked their TG account to receive bot DMs.
+Shared platform bot token (`TELEGRAM_BOT_TOKEN`). The bot acts on behalf of AZUKA, not on behalf of an end-user's Telegram identity. Per-user delivery is gated by `feed_tg_links` — a user must have linked their TG account to receive bot DMs.
 
 ## ToS posture
 - Standard Telegram Bot API. No scraping, no userbot, no MTProto. We use only documented `sendMessage` flows.

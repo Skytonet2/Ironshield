@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "IronShield Skills Catalog (v1 — 200 skills)",
-    "blurb": "Backlog for the IronShield Skills SDK. Each row is a plausible skill that can be built against the existing platform without new infra. Grouped by category. See `docs/skills-sdk.md` (TBD) for the SDK contract every skill ships against.",
+    "title": "AZUKA Skills Catalog (v1 — 200 skills)",
+    "blurb": "Backlog for the AZUKA Skills SDK. Each row is a plausible skill that can be built against the existing platform without new infra. Grouped by category. See `docs/skills-sdk.md` (TBD) for the SDK contract every skill ships against.",
     "total": 200
   },
   "categories": [
@@ -2405,7 +2405,7 @@
         },
         {
           "slug": "calendar-sync",
-          "pitch": "Outputs an ICS feed of your IronShield events: live rooms you said you'd attend, governance deadlines, mission deadlines, scheduled automations.",
+          "pitch": "Outputs an ICS feed of your AZUKA events: live rooms you said you'd attend, governance deadlines, mission deadlines, scheduled automations.",
           "inputs": "`{ include: { rooms?: bool, gov?: bool, missions?: bool } }`",
           "outputs": "`{ ics_url }`",
           "pricing": "2 NEAR/month.",
@@ -3094,7 +3094,7 @@
           ],
           "status": {
             "kind": "red",
-            "reason": "needs first-class multisig contract template + UI in IronShield. Currently no multisig primitive on the platform."
+            "reason": "needs first-class multisig contract template + UI in AZUKA. Currently no multisig primitive on the platform."
           }
         }
       ]
@@ -3326,7 +3326,7 @@
         },
         {
           "slug": "tg-onboarding-coach",
-          "pitch": "Inside TG, walks a new user through linking, first buy, first vote, first follow. Different from `onboard-tg-link-helper` — this is full IronShield onboarding via TG, not just the link step.",
+          "pitch": "Inside TG, walks a new user through linking, first buy, first vote, first follow. Different from `onboard-tg-link-helper` — this is full AZUKA onboarding via TG, not just the link step.",
           "inputs": "`{ }`",
           "outputs": "`{ steps_completed, time_to_first_action }`",
           "pricing": "Free.",

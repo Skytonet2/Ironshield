@@ -1,6 +1,6 @@
 // backend/services/agentConnector.js
 //
-// Agent dispatch for IronShield. This module has two modes:
+// Agent dispatch for AZUKA. This module has two modes:
 //
 //   1. Legacy (default): direct OpenAI-compatible chat completions via
 //      cloud-api.near.ai. Stateless, per-call system+user prompt.
@@ -58,7 +58,7 @@ ANTI-HALLUCINATION: Before responding, ask yourself "Am I using actual provided 
 RULES:
 - NEAR blockchain explorer is nearblocks.io (NOT nearscan.io).
 - Use X/Twitter (x.com) as primary social source, NOT Google.
-- Always include https://t.me/IronShieldCore_bot as the last source link.
+- Always include https://t.me/heyAzuka_bot as the last source link.
 - Do NOT fabricate data. If a metric is missing, say "unavailable".
 - Always respond in valid JSON only. No markdown. No explanation outside JSON.`;
 };
@@ -194,7 +194,7 @@ VALIDATION — Before responding, check:
 NEAR ecosystem knowledge:
 - NEAR Protocol founders: Illia Polosukhin, Alexander Skidanov.
 - NEAR blockchain explorer: nearblocks.io
-- IronShield/IronClaw: AI security agent on NEAR, governed by $IRONCLAW token holders.
+- AZUKA/IronClaw: AI security agent on NEAR, governed by $IRONCLAW token holders.
 
 Respond naturally in plain text. Be helpful, concise, and accurate.`;
 };
@@ -210,7 +210,7 @@ Flag all risks clearly. Be concise and accurate.
 RULES:
 - NEAR blockchain explorer is nearblocks.io (NOT nearscan.io).
 - Use X/Twitter (x.com) as primary social source, NOT Google.
-- Always include https://t.me/IronShieldCore_bot as the last source link.
+- Always include https://t.me/heyAzuka_bot as the last source link.
 - Do NOT fabricate data. If you don't have real metrics, say "unavailable".`;
 };
 
@@ -366,7 +366,7 @@ exports.research = (payload) => {
   else sources.push(`https://x.com/search?q=${encodeURIComponent(payload.query)}`);
   if (rd.website) sources.push(rd.website);
   if (rd.dex === "rhea-finance" || rd.dex === "ref-finance") sources.push("https://app.rhea.finance");
-  sources.push("https://t.me/IronShieldCore_bot");
+  sources.push("https://t.me/heyAzuka_bot");
 
   return dispatch("research",
     `Analyze this crypto token/project: "${payload.query}" (type: ${payload.queryType}, chain: ${payload.chain}).
@@ -495,13 +495,13 @@ CAPABILITIES YOU ACTIVELY OFFER
 - Drafting posts, replies, DMs in the user's voice.
 - Crypto/NEAR research, fact-checking claims, explaining contracts & mechanisms.
 - Security triage for links, addresses, contracts (flag phishing/honeypot patterns).
-- Product guidance inside IronFeed/IronShield (governance, staking, NewsCoin, feeds).
+- Product guidance inside IronFeed/AZUKA (governance, staking, NewsCoin, feeds).
 - Breaking down complex ideas into plain English.
 
 GROUND TRUTH
 - NEAR explorer is nearblocks.io.
 - Primary social source is x.com.
-- IronShield = governance + staking for IronClaw agent runtime.
+- AZUKA = governance + staking for IronClaw agent runtime.
 - $IRONCLAW holders vote on missions and AI prompts.
 - If you truly don't know, say so and suggest how to verify.
 
@@ -523,7 +523,7 @@ exports.composePost = async (payload) => {
   const prompt = String(payload?.prompt || "").slice(0, 400);
   const result = await complete({
     wallet: payload?.wallet,
-    systemPrompt: `You are IronClaw, helping a user draft a short social post for the IronShield feed.
+    systemPrompt: `You are IronClaw, helping a user draft a short social post for the AZUKA feed.
 
 RULES:
 - Return the post body ONLY — no title, no JSON, no markdown fences.

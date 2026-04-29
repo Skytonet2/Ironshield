@@ -6,7 +6,7 @@
 // feed endpoint filters to only the enabled ones via ?categories=.
 //
 // Why ship this: the default mix tilts heavy on trends/politics,
-// which most IronShield users don't want in a crypto-first feed.
+// which most AZUKA users don't want in a crypto-first feed.
 // Rather than rewrite the preset, let users opt in to what they care
 // about. Prefs persist in localStorage so the choice survives a
 // wallet disconnect; when signed in, we also ping the backend so a
@@ -123,7 +123,7 @@ export default function VoicesTab() {
       <div>
         <h2 style={tabTitle(t)}>Voices</h2>
         <p style={{ color: t.textDim, fontSize: 13, margin: "4px 0 0", lineHeight: 1.55 }}>
-          Pick which categories of X accounts stream into your Voices tab. Turn off the ones you don't care about — if all six are off, Voices falls back to just native IronShield posts.
+          Pick which categories of X accounts stream into your Voices tab. Turn off the ones you don't care about — if all six are off, Voices falls back to just native AZUKA posts.
         </p>
       </div>
 

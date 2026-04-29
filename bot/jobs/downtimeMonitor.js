@@ -51,7 +51,7 @@ async function runOnce(bot) {
     consecutiveFails = 0;
     if (!lastUp) {
       lastUp = true;
-      await broadcast(bot, "✅ *IronShield is back online.*");
+      await broadcast(bot, "✅ *AZUKA is back online.*");
     }
     return;
   }
@@ -60,7 +60,7 @@ async function runOnce(bot) {
   consecutiveFails += 1;
   if (lastUp && consecutiveFails >= DOWN_STREAK_NEEDED) {
     lastUp = false;
-    await broadcast(bot, "🚨 *IronShield site is unreachable.* We'll notify you when it's back.");
+    await broadcast(bot, "🚨 *AZUKA site is unreachable.* We'll notify you when it's back.");
   }
 }
 

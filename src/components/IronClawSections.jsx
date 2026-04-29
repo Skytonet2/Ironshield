@@ -1011,7 +1011,7 @@ export function FinalCTA() {
                 <MessageSquare size={16} /> Join the Community
               </Btn>
             </a>
-            <a href="https://t.me/IronShieldCore_bot" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+            <a href="https://t.me/AZUKACore_bot" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
               <Btn style={{ fontSize: 15, padding: "15px 32px" }}>
                 <ExternalLink size={16} /> Launch IronClaw Bot
               </Btn>

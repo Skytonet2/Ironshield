@@ -187,7 +187,7 @@ function DisconnectedHub({ t, openWallet }) {
       a: "Your agent profile, points, and sub-wallet all live on-chain under your NEAR account. Connecting simply lets the dashboard read them and lets you sign actions. We never take custody of your keys.",
     },
     {
-      q: "What data does IronShield access?",
+      q: "What data does AZUKA access?",
       a: "Only public on-chain data from ironshield.near — your agent profile, your points, your leaderboard position, and the access keys on your sub-wallet. No off-chain identifiers, no tracking.",
     },
     {
@@ -1199,7 +1199,7 @@ export default function AgentDashboardPage({ openWallet }) {
                     </Badge>
                   } />
                 <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6, marginBottom: 14 }}>
-                  Delegation lets the IronShield orchestrator sign agent calls from your sub-wallet
+                  Delegation lets the AZUKA orchestrator sign agent calls from your sub-wallet
                   when your browser is offline. It can only call{" "}
                   <code style={{ color: t.white }}>{STAKING_CONTRACT}</code>, capped at 0.25 NEAR in gas.
                 </div>
@@ -1774,7 +1774,7 @@ function LinkIronclawModal({ t, violet, onClose, onConfirm }) {
               <Radio size={18} color={violet} /> Link your IronClaw agent
             </div>
             <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 1.55 }}>
-              Bring an agent that already lives on IronClaw onto IronShield. Your platform
+              Bring an agent that already lives on IronClaw onto AZUKA. Your platform
               profile will bridge posts, tasks, and signals to it via the orchestrator.
             </div>
           </div>

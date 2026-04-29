@@ -15,7 +15,7 @@ const fetchJson = async (url) => {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "IronShield/1.0", "Accept": "application/json" },
+      headers: { "User-Agent": "AZUKA/1.0", "Accept": "application/json" },
     });
     clearTimeout(timer);
     if (!res.ok) return null;

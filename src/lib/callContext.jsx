@@ -203,7 +203,7 @@ function IncomingCallOverlay({ incoming, onAnswer, onDecline }) {
       padding: 32, color: "#fff", textAlign: "center",
     }}>
       <div style={{ fontSize: 14, letterSpacing: 2, textTransform: "uppercase", opacity: 0.75, marginBottom: 16 }}>
-        Incoming IronShield call
+        Incoming AZUKA call
       </div>
       <div style={{
         width: 128, height: 128, borderRadius: "50%",

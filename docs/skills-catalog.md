@@ -1,6 +1,6 @@
-# IronShield Skills Catalog (v1 — 200 skills)
+# AZUKA Skills Catalog (v1 — 200 skills)
 
-> Backlog for the IronShield Skills SDK. Each row is a plausible
+> Backlog for the AZUKA Skills SDK. Each row is a plausible
 > skill that can be built against the existing platform without new
 > infra. Grouped by category. See `docs/skills-sdk.md` (TBD) for the
 > SDK contract every skill ships against.
@@ -1087,7 +1087,7 @@ they apply. See `backend/routes/skills.route.js` and
 **Status.** 🟢 — composite reads across `/api/trading/positions`, `/api/governance/proposals`, `/api/feed/engagement`, `/api/missions`.
 
 ### `calendar-sync`
-**Pitch.** Outputs an ICS feed of your IronShield events: live rooms you said you'd attend, governance deadlines, mission deadlines, scheduled automations.
+**Pitch.** Outputs an ICS feed of your AZUKA events: live rooms you said you'd attend, governance deadlines, mission deadlines, scheduled automations.
 **Inputs.** `{ include: { rooms?: bool, gov?: bool, missions?: bool } }`
 **Outputs.** `{ ics_url }`
 **Pricing.** 2 NEAR/month.
@@ -1398,7 +1398,7 @@ they apply. See `backend/routes/skills.route.js` and
 **Pricing.** 5 NEAR per setup.
 **Categories.** `security`, `multisig`
 **Tags.** `[multisig, setup, hardware]`
-**Status.** 🔴 — needs first-class multisig contract template + UI in IronShield. Currently no multisig primitive on the platform.
+**Status.** 🔴 — needs first-class multisig contract template + UI in AZUKA. Currently no multisig primitive on the platform.
 
 ---
 
@@ -1504,7 +1504,7 @@ they apply. See `backend/routes/skills.route.js` and
 **Status.** 🟢 — `/api/portfolio/` + `/api/newscoin/by-creator` + `/api/missions`.
 
 ### `tg-onboarding-coach`
-**Pitch.** Inside TG, walks a new user through linking, first buy, first vote, first follow. Different from `onboard-tg-link-helper` — this is full IronShield onboarding via TG, not just the link step.
+**Pitch.** Inside TG, walks a new user through linking, first buy, first vote, first follow. Different from `onboard-tg-link-helper` — this is full AZUKA onboarding via TG, not just the link step.
 **Inputs.** `{ }`
 **Outputs.** `{ steps_completed, time_to_first_action }`
 **Pricing.** Free.

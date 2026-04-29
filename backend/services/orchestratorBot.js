@@ -1,6 +1,6 @@
 // backend/services/orchestratorBot.js
 //
-// The IronShield orchestrator bot. This is the single off-chain actor
+// The AZUKA orchestrator bot. This is the single off-chain actor
 // authorised to call the orchestrator-gated methods on ironshield.near:
 //
 //   • complete_task            (task outcomes)

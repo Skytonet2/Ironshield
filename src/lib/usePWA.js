@@ -166,7 +166,7 @@ export function usePWA(wallet) {
     const isStandalone = typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone);
     if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       if (isIOS && !isStandalone) {
-        return { ok: false, reason: "ios_needs_install", message: "On iOS, tap Share → Add to Home Screen, then open IronShield from the home-screen icon to enable notifications." };
+        return { ok: false, reason: "ios_needs_install", message: "On iOS, tap Share → Add to Home Screen, then open AZUKA from the home-screen icon to enable notifications." };
       }
       return { ok: false, reason: "unsupported", message: "This browser doesn't support web push notifications." };
     }

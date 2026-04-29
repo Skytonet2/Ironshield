@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-If you discover a security vulnerability in IronShield, please **do not file a public GitHub issue**. Instead, email:
+If you discover a security vulnerability in AZUKA, please **do not file a public GitHub issue**. Instead, email:
 
 **olarewajuoluwaseyifavour@gmail.com**
 
@@ -35,4 +35,4 @@ Out of scope:
 
 We do not currently run a bug bounty. Researchers who responsibly disclose valid findings will be credited in release notes (with their permission) and prioritized for inclusion in the future bounty program once $IRONCLAW launches.
 
-Thank you for helping keep IronShield safe.
+Thank you for helping keep AZUKA safe.

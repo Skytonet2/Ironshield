@@ -1,4 +1,4 @@
-# IronShield runbook (v0.9.0)
+# AZUKA runbook (v0.9.0)
 
 The minimum a stranger needs to keep this thing alive at 3 a.m. without
 reading source. Updated at v0.9.0 cutover (2026-04-26).
@@ -142,7 +142,7 @@ the schema.sql is purely additive at v0.9.0, so backwards-compatible.
 - Day 6.1 — capture real `EXPLAIN ANALYZE` numbers for the 4 new indexes via `pg_stat_statements`
 - Day 6.2 — run `smoke-pool.js` against a real `DATABASE_URL`
 - Day 7.1 — full k6 250/500-concurrent profile against a dedicated preview env (current soft-load.js can't bypass per-IP rate limit from a single source)
-- Day 18 — IronShield Pro tier (currently a stub at `/rewards#pro`)
+- Day 18 — AZUKA Pro tier (currently a stub at `/rewards#pro`)
 - ESLint v9 flat-config repair (`@typescript-eslint` resolution failure on `npm run lint`)
 - PgBouncer for connection multiplexing — see "PgBouncer rollout" section below
 - Playwright E2E suite — partially landed Day 20.1 (smoke specs only; critical-paths skipped pending stubbed-wallet fixture)

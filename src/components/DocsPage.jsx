@@ -13,9 +13,9 @@ export default function DocsPage() {
     {
       id: "overview",
       icon: <Shield size={20} color={t.accent} />,
-      title: "What is IronShield?",
+      title: "What is AZUKA?",
       content: [
-        "IronShield is a decentralized AI security and intelligence platform built on NEAR Protocol. At its core is IronClaw: an autonomous AI agent that operates inside Telegram and Discord communities, providing real-time threat detection, token research, portfolio tracking, and governance: all controlled by token holders on-chain.",
+        "AZUKA is a decentralized AI security and intelligence platform built on NEAR Protocol. At its core is IronClaw: an autonomous AI agent that operates inside Telegram and Discord communities, providing real-time threat detection, token research, portfolio tracking, and governance: all controlled by token holders on-chain.",
         "Unlike traditional security tools that require constant manual oversight, IronClaw is always-on, always-learning, and community-governed. Every mission it runs, every prompt it follows, and every capability it unlocks is decided by $IRONCLAW stakers through on-chain proposals.",
       ],
     },
@@ -24,7 +24,7 @@ export default function DocsPage() {
       icon: <Bot size={20} color={t.accent} />,
       title: "IronClaw AI Agent",
       content: [
-        "IronClaw is the autonomous AI agent at the heart of IronShield. Powered by NEAR AI, it operates 24/7 inside your community chats without any manual intervention.",
+        "IronClaw is the autonomous AI agent at the heart of AZUKA. Powered by NEAR AI, it operates 24/7 inside your community chats without any manual intervention.",
       ],
       features: [
         { label: "/research [token]", desc: "Full token report: price, market cap, liquidity, audit status, risk flags, and trust score" },
@@ -42,7 +42,7 @@ export default function DocsPage() {
       icon: <Lock size={20} color={t.accent} />,
       title: "Security Engine",
       content: [
-        "IronShield's security engine runs continuously across all protected communities. It maintains a growing database of flagged URLs, malicious wallet addresses, known phishing patterns, and scam signatures.",
+        "AZUKA's security engine runs continuously across all protected communities. It maintains a growing database of flagged URLs, malicious wallet addresses, known phishing patterns, and scam signatures.",
         "When a threat is detected: whether it's a phishing link, an impersonator, or a flagged wallet: IronClaw acts immediately: the message is flagged, the community is warned, and the threat is logged for future reference. Community members can also submit reports via the /report command or the Telegram bot.",
       ],
       stats: [
@@ -57,7 +57,7 @@ export default function DocsPage() {
       icon: <Vote size={20} color={t.accent} />,
       title: "On-Chain Governance",
       content: [
-        "IronShield is fully governed by its token holders. Anyone who stakes $IRONCLAW tokens gains voting power proportional to their stake. Governance proposals can modify IronClaw's behavior in real-time: no team intervention required.",
+        "AZUKA is fully governed by its token holders. Anyone who stakes $IRONCLAW tokens gains voting power proportional to their stake. Governance proposals can modify IronClaw's behavior in real-time: no team intervention required.",
       ],
       steps: [
         { step: "01", title: "Stake $IRONCLAW", desc: "Lock tokens in the staking contract to earn yield and gain voting power." },
@@ -71,8 +71,8 @@ export default function DocsPage() {
       icon: <Coins size={20} color={t.accent} />,
       title: "Staking & Yield",
       content: [
-        "IronShield uses a MasterChef-style staking mechanism designed for NEAR Protocol. Once the $IRONCLAW token launches, stakers will earn real yield from protocol revenue: not inflation.",
-        "Revenue from IronShield subscriptions, premium features, and ecosystem fees flows into the reward pool. Rewards are distributed per-block proportional to each staker's share of the pool. Stakers can also earn bonus points through contests and community participation.",
+        "AZUKA uses a MasterChef-style staking mechanism designed for NEAR Protocol. Once the $IRONCLAW token launches, stakers will earn real yield from protocol revenue: not inflation.",
+        "Revenue from AZUKA subscriptions, premium features, and ecosystem fees flows into the reward pool. Rewards are distributed per-block proportional to each staker's share of the pool. Stakers can also earn bonus points through contests and community participation.",
       ],
       stats: [
         { label: "Contract", value: "TBA: will be deployed at launch" },
@@ -86,7 +86,7 @@ export default function DocsPage() {
       icon: <BarChart3 size={20} color={t.accent} />,
       title: "Contests & Earn",
       content: [
-        "IronShield runs community contests (missions) where participants can earn points and climb the leaderboard. Missions range from bug bounties and security reports to content creation and community engagement.",
+        "AZUKA runs community contests (missions) where participants can earn points and climb the leaderboard. Missions range from bug bounties and security reports to content creation and community engagement.",
         "When you participate in a contest, you submit proof of your work (a link, screenshot, or description). Submissions are reviewed by admins. Approved submissions earn you points that determine your tier and leaderboard rank.",
       ],
       steps: [
@@ -95,14 +95,14 @@ export default function DocsPage() {
         { step: "03", title: "Admin Review", desc: "Submissions are reviewed. Approved entries earn points; rejected ones include feedback." },
         { step: "04", title: "Climb the Leaderboard", desc: "Points accumulate across all contests. Higher scores unlock tiers: Bronze, Silver, Gold, Diamond." },
       ],
-      callout: "Submissions are stored in the IronShield database and accessible via the admin panel (Dashboard Settings in the footer) and the backend API at /api/contests/:id (includes all submissions with user data).",
+      callout: "Submissions are stored in the AZUKA database and accessible via the admin panel (Dashboard Settings in the footer) and the backend API at /api/contests/:id (includes all submissions with user data).",
     },
     {
       id: "architecture",
       icon: <Zap size={20} color={t.accent} />,
       title: "Technical Architecture",
       content: [
-        "IronShield is a full-stack decentralized application combining a static frontend hosted on IPFS via NEAR's web4, a Node.js backend with PostgreSQL, a Telegram bot, and a Rust smart contract on NEAR mainnet.",
+        "AZUKA is a full-stack decentralized application combining a static frontend hosted on IPFS via NEAR's web4, a Node.js backend with PostgreSQL, a Telegram bot, and a Rust smart contract on NEAR mainnet.",
       ],
       stats: [
         { label: "Frontend", value: "Next.js 16 + React 19, static export to IPFS via web4-deploy" },
@@ -120,7 +120,7 @@ export default function DocsPage() {
       icon: <Globe size={20} color={t.accent} />,
       title: "$IRONCLAW Token",
       content: [
-        "$IRONCLAW is the native NEP-141 token of the IronShield ecosystem on NEAR Protocol. It serves three core functions: governance voting power, staking yield, and access to premium features.",
+        "$IRONCLAW is the native NEP-141 token of the AZUKA ecosystem on NEAR Protocol. It serves three core functions: governance voting power, staking yield, and access to premium features.",
         "Token holders who stake $IRONCLAW earn real yield from protocol revenue and gain proportional voting power in governance. The token is the backbone of the community-controlled AI agent model.",
       ],
       stats: [
@@ -135,12 +135,12 @@ export default function DocsPage() {
       icon: <Users size={20} color={t.accent} />,
       title: "Community & Links",
       content: [
-        "IronShield is built by and for the NEAR community. Join us to participate in governance, earn rewards through contests, and help protect Web3 communities.",
+        "AZUKA is built by and for the NEAR community. Join us to participate in governance, earn rewards through contests, and help protect Web3 communities.",
       ],
       links: [
         { label: "Telegram Community", url: "https://t.me/IronClawHQ" },
         { label: "X (Twitter)", url: "https://x.com/_IronClaw" },
-        { label: "IronShield Bot", url: "https://t.me/IronShieldCore_bot" },
+        { label: "AZUKA Bot", url: "https://t.me/AZUKACore_bot" },
         { label: "NEAR Protocol", url: "https://near.org" },
         { label: "Live App", url: "https://ironshield.near.page" },
       ],
@@ -154,10 +154,10 @@ export default function DocsPage() {
       <div style={{ textAlign: "center", marginBottom: 48 }}>
         <Badge>DOCUMENTATION</Badge>
         <h1 style={{ fontSize: 36, fontWeight: 800, color: t.white, marginTop: 12 }}>
-          IronShield <span style={{ color: t.accent }}>Docs</span>
+          AZUKA <span style={{ color: t.accent }}>Docs</span>
         </h1>
         <p style={{ fontSize: 15, color: t.textMuted, marginTop: 10, maxWidth: 560, margin: "10px auto 0" }}>
-          Everything you need to know about IronShield, IronClaw, governance, staking, and the ecosystem.
+          Everything you need to know about AZUKA, IronClaw, governance, staking, and the ecosystem.
         </p>
       </div>
 

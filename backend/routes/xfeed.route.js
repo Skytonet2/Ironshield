@@ -174,7 +174,7 @@ async function fetchWithFallback(paths) {
         const res = await fetch(url, {
           signal: ctl.signal,
           headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; IronShield/xfeed; +https://ironshield.near.page)",
+            "User-Agent": "Mozilla/5.0 (compatible; AZUKA/xfeed; +https://ironshield.near.page)",
             "Accept": "application/rss+xml, application/xml;q=0.9, */*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
             "Accept-Encoding": "identity",

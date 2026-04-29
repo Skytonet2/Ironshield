@@ -139,8 +139,8 @@ export default function PreLoader() {
           />
         </div>
 
-        <div className="ic-brand">IronShield</div>
-        <div className="ic-tag">THE WEB3 SOCIAL OPERATING SYSTEM</div>
+        <div className="ic-brand">AZUKA</div>
+        <div className="ic-tag">AGENT ZONE · UNIVERSAL KOMMERCE · AUTOMATION</div>
 
         <div className="ic-init">INITIALIZING…</div>
 

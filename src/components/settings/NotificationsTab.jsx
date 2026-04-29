@@ -111,7 +111,7 @@ export default function NotificationsTab() {
       <div>
         <h2 style={tabTitle(t)}>Notifications</h2>
         <p style={{ color: t.textDim, fontSize: 13, margin: "4px 0 0", lineHeight: 1.55 }}>
-          Choose how IronShield reaches you. Preferences are stored on this device; they sync to the server when you're signed in.
+          Choose how AZUKA reaches you. Preferences are stored on this device; they sync to the server when you're signed in.
         </p>
       </div>
 

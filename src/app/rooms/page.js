@@ -549,7 +549,7 @@ function OpenRoomModal({ t, wallet, selector, openWallet, onClose, onCreated }) 
         </button>
 
         <div style={{ textAlign: "center", marginTop: 12, fontSize: 11.5, color: t.textDim }}>
-          By continuing, you agree to the IronShield <a href="/docs" style={{ color: "#a855f7" }}>Terms of Service</a>.
+          By continuing, you agree to the AZUKA <a href="/docs" style={{ color: "#a855f7" }}>Terms of Service</a>.
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-# IronShield
+# AZUKA
 
 **NEAR-native governance protocol designed for autonomous IronClaw deployments.**
 
@@ -6,7 +6,7 @@ Token holders vote on the deployed agent's system prompt and mission. When a pro
 
 The governance loop is proven end-to-end on mainnet via the contract's pre-token primitive. A Phase 1 Council of named contributors takes over governance before $IRONCLAW launches; $IRONCLAW broadens participation post-TGE.
 
-> Anyone can run IronClaw locally. To run it autonomously — making decisions, holding funds, acting for others — IronShield is the governance pattern that makes the chain of authority cryptographically verifiable.
+> Anyone can run IronClaw locally. To run it autonomously — making decisions, holding funds, acting for others — AZUKA is the governance pattern that makes the chain of authority cryptographically verifiable.
 
 Live on NEAR mainnet at [`ironshield.near`](https://nearblocks.io/address/ironshield.near) — Phase 8.
 
@@ -50,7 +50,7 @@ Live on NEAR mainnet at [`ironshield.near`](https://nearblocks.io/address/ironsh
 | Skill marketplace | 15% of every install fee → treasury, 85% → creator. On-chain enforced. |
 | NewsCoin trading fees | 80% of fees from all buys/sells on the NewsCoin terminal → treasury |
 | Pay-per-report | $IRONCLAW spent on full scam / contract audits |
-| IronShield Pro | Stake-lock $IRONCLAW for Pro perks (higher AI budget, badge, themes) |
+| AZUKA Pro | Stake-lock $IRONCLAW for Pro perks (higher AI budget, badge, themes) |
 | Treasury use | Funds IronClaw inference + $IRONCLAW buybacks |
 
 ---

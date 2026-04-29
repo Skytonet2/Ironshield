@@ -1,6 +1,6 @@
 // backend/middleware/requirePro.js — Day 18.2
 //
-// Chainable Express middleware that gates a route on IronShield Pro
+// Chainable Express middleware that gates a route on AZUKA Pro
 // membership. Use AFTER requireWallet:
 //   router.post("/x", requireWallet, requirePro, handler);
 //
@@ -33,7 +33,7 @@ function provider() {
 // and balloon server memory. Map preserves insertion order, so
 // dropping the first key is approximate-FIFO eviction (good enough
 // for this access pattern — there's no LRU promotion). 5000 entries
-// is ~500KB and dwarfs IronShield's expected concurrent-wallet count
+// is ~500KB and dwarfs AZUKA's expected concurrent-wallet count
 // while still putting a hard ceiling on growth.
 const cache = new Map();
 const MAX_CACHE = 5000;
@@ -93,7 +93,7 @@ async function requirePro(req, res, next) {
       return res.status(402).json({
         error: "pro-required",
         upgradeUrl: "/rewards#pro",
-        hint: "Lock your stake for 30 days to unlock IronShield Pro.",
+        hint: "Lock your stake for 30 days to unlock AZUKA Pro.",
       });
     }
     req.isPro = true;
