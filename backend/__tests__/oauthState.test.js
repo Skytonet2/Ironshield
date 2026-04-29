@@ -78,6 +78,22 @@ test("oauthState.setCookie preserves prior Set-Cookie headers (uses append, not 
   assert.ok(cookies.some((c) => new RegExp(oauthState.COOKIE_NAME).test(c)), "oauth cookie missing");
 });
 
+test("oauthState.frontendRedirect returns an absolute URL with the configured origin", () => {
+  // FRONTEND_URL is captured at module load. We can't override it
+  // here without re-requiring; but we CAN assert the helper produces
+  // an absolute URL pointing at whatever FRONTEND_URL was set to.
+  const url = oauthState.frontendRedirect("/connectors?connected=x");
+  assert.ok(/^https?:\/\//.test(url), "should be absolute");
+  assert.ok(url.endsWith("/connectors?connected=x"));
+  assert.equal(url.includes("//"), true, "double-slash from protocol");
+});
+
+test("oauthState.frontendRedirect: leading slash is normalised", () => {
+  const a = oauthState.frontendRedirect("/connectors");
+  const b = oauthState.frontendRedirect("connectors");
+  assert.equal(a, b);
+});
+
 test("oauthState.clearCookie also uses append + survives prior cookies", () => {
   const headers = {};
   const fakeRes = {

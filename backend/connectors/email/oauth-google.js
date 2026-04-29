@@ -81,7 +81,7 @@ async function callback(req, res) {
     return res.status(400).send("oauth state mismatch — possible CSRF, please retry");
   }
   if (req.query.error) {
-    return res.redirect(`/connectors?error=${encodeURIComponent(String(req.query.error))}&connector=email`);
+    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(String(req.query.error))}&connector=email`));
   }
   if (!req.query.code) return res.status(400).send("missing oauth code");
 
@@ -99,14 +99,14 @@ async function callback(req, res) {
   });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j?.access_token) {
-    return res.redirect(`/connectors?error=${encodeURIComponent(j?.error || "token-exchange-failed")}&connector=email`);
+    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent(j?.error || "token-exchange-failed")}&connector=email`));
   }
 
   const userinfo = await _userinfo(j.access_token).catch(() => null);
   const userEmail = userinfo?.email || null;
   if (!userEmail) {
     // Without the email address we can't construct SMTP/IMAP auth — abort.
-    return res.redirect(`/connectors?error=${encodeURIComponent("missing-email-claim")}&connector=email`);
+    return res.redirect(oauthState.frontendRedirect(`/connectors?error=${encodeURIComponent("missing-email-claim")}&connector=email`));
   }
 
   // Persist as a single email-connector row. provider='google' tells
@@ -129,7 +129,7 @@ async function callback(req, res) {
     },
     expiresAt: j.expires_in ? new Date(Date.now() + j.expires_in * 1000).toISOString() : null,
   });
-  return res.redirect("/connectors?connected=email");
+  return res.redirect(oauthState.frontendRedirect("/connectors?connected=email"));
 }
 
 /**

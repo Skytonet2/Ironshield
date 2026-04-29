@@ -21,6 +21,17 @@ const crypto = require("crypto");
 const COOKIE_NAME = "__ironshield_oauth";
 const TTL_MS      = 10 * 60 * 1000; // 10 min — comfortably longer than any sane OAuth flow
 
+// Where to send the user back after the OAuth callback finishes. The
+// backend lives on a different host from the frontend, so a relative
+// redirect (the obvious "/connectors?connected=x") would land on the
+// backend's URL → 404. FRONTEND_URL must be the absolute frontend
+// origin (e.g. https://azuka.pages.dev). Trailing slash trimmed.
+const FRONTEND_URL = (process.env.FRONTEND_URL || "https://azuka.pages.dev").replace(/\/$/, "");
+function frontendRedirect(path) {
+  if (!path.startsWith("/")) path = `/${path}`;
+  return `${FRONTEND_URL}${path}`;
+}
+
 function _key() {
   const k = process.env.OAUTH_STATE_SECRET || process.env.CUSTODIAL_ENCRYPT_KEY;
   if (!k) throw new Error("oauthState: OAUTH_STATE_SECRET (or CUSTODIAL_ENCRYPT_KEY) must be set");
@@ -116,7 +127,8 @@ function readCookie(req) {
 }
 
 module.exports = {
-  COOKIE_NAME, TTL_MS,
+  COOKIE_NAME, TTL_MS, FRONTEND_URL,
   sign, verify, fresh,
   setCookie, clearCookie, readCookie,
+  frontendRedirect,
 };
