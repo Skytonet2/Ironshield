@@ -170,6 +170,25 @@ async function invoke(action, ctx = {}) {
   }
 }
 
+/**
+ * No automated refresh path is possible for LinkedIn:
+ *   - LinkedIn does not issue a refresh token (we use cookies, not OAuth).
+ *   - The "Sign In with LinkedIn" OAuth product gives only r_liteprofile
+ *     + r_emailaddress — none of search / scrape / apply work, so it's
+ *     a regression, not an alternative.
+ *   - Any "heartbeat" check would require Playwright every cycle and
+ *     LinkedIn breaks the selectors regularly. Maintenance > value.
+ *
+ * Returning null tells connectorRefresh worker to skip cleanly (its
+ * `if (fresh?.payload)` check stays false, nothing logged). When the
+ * cookie expires, the next invoke surfaces the failure to the user
+ * via the normal "checkpoint challenge" path; they re-paste a fresh
+ * `li_at` via /api/connectors/linkedin/connect.
+ */
+async function refresh() {
+  return null;
+}
+
 module.exports = {
   name: NAME,
   capabilities: ["search", "read", "write"],
@@ -180,4 +199,5 @@ module.exports = {
   rate_limits: { per_minute: 2, per_hour: 10, scope: "wallet" },
   auth_method: "session_token",
   invoke,
+  refresh,
 };

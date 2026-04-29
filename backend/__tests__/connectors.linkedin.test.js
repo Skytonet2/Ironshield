@@ -64,6 +64,11 @@ test("linkedin connector: invoke rejects unknown action", async () => {
   );
 });
 
+test("linkedin connector: refresh() returns null (no automated refresh path)", async () => {
+  const r = await li.refresh();
+  assert.equal(r, null);
+});
+
 test("linkedin connector: search without creds throws connect-first", async () => {
   const credStore = require("../connectors/credentialStore");
   const orig = credStore.getDecrypted;
