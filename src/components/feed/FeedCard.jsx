@@ -18,6 +18,7 @@ import { useTheme } from "@/lib/contexts";
 import useImpression from "@/lib/hooks/useImpression";
 import CoinItButton from "./CoinItButton";
 import Avatar from "./Avatar";
+import ImageLightbox from "./ImageLightbox";
 
 function fmtCount(n) {
   const v = Number(n || 0);
@@ -40,25 +41,83 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// Highlight $TICKER and CA-shaped substrings inside the content.
-// Matches the Alpha tab's detection regex so visual + filter agree.
+// Highlight + linkify content inside a post.
+//
+// Matches, in priority order (left-most wins because of regex
+// alternation greediness):
+//   1. http(s) URLs       → external <a target="_blank">, accent, underline on hover
+//   2. $TICKER            → accent span (no link — these are visual cues only)
+//   3. #hashtag           → internal <a href="/feed?tag=foo"> (filter logic for
+//                           the route is a follow-up; the link itself works
+//                           and is the contract this commit ships)
+//   4. *.near / *.tkn.near → accent span, monospace
+//
+// Click bubbling: the post-detail navigation handler in the JSX
+// below excludes clicks on a/button/input/textarea, so anchors here
+// don't accidentally trigger /post navigation. Anchors get
+// stopPropagation as belt-and-suspenders for any future change.
 function renderContentWithHighlights(content, accent) {
   if (!content) return null;
-  const re = /(\$[A-Z]{2,10}\b|\b[a-z0-9_-]+\.(?:near|tkn\.near)\b)/g;
+  const re = /(https?:\/\/[^\s<>"'`]+|\$[A-Z]{2,10}\b|#[A-Za-z][A-Za-z0-9_]{0,49}|\b[a-z0-9_-]+\.(?:near|tkn\.near)\b)/g;
   const parts = [];
   let last = 0;
   let m;
   while ((m = re.exec(content)) !== null) {
     if (m.index > last) parts.push(content.slice(last, m.index));
-    parts.push(
-      <span key={m.index} style={{
-        color: accent, fontWeight: 600,
-        fontFamily: m[0].startsWith("$") ? "inherit" : "var(--font-jetbrains-mono), monospace",
-      }}>
-        {m[0]}
-      </span>
-    );
-    last = m.index + m[0].length;
+    const tok = m[0];
+    const key = m.index;
+
+    if (tok.startsWith("http")) {
+      // Trim a single trailing ) . , : ; ! ? — common in prose where
+      // the URL ends a sentence. Keeps the punctuation in the text.
+      let url = tok;
+      let trail = "";
+      while (url.length > 1 && /[).,:;!?]$/.test(url)) {
+        trail = url.slice(-1) + trail;
+        url = url.slice(0, -1);
+      }
+      parts.push(
+        <a
+          key={key}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          style={{ color: accent, fontWeight: 600, textDecoration: "none" }}
+          onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
+        >
+          {url}
+        </a>
+      );
+      if (trail) parts.push(trail);
+    } else if (tok.startsWith("#")) {
+      const tag = tok.slice(1);
+      parts.push(
+        <a
+          key={key}
+          href={`/feed?tag=${encodeURIComponent(tag)}`}
+          onClick={(e) => e.stopPropagation()}
+          style={{ color: accent, fontWeight: 600, textDecoration: "none" }}
+          onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
+        >
+          {tok}
+        </a>
+      );
+    } else {
+      // $TICKER or *.near — visual highlight only, no anchor.
+      parts.push(
+        <span key={key} style={{
+          color: accent, fontWeight: 600,
+          fontFamily: tok.startsWith("$") ? "inherit" : "var(--font-jetbrains-mono), monospace",
+        }}>
+          {tok}
+        </span>
+      );
+    }
+
+    last = m.index + tok.length;
   }
   if (last < content.length) parts.push(content.slice(last));
   return parts.length ? parts : content;
@@ -71,50 +130,80 @@ function renderContentWithHighlights(content, accent) {
 const VIDEO_RE = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i;
 
 function MediaGrid({ urls, t }) {
+  // Lightbox state lives here so each post owns its own modal —
+  // multiple FeedCards on /feed don't share or fight over a single
+  // global modal. Videos still play inline; clicking them is for
+  // play/pause, not for opening the lightbox.
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+
   if (!urls?.length) return null;
   const cols = urls.length === 1 ? "1fr" : "1fr 1fr";
   return (
-    <div style={{
-      marginTop: 10,
-      display: "grid",
-      gridTemplateColumns: cols,
-      gap: 4,
-    }}>
-      {urls.slice(0, 4).map((u, i) => {
-        const isVideo = VIDEO_RE.test(String(u));
-        const sharedStyle = {
-          width: "100%",
-          maxHeight: urls.length === 1 ? 420 : 220,
-          objectFit: "cover",
-          borderRadius: 10,
-          border: `1px solid ${t.border}`,
-          background: "#0b0f17",
-        };
-        if (isVideo) {
+    <>
+      <div style={{
+        marginTop: 10,
+        display: "grid",
+        gridTemplateColumns: cols,
+        gap: 4,
+      }}>
+        {urls.slice(0, 4).map((u, i) => {
+          const isVideo = VIDEO_RE.test(String(u));
+          const sharedStyle = {
+            width: "100%",
+            maxHeight: urls.length === 1 ? 420 : 220,
+            objectFit: "cover",
+            borderRadius: 10,
+            border: `1px solid ${t.border}`,
+            background: "#0b0f17",
+          };
+          if (isVideo) {
+            return (
+              <video
+                key={i}
+                src={u}
+                controls
+                playsInline
+                preload="metadata"
+                style={sharedStyle}
+                onError={(e) => { e.currentTarget.style.display = "none"; }}
+              />
+            );
+          }
+          // role + tabIndex so the image is keyboard-reachable; the
+          // post-detail click handler upstream already excludes clicks
+          // inside <button>, but images aren't buttons — so we
+          // stopPropagation explicitly to keep the post nav from
+          // hijacking the lightbox open.
           return (
-            <video
+            <img
               key={i}
               src={u}
-              controls
-              playsInline
-              preload="metadata"
-              style={sharedStyle}
+              alt=""
+              loading="lazy"
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); setLightboxSrc(u); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLightboxSrc(u);
+                }
+              }}
+              style={{ ...sharedStyle, cursor: "zoom-in" }}
               onError={(e) => { e.currentTarget.style.display = "none"; }}
             />
           );
-        }
-        return (
-          <img
-            key={i}
-            src={u}
-            alt=""
-            loading="lazy"
-            style={sharedStyle}
-            onError={(e) => { e.currentTarget.style.display = "none"; }}
-          />
-        );
-      })}
-    </div>
+        })}
+      </div>
+      {lightboxSrc && (
+        <ImageLightbox
+          src={lightboxSrc}
+          alt=""
+          onClose={() => setLightboxSrc(null)}
+        />
+      )}
+    </>
   );
 }
 

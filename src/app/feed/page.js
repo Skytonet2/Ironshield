@@ -317,7 +317,12 @@ export default function FeedPage() {
 
   return (
     <AppShell rightPanel={<FeedRightRail />}>
-      <div style={{ maxWidth: 680, margin: "0 auto", padding: "12px 16px" }}>
+      {/* Feed pinned left (against the sidebar) instead of centered.
+          The right rail anchors the right side, so we don't need
+          symmetric auto-margins — that pattern produced visible
+          dead bands on wide screens. Twitter/X uses the same flush-
+          left layout for the same reason. */}
+      <div style={{ maxWidth: 680, padding: "12px 16px" }}>
         {/* Invited-by banner — renders only for brand-new users who
             arrived via /?ref=<code>. Dismissed permanently after the
             first click or x. See ReferrerFollowPrompt for details. */}
