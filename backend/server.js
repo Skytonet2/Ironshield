@@ -196,6 +196,7 @@ async function start() {
   try { require("./services/orchestratorBot").start(); } catch (e) { console.warn("[orchestrator] not started:", e.message); }
   try { require("./services/agents/automationWorker").start(); } catch (e) { console.warn("[automation] not started:", e.message); }
   try { require("./services/connectorRefresh").start(); } catch (e) { console.warn("[connectorRefresh] not started:", e.message); }
+  try { require("./services/classifiedsDrift").start(); } catch (e) { console.warn("[classifiedsDrift] not started:", e.message); }
   // Day 3.5 caveat: the dedicated `ironshield-worker-bot` Render
   // service was declared in render.yaml but never created in the
   // Render UI, so the TG bot has been silently offline in
