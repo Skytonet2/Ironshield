@@ -70,7 +70,9 @@ async function _fetchPageTokens(userToken) {
 }
 
 async function callback(req, res) {
-  const cfg = _config();
+  let cfg;
+  try { cfg = _config(); }
+  catch (e) { return res.status(503).send(`facebook oauth: ${e.message}`); }
   const cookie = oauthState.readCookie(req);
   oauthState.clearCookie(res);
   const sess = oauthState.verify(cookie);

@@ -52,7 +52,9 @@ function start(req, res) {
 }
 
 async function callback(req, res) {
-  const cfg = _config(); // throws → 503 caught by route layer
+  let cfg;
+  try { cfg = _config(); }
+  catch (e) { return res.status(503).send(`x oauth: ${e.message}`); }
   const cookie = oauthState.readCookie(req);
   oauthState.clearCookie(res);
   const sess = oauthState.verify(cookie);

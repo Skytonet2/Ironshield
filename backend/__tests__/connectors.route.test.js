@@ -25,6 +25,9 @@ const PUBLIC = new Set([
   "get /facebook/oauth/callback",
   "get /email/oauth/google/callback",
   "get /email/oauth/microsoft/callback",
+  // tg/inbound is the bot HTTP fallback — gated by
+  // ORCHESTRATOR_SHARED_SECRET, not the wallet middleware.
+  "post /tg/inbound",
 ]);
 
 test("connectors.route — public surface stays public, everything else is wallet-guarded", () => {
@@ -100,4 +103,58 @@ test("connectors.route — POST /:name/connect rejects empty payload with 400", 
   );
   assert.equal(status, 400);
   assert.match(body.error, /payload/);
+});
+
+test("connectors.route — POST /tg/inbound enforces shared secret + emits", async () => {
+  const layer = router.stack.find(
+    (l) => l.route?.path === "/tg/inbound" && l.route?.methods?.post
+  );
+  assert.ok(layer, "no /tg/inbound layer");
+  const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+  const eventBus = require("../services/eventBus");
+  const SAVED = process.env.ORCHESTRATOR_SHARED_SECRET;
+  process.env.ORCHESTRATOR_SHARED_SECRET = "shh";
+
+  function mkRes() {
+    const r = {
+      statusCode: 200, body: null,
+      status(c) { r.statusCode = c; return r; },
+      json(b)   { r.body = b; return r; },
+    };
+    return r;
+  }
+
+  // 1) Missing secret → 403.
+  let res = mkRes();
+  await handler({ headers: {}, body: { text: "hi" } }, res);
+  assert.equal(res.statusCode, 403);
+
+  // 2) Wrong secret → 403.
+  res = mkRes();
+  await handler({ headers: { "x-orchestrator-secret": "nope" }, body: { text: "hi" } }, res);
+  assert.equal(res.statusCode, 403);
+
+  // 3) Right secret + missing text → 400.
+  res = mkRes();
+  await handler({ headers: { "x-orchestrator-secret": "shh" }, body: {} }, res);
+  assert.equal(res.statusCode, 400);
+
+  // 4) Right secret + valid body → 200, eventBus receives it.
+  let received = null;
+  const onMsg = (m) => { received = m; };
+  eventBus.on("connector:tg:message", onMsg);
+  try {
+    res = mkRes();
+    await handler(
+      { headers: { "x-orchestrator-secret": "shh" }, body: { text: "hello", chat_id: 9 } },
+      res,
+    );
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(received, { text: "hello", chat_id: 9 });
+  } finally {
+    eventBus.off("connector:tg:message", onMsg);
+    if (SAVED) process.env.ORCHESTRATOR_SHARED_SECRET = SAVED;
+    else delete process.env.ORCHESTRATOR_SHARED_SECRET;
+  }
 });

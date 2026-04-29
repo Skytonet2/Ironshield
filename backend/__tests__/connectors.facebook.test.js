@@ -61,3 +61,30 @@ test("facebook connector: invoke rejects unknown action", async () => {
     /unknown action/
   );
 });
+
+test("facebook oauth: callback returns 503 when app creds are missing", async () => {
+  const saved = {
+    id: process.env.FACEBOOK_APP_ID,
+    secret: process.env.FACEBOOK_APP_SECRET,
+    redir: process.env.FACEBOOK_OAUTH_REDIRECT_URI,
+  };
+  delete process.env.FACEBOOK_APP_ID;
+  delete process.env.FACEBOOK_APP_SECRET;
+  delete process.env.FACEBOOK_OAUTH_REDIRECT_URI;
+  try {
+    const fbOauth = require("../connectors/facebook/oauth");
+    let status, body;
+    const res = {
+      status(c) { status = c; return res; },
+      send(b)   { body = b; return res; },
+      redirect() { return res; },
+    };
+    await fbOauth.callback({ query: {}, headers: {} }, res);
+    assert.equal(status, 503);
+    assert.match(body, /facebook oauth/);
+  } finally {
+    if (saved.id)     process.env.FACEBOOK_APP_ID = saved.id;
+    if (saved.secret) process.env.FACEBOOK_APP_SECRET = saved.secret;
+    if (saved.redir)  process.env.FACEBOOK_OAUTH_REDIRECT_URI = saved.redir;
+  }
+});
