@@ -116,6 +116,14 @@ export default function ComposeBar({ onPosted }) {
   const aiSuggest = useCallback(async () => {
     const p = aiPrompt.trim();
     if (!p) return;
+    // Cheap pre-flight: if there's no connected wallet the backend
+    // will 401 with "missing-sig" anyway. Tell the user up front
+    // instead of showing a generic "failed (401)". Same check
+    // pattern other compose actions use.
+    if (!address) {
+      setErr("Connect a wallet to use the AI composer.");
+      return;
+    }
     setAiBusy(true);
     try {
       const r = await apiFetch(`/api/ai/compose`, {
@@ -125,14 +133,49 @@ export default function ComposeBar({ onPosted }) {
       });
       if (r.ok) {
         const j = await r.json();
-        if (j?.text) setText(j.text.slice(0, MAX));
-      } else if (r.status === 404) {
-        setErr("AI compose endpoint isn't enabled on this backend yet.");
-      } else {
-        setErr(`AI suggest failed (${r.status})`);
+        if (j?.text) {
+          setText(j.text.slice(0, MAX));
+        } else {
+          setErr("AI returned an empty draft — try a richer prompt.");
+        }
+        return;
+      }
+      // Map known backend status codes to human messages. Read body
+      // first so error.code from the route ("ai_not_configured",
+      // "ai-budget-exceeded", "ai_empty_reply") can refine the text.
+      let body = {};
+      try { body = await r.json(); } catch { /* non-JSON body — ignore */ }
+      switch (r.status) {
+        case 401:
+          setErr("Your session expired. Reconnect your wallet and retry.");
+          break;
+        case 402:
+          setErr(
+            body.cap != null && body.used != null
+              ? `Daily AI budget reached ($${Number(body.used).toFixed(2)}/$${Number(body.cap).toFixed(2)}). Comes back tomorrow.`
+              : "Daily AI budget reached. Comes back tomorrow."
+          );
+          break;
+        case 429:
+          setErr("Too many requests. Wait a few seconds and retry.");
+          break;
+        case 503:
+          setErr(body.hint || "AI composer isn't enabled on this backend.");
+          break;
+        case 502:
+          setErr("AI upstream returned an empty reply. Retry, or rephrase the prompt.");
+          break;
+        case 404:
+          setErr("AI compose endpoint isn't enabled on this backend yet.");
+          break;
+        default:
+          setErr(body.error || `AI suggest failed (${r.status}).`);
       }
     } catch (e) {
-      setErr(e.message || "AI suggest failed");
+      // Network-level failure: TypeError("Failed to fetch"),
+      // CORS reject, etc. Tell the user it's reachability, not the
+      // model misbehaving.
+      setErr(`Couldn't reach the AI service. ${e.message || ""}`.trim());
     } finally {
       setAiBusy(false);
     }
