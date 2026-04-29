@@ -1,6 +1,7 @@
 import { ThemeProvider, WalletProvider, ProposalsProvider } from "@/lib/contexts";
 import PrivyWrapper from "@/components/auth/PrivyWrapper";
 import PreLoader from "@/components/boot/PreLoader";
+import BgToggle from "@/components/BgToggle";
 import { Outfit, JetBrains_Mono } from "next/font/google";
 // tokens.css ships CSS variables for the 6 theme presets. It's imported
 // before globals.css so per-element overrides in globals take precedence —
@@ -293,7 +294,11 @@ export default function RootLayout({ children }) {
           }
         ` }} />
       </head>
-      <body style={{ background: "#080b12", margin: 0 }}>
+      {/* margin: 0 stays inline so first-paint doesn't flash a default
+          margin if the CSS var stylesheet loads a beat late. The
+          background hex moved into globals.css behind --page-bg so the
+          BgToggle component can flip it without fighting an inline rule. */}
+      <body style={{ margin: 0 }}>
         {/* Pre-React loader: visible on first paint, unmounted by
             React when AppShell signals ready. See PreLoader for why
             we can't use raw `removeChild` here — it fights React for
@@ -428,6 +433,10 @@ export default function RootLayout({ children }) {
             <WalletProvider>
               <ProposalsProvider>
                 {children}
+                {/* BgToggle: floating dark/light page-background swap.
+                    Outside the providers' children flow so it lives on
+                    every route without each shell needing to mount it. */}
+                <BgToggle />
               </ProposalsProvider>
             </WalletProvider>
           </ThemeProvider>
