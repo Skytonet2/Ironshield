@@ -58,3 +58,35 @@ test("oauthState.readCookie returns null when our cookie is absent", () => {
   const fakeReq = { headers: { cookie: "other=foo; another=bar" } };
   assert.equal(oauthState.readCookie(fakeReq), null);
 });
+
+test("oauthState.setCookie preserves prior Set-Cookie headers (uses append, not setHeader)", () => {
+  // Minimal Express-shaped fake. .append is the Express 4 idiom that
+  // accumulates header values; .setHeader would overwrite them.
+  const headers = {};
+  const fakeRes = {
+    setHeader(k, v) { headers[k] = v; },                                          // would clobber
+    append(k, v)   { headers[k] = headers[k] ? [].concat(headers[k], v) : v; },   // accumulates
+  };
+  // Upstream middleware sets a session cookie first.
+  fakeRes.append("Set-Cookie", "sid=abc; Path=/; HttpOnly");
+  // Our oauthState helper runs after.
+  oauthState.setCookie(fakeRes, "tok123");
+  // Both must survive.
+  const cookies = [].concat(headers["Set-Cookie"]);
+  assert.equal(cookies.length, 2, "prior Set-Cookie was clobbered");
+  assert.ok(cookies.some((c) => /^sid=abc/.test(c)),                "session cookie missing");
+  assert.ok(cookies.some((c) => new RegExp(oauthState.COOKIE_NAME).test(c)), "oauth cookie missing");
+});
+
+test("oauthState.clearCookie also uses append + survives prior cookies", () => {
+  const headers = {};
+  const fakeRes = {
+    setHeader(k, v) { headers[k] = v; },
+    append(k, v)   { headers[k] = headers[k] ? [].concat(headers[k], v) : v; },
+  };
+  fakeRes.append("Set-Cookie", "sid=abc; Path=/; HttpOnly");
+  oauthState.clearCookie(fakeRes);
+  const cookies = [].concat(headers["Set-Cookie"]);
+  assert.equal(cookies.length, 2);
+  assert.ok(cookies.some((c) => /Max-Age=0/.test(c)), "clear cookie should set Max-Age=0");
+});
