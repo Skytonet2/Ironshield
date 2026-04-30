@@ -29,10 +29,16 @@ require.cache[lookupPath] = {
 const requireWallet = require("../middleware/requireWallet");
 const router = require("../routes/payments.route");
 
-test("payments.route — GET /agent/balance is wallet-guarded", () => {
+test("payments.route — every non-webhook endpoint is wallet-guarded", () => {
+  // Webhooks are authenticated by HMAC over `{timestamp}.{raw_body}`,
+  // not by a wallet signature — that's the protocol the upstream
+  // (PingPay) speaks. The HMAC check lives inside the handler. Every
+  // OTHER mutating route on this router must run requireWallet first.
+  const isWebhook = (p) => /\/webhook(\/|$)/.test(p || "");
   const offenders = [];
   for (const layer of router.stack) {
     if (!layer.route) continue;
+    if (isWebhook(layer.route.path)) continue;
     for (const method of Object.keys(layer.route.methods)) {
       const guarded = layer.route.stack.some((l) => l.handle === requireWallet);
       if (!guarded) offenders.push(`${method} ${layer.route.path} not guarded`);
