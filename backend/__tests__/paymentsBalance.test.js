@@ -29,17 +29,32 @@ require.cache[lookupPath] = {
 const requireWallet = require("../middleware/requireWallet");
 const router = require("../routes/payments.route");
 
-test("payments.route — every non-webhook endpoint is wallet-guarded", () => {
-  // Webhooks are authenticated by HMAC over `{timestamp}.{raw_body}`,
-  // not by a wallet signature — that's the protocol the upstream
-  // (PingPay) speaks. The HMAC check lives inside the handler. Every
-  // OTHER mutating route on this router must run requireWallet first.
-  const isWebhook = (p) => /\/webhook(\/|$)/.test(p || "");
+test("payments.route — every non-webhook, non-public-token endpoint is wallet-guarded", () => {
+  // Two kinds of routes on this router authenticate WITHOUT a wallet
+  // signature, both by design:
+  //
+  //   1. Webhooks. Authenticated by HMAC over `{timestamp}.{raw_body}`
+  //      (PingPay) or HMAC-SHA512 over the raw body (Paystack). The
+  //      HMAC check lives inside the handler, not as middleware.
+  //
+  //   2. Paystack `/psp/session/:reference` GET. The reference is a
+  //      96-bit unguessable token (see buildReference() — 16 hex char
+  //      randomBytes + timestamp). Buyers reach this from a Paystack
+  //      redirect URL and don't have a wallet linked yet at that point.
+  //      Note this is INTENTIONALLY different from PingPay's
+  //      `/pingpay/session/:id` GET, which IS wallet-authed because
+  //      that surface is reached from inside the deploy wizard where
+  //      the buyer's already signed in.
+  //
+  // Every OTHER route on this router must run requireWallet first.
+  const isWebhook       = (p) => /\/webhook(\/|$)/.test(p || "");
+  const isPublicSession = (p, m) => m === "get" && /^\/psp\/session\//.test(p || "");
   const offenders = [];
   for (const layer of router.stack) {
     if (!layer.route) continue;
     if (isWebhook(layer.route.path)) continue;
     for (const method of Object.keys(layer.route.methods)) {
+      if (isPublicSession(layer.route.path, method)) continue;
       const guarded = layer.route.stack.some((l) => l.handle === requireWallet);
       if (!guarded) offenders.push(`${method} ${layer.route.path} not guarded`);
     }
