@@ -22,7 +22,11 @@ export default function ComingSoonPanel({
   back = { label: "Back to dashboard", href: "/agents/me" },
 }) {
   return (
-    <div style={page}>
+    // data-app-shell="ready" tells the boot PreLoader to unmount.
+    // Standalone pages (no AppShell wrapper) need this marker
+    // explicitly or the splash hangs at 65% until its 15s safety
+    // timeout fires — looks like an endless loop on mobile.
+    <div data-app-shell="ready" style={page}>
       <div style={shell}>
         <div style={badge}>
           <Clock size={12} /> Coming soon

@@ -245,7 +245,10 @@ export default function OnboardPage() {
   // the canonical connect surface — we just point them at it.
   if (!wallet) {
     return (
-      <div style={pageStyle}>
+      // data-app-shell="ready" unmounts the boot PreLoader. Without
+      // it /onboard hangs at 65% on mobile until the 15s safety
+      // timeout — looks like an endless reload loop.
+      <div data-app-shell="ready" style={pageStyle}>
         <div style={shellStyle}>
           <header style={headerStyle}>
             <div style={brandStyle}>
@@ -319,7 +322,8 @@ export default function OnboardPage() {
   const isBooting = status === "idle" && messages.length === 0 && !error;
 
   return (
-    <div style={pageStyle}>
+    // data-app-shell="ready" unmounts the boot PreLoader on mount.
+    <div data-app-shell="ready" style={pageStyle}>
       <div style={shellStyle}>
         <header style={headerStyle}>
           <div style={brandStyle}>
