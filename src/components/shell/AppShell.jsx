@@ -35,7 +35,7 @@ import {
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign,
   Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
   Home, Menu, X as XIcon, User, MessageCircle, Users, Sparkles,
-  Target, Package, Plug,
+  Target, Package, Plug, Hammer,
 } from "lucide-react";
 import { useTheme, useWallet as useCtxWallet } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
@@ -111,6 +111,7 @@ const SIDEBAR_GROUPS = [
       // Kit + skill catalogues → ecosystem.
       { key: "my-agent",    label: "My Agent",         Icon: User,       href: "/agents/me"   },
       { key: "missions",    label: "Missions",         Icon: Target,     href: "/missions"    },
+      { key: "grind",       label: "Grind",            Icon: Hammer,     href: "/grind"       },
       { key: "connectors",  label: "Connectors",       Icon: Plug,       href: "/connectors"  },
       { key: "agents",      label: "Agents",           Icon: Users,      href: "/agents"      },
       { key: "kits",        label: "Kits",             Icon: Package,    href: "/marketplace/kits" },
