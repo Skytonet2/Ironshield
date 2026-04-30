@@ -23,12 +23,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, ExternalLink, MoreHorizontal, CheckCircle2, Shield,
-  Package, ArrowRight, Wallet, Loader2, Settings, X,
+  Package, ArrowRight, Wallet, Loader2, Settings, X, Banknote,
 } from "lucide-react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import useAgentConnections from "@/hooks/useAgentConnections";
 import AgentAvatar from "@/components/agents/AgentAvatar";
+import { apiFetch } from "@/lib/apiFetch";
 
 const ACTIVE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -457,6 +458,116 @@ function NoProfileState({ t }) {
   );
 }
 
+/* ──────────────────── Wallet panel (cash-out preview) ──────────────────── */
+
+// Format a base-unit BigInt-string into a short human number. NEAR
+// uses 24 decimals, USDC uses 6. We don't depend on src/lib/tokens.js
+// here because that module is "use client" with chain-context imports
+// we'd be paying for per-render — this little formatter is enough.
+function fmtBaseUnits(base, decimals) {
+  try {
+    const s = String(base || "0");
+    if (s === "0") return "0";
+    const b  = BigInt(s);
+    const div = 10n ** BigInt(decimals);
+    const whole = Number(b / div);
+    const frac  = Number(b % div) / Number(div);
+    const n = whole + frac;
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+    if (n >= 1000)      return `${(n / 1000).toFixed(2)}K`;
+    if (n >= 1)         return n.toFixed(2);
+    if (n >= 0.01)      return n.toFixed(3);
+    return n.toFixed(6);
+  } catch { return "0"; }
+}
+
+function WalletPanel({ t, connected }) {
+  const [bal, setBal]       = useState(null);
+  const [loading, setLoad]  = useState(false);
+  const [err, setErr]       = useState("");
+
+  useEffect(() => {
+    if (!connected) { setBal(null); return; }
+    let alive = true;
+    (async () => {
+      setLoad(true); setErr("");
+      try {
+        const r = await apiFetch("/api/payments/agent/balance");
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (alive) setBal(j);
+      } catch (e) {
+        if (alive) setErr(e?.message || "Failed to load balance");
+      } finally {
+        if (alive) setLoad(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [connected]);
+
+  if (!connected) return null;
+
+  const nearStr = bal ? fmtBaseUnits(bal.near_yocto, bal.near_decimals) : "—";
+  const usdcStr = bal ? fmtBaseUnits(bal.usdc_base,  bal.usdc_decimals) : "—";
+
+  return (
+    <section style={{ marginBottom: 28 }}>
+      <h2 style={{ fontSize: 16, fontWeight: 800, color: t.white, margin: "0 0 12px" }}>
+        Wallet
+      </h2>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr auto",
+        gap: 18, alignItems: "center",
+        padding: "18px 20px",
+        background: t.bgCard, border: `1px solid ${t.border}`,
+        borderRadius: 14,
+      }}>
+        <div>
+          <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+            NEAR
+          </div>
+          <div style={{
+            fontSize: 24, fontWeight: 800, color: t.white, lineHeight: 1,
+            fontFamily: "var(--font-jetbrains-mono), monospace",
+          }}>
+            {loading ? "…" : nearStr}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: t.textDim, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+            USDC
+          </div>
+          <div style={{
+            fontSize: 24, fontWeight: 800, color: t.white, lineHeight: 1,
+            fontFamily: "var(--font-jetbrains-mono), monospace",
+          }}>
+            {loading ? "…" : usdcStr}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled
+          title="Bank cash-out arrives in the next release (PingPay off-ramp)"
+          style={{
+            padding: "10px 16px",
+            background: t.bgSurface, border: `1px solid ${t.border}`,
+            borderRadius: 10, fontSize: 12, fontWeight: 700, color: t.textMuted,
+            cursor: "not-allowed",
+            display: "inline-flex", alignItems: "center", gap: 8,
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Banknote size={14} /> Cash out to bank · Coming soon
+        </button>
+      </div>
+      {err && (
+        <div style={{ marginTop: 8, fontSize: 12, color: "#fca5a5" }}>{err}</div>
+      )}
+    </section>
+  );
+}
+
 /* ──────────────────── Security banner ──────────────────── */
 
 function SecurityBanner({ t }) {
@@ -641,6 +752,8 @@ export default function ManageAgentsPage() {
         installedCount={installedCount}
         totalAgents={totalAgents}
       />
+
+      <WalletPanel t={t} connected={!!connected} />
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 16, fontWeight: 800, color: t.white, margin: "0 0 12px" }}>

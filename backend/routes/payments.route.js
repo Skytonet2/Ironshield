@@ -1,6 +1,8 @@
 // backend/routes/payments.route.js
 //
-// Hosted-checkout surface for PingPay-funded missions. Three endpoints:
+// PingPay payment surface — hosted-checkout on-ramp + agent balance read.
+//
+// Hosted-checkout endpoints (chip 1):
 //
 //   POST /api/payments/pingpay/checkout
 //     Wallet-authed (NEP-413). Creates a pending_missions row + a
@@ -19,15 +21,23 @@
 //     before showing the "Sign mission" CTA. Falls back to a live
 //     GET against PingPay if the webhook hasn't landed yet (the docs
 //     warn the webhook can lag by tens of seconds).
+//
+// Agent balance endpoint (chip 2 thin slice):
+//
+//   GET /api/payments/agent/balance
+//     Wallet-authed. On-chain NEAR + USDC balance for the agent
+//     dashboard "Wallet" panel. The full cash-out flow (quote →
+//     submit → webhook → status) lands in a follow-up PR.
 
 "use strict";
 
 const express = require("express");
 const router  = express.Router();
 
-const requireWallet = require("../middleware/requireWallet");
-const checkout      = require("../services/pingpay/checkout");
-const settlement    = require("../services/pingpay/missionSettlement");
+const requireWallet     = require("../middleware/requireWallet");
+const checkout          = require("../services/pingpay/checkout");
+const settlement        = require("../services/pingpay/missionSettlement");
+const { getAgentBalance } = require("../services/balanceLookup");
 
 // Hard cap on the escrow a buyer can fund through hosted checkout.
 // Tuned to match the NEAR Intents 1-click ceiling we already advertise
@@ -226,6 +236,19 @@ router.post("/pingpay/session/:id/attach", requireWallet, async (req, res) => {
     return res.status(409).json({ error: "pending mission not in fundable state" });
   }
   return res.json({ ok: true, pending_mission_id: updated.id, status: updated.status });
+});
+
+// ── GET /api/payments/agent/balance ──────────────────────────────
+// Read-only on-chain balance for the agent dashboard "Wallet" panel.
+// Cash-out (quote / submit / webhook / status) lands in a follow-up.
+router.get("/agent/balance", requireWallet, async (req, res) => {
+  try {
+    const out = await getAgentBalance(req.wallet);
+    res.json(out);
+  } catch (err) {
+    console.warn("[payments/balance]", err.message);
+    res.status(503).json({ error: "balance lookup unavailable" });
+  }
 });
 
 module.exports = router;

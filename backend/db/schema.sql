@@ -1898,3 +1898,49 @@ CREATE INDEX IF NOT EXISTS idx_pingpay_payments_pending
   WHERE pending_mission_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pingpay_payments_status
   ON pingpay_payments (status, created_at DESC);
+
+-- ── PingPay agent payout off-ramp (chip 2 — thin slice) ─────────────
+-- Schema lands now so chip 2's PingPay client can plug in without a
+-- migration. Today only the read-only /agent/balance endpoint is
+-- wired and the dashboard CTA is a "coming soon" stub — no rows are
+-- inserted until the third-party client lands.
+--
+-- bank_details_encrypted: AES-256-GCM with CUSTODIAL_ENCRYPT_KEY,
+-- same pattern as backend/services/custodialBotWallet.js. NEVER
+-- selected outside the audit/admin path; API responses mask to
+-- last 4 of the account number.
+CREATE TABLE IF NOT EXISTS pingpay_payouts (
+  id                       BIGSERIAL    PRIMARY KEY,
+  agent_wallet             TEXT         NOT NULL,
+  amount_yocto             TEXT         NOT NULL,
+  source_token             TEXT         NOT NULL DEFAULT 'near',  -- 'near' | nep141 contract id
+  target_currency          TEXT,
+  target_amount            NUMERIC(20,4),
+  target_country           TEXT,
+  fees_json                JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  status                   TEXT         NOT NULL DEFAULT 'pending'
+                                        CHECK (status IN ('pending','sent','completed','failed')),
+  pingpay_payout_id        TEXT         UNIQUE,
+  bank_details_encrypted   BYTEA,
+  raw_event_json           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  created_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  completed_at             TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_pingpay_payouts_wallet
+  ON pingpay_payouts (agent_wallet, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pingpay_payouts_status
+  ON pingpay_payouts (status, created_at DESC)
+  WHERE status IN ('pending','sent');
+
+-- Per-agent KYC handle. PingPay-hosted KYC flow (option a in the
+-- chip 2 plan): on first cash-out the agent gets redirected to
+-- PingPay's hosted form, we just track the resulting kyc id.
+CREATE TABLE IF NOT EXISTS pingpay_agent_kyc (
+  agent_wallet      TEXT         PRIMARY KEY,
+  pingpay_kyc_id    TEXT         UNIQUE,
+  status            TEXT         NOT NULL DEFAULT 'unstarted'
+                                 CHECK (status IN ('unstarted','pending','verified','rejected')),
+  last_verified_at  TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
