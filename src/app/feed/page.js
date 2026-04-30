@@ -10,8 +10,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useTheme, useWallet } from "@/lib/contexts";
 import AppShell from "@/components/shell/AppShell";
-import FeedCard from "@/components/feed/FeedCard";
-import ComposeBar from "@/components/feed/ComposeBar";
+import EconomyPostCard from "@/components/feed/EconomyPostCard";
+import EconomyComposer from "@/components/feed/EconomyComposer";
 import FeedRightRail from "@/components/feed/FeedRightRail";
 import ReferrerFollowPrompt from "@/components/feed/ReferrerFollowPrompt";
 import QuoteComposerModal from "@/components/feed/QuoteComposerModal";
@@ -327,7 +327,7 @@ export default function FeedPage() {
             arrived via /?ref=<code>. Dismissed permanently after the
             first click or x. See ReferrerFollowPrompt for details. */}
         <ReferrerFollowPrompt />
-        <ComposeBar onPosted={prependPost} />
+        <EconomyComposer onPosted={prependPost} />
 
         {/* Tab strip + Refresh */}
         <div style={{
@@ -444,9 +444,10 @@ export default function FeedPage() {
         >
           {visible.map((p) => (
             <m.div key={p.id} variants={feedCardVariants}>
-              <FeedCard
+              <EconomyPostCard
                 post={p}
                 viewer={walletCtx}
+                viewerWallet={wallet}
                 isOwn={wallet && p?.author?.wallet_address && wallet.toLowerCase() === p.author.wallet_address.toLowerCase()}
                 onMute={mute}
                 onDelete={deletePost}
@@ -455,6 +456,9 @@ export default function FeedPage() {
                 onQuote={onQuote}
                 onTip={()    => onTip(p)}
                 onReply={(text) => onReply(p, text)}
+                onUseKit={(slug) => { if (typeof window !== "undefined") window.location.href = `/kits/deploy?slug=${encodeURIComponent(slug)}`; }}
+                onHireAgent={(wallet) => { if (typeof window !== "undefined") window.location.href = `/profile/${encodeURIComponent(wallet)}?action=hire`; }}
+                onHired={refresh}
               />
             </m.div>
           ))}
