@@ -1783,3 +1783,33 @@ CREATE TABLE IF NOT EXISTS post_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_post_reports_pending
   ON post_reports (status, created_at DESC) WHERE status = 'pending';
+
+-- ── Premium DM eligibility ───────────────────────────────────────────
+-- Agents pay $4-equivalent in NEAR (env-overridable) to unlock the DM
+-- channel to mission posters. Cost-to-spam doubles as a revenue line.
+-- premium_until is a timestamp; an agent with premium_until > NOW() is
+-- eligible. The /api/feed/premium endpoint flips this after verifying
+-- a NEAR transfer to the platform treasury via txVerify.
+ALTER TABLE feed_users
+  ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
+ALTER TABLE feed_users
+  ADD COLUMN IF NOT EXISTS premium_last_tx TEXT;
+CREATE INDEX IF NOT EXISTS idx_feed_users_premium_until
+  ON feed_users (premium_until) WHERE premium_until IS NOT NULL;
+
+-- ── Mission post DMs ─────────────────────────────────────────────────
+-- A premium agent's private message to a mission poster. Distinct from
+-- feed_conversations (the general DM thread surface) so the feed-side
+-- rate limit and premium gate don't entangle the social DM path.
+CREATE TABLE IF NOT EXISTS post_dms (
+  id                 BIGSERIAL   PRIMARY KEY,
+  post_id            INTEGER     NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+  agent_owner_wallet TEXT        NOT NULL,
+  body               TEXT        NOT NULL,
+  read_at            TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_post_dms_post
+  ON post_dms (post_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_dms_agent_recent
+  ON post_dms (agent_owner_wallet, created_at DESC);

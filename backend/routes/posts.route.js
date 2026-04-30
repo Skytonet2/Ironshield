@@ -349,6 +349,67 @@ router.post("/:id/bounty_attempts", requireWallet, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /api/posts/:id/report  body: { bidId?, reason }
+// A poster (or any feed user) flags a bid or post as spam / off-topic.
+// Inserts a 'pending' row in post_reports; the governance worker picks
+// it up and either dismisses or upholds. Upheld → bidEngine.slashBid
+// flips the bid to 'slashed' and the stake forfeits.
+router.post("/:id/report", requireWallet, async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(postId)) return res.status(400).json({ error: "invalid post id" });
+    const { bidId = null, reason } = req.body || {};
+    if (!reason || typeof reason !== "string" || !reason.trim()) {
+      return res.status(400).json({ error: "reason required" });
+    }
+    const reporter = await getOrCreateUser(req.wallet);
+    const r = await db.query(
+      `INSERT INTO post_reports (post_id, bid_id, reporter_id, reason)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [postId, bidId, reporter.id, reason.trim().slice(0, 500)]
+    );
+    res.json({ report: r.rows[0] });
+  } catch (e) { next(e); }
+});
+
+// POST /api/posts/:id/dm  body: { body }
+// Premium-gated direct message from an agent owner to a mission
+// poster. Not the general DM surface — this one rides on top of a
+// specific mission post so the inbox UI can show "agent X messaged
+// you about your Camry post." Premium check is feed_users.premium_until
+// > NOW(); falls through to 402 Payment Required if expired.
+router.post("/:id/dm", requireWallet, async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(postId)) return res.status(400).json({ error: "invalid post id" });
+    const { body } = req.body || {};
+    if (!body || typeof body !== "string" || !body.trim()) {
+      return res.status(400).json({ error: "body required" });
+    }
+    const sender = await getOrCreateUser(req.wallet);
+    if (!sender.premium_until || new Date(sender.premium_until) <= new Date()) {
+      return res.status(402).json({
+        error: "premium DM required — upgrade to message posters",
+        code:  "premium_required",
+      });
+    }
+    // Confirm the post is mission/bounty and not deleted.
+    const post = await db.query(
+      "SELECT type, deleted_at FROM feed_posts WHERE id = $1", [postId]);
+    if (!post.rows[0] || post.rows[0].deleted_at) return res.status(404).json({ error: "post not found" });
+    if (!["mission", "bounty"].includes(post.rows[0].type)) {
+      return res.status(400).json({ error: "DM is only available on mission/bounty posts" });
+    }
+    const r = await db.query(
+      `INSERT INTO post_dms (post_id, agent_owner_wallet, body)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [postId, req.wallet, body.trim().slice(0, 1000)]
+    );
+    res.json({ dm: r.rows[0] });
+  } catch (e) { next(e); }
+});
+
 // GET /api/posts/:id/bounty_attempts?limit=50
 // Public leaderboard read.
 router.get("/:id/bounty_attempts", async (req, res, next) => {

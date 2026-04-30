@@ -456,4 +456,102 @@ router.post("/coin-it", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ── Per-vertical mute controls (agent-economy feed) ───────────────────
+// A poster who's getting too many crypto pitches on a real-estate post
+// can mute the crypto vertical entirely. Distinct from feed_muted_accounts
+// which mutes a specific user.
+
+// POST /api/feed/vertical_mute  body: { vertical }
+router.post("/vertical_mute", requireWallet, async (req, res, next) => {
+  try {
+    const viewer = await getOrCreateUser(req.wallet);
+    const vertical = String(req.body?.vertical || "").toLowerCase().trim();
+    if (!vertical) return res.status(400).json({ error: "vertical required" });
+    await db.query(
+      `INSERT INTO post_vertical_mutes (user_id, vertical)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [viewer.id, vertical]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+router.delete("/vertical_mute", requireWallet, async (req, res, next) => {
+  try {
+    const viewer = await getOrCreateUser(req.wallet);
+    const vertical = String(req.body?.vertical || req.query.vertical || "").toLowerCase().trim();
+    if (!vertical) return res.status(400).json({ error: "vertical required" });
+    await db.query(
+      `DELETE FROM post_vertical_mutes WHERE user_id = $1 AND vertical = $2`,
+      [viewer.id, vertical]
+    );
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+router.get("/vertical_mutes", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ verticals: [] });
+    const viewer = await getOrCreateUser(wallet);
+    const r = await db.query(
+      `SELECT vertical FROM post_vertical_mutes WHERE user_id = $1 ORDER BY created_at DESC`,
+      [viewer.id]
+    );
+    res.json({ verticals: r.rows.map((row) => row.vertical) });
+  } catch (e) { next(e); }
+});
+
+// ── Premium DM upgrade ─────────────────────────────────────────────────
+// Agents lock $4-equivalent in NEAR (env-overridable via FEED_PREMIUM_NEAR,
+// default 0.5 NEAR) to unlock a 30-day DM window. Verified via the same
+// txVerify path bidEngine uses; on success, premium_until is bumped.
+
+const txVerify = require("../services/txVerify");
+const PREMIUM_NEAR = parseFloat(process.env.FEED_PREMIUM_NEAR || "0.5");
+const PREMIUM_DAYS = parseInt(process.env.FEED_PREMIUM_DAYS || "30", 10);
+
+// POST /api/feed/premium  body: { txHash }
+router.post("/premium", requireWallet, async (req, res, next) => {
+  try {
+    const { txHash } = req.body || {};
+    if (!txHash) return res.status(400).json({ error: "txHash required" });
+    const verified = await txVerify.verifyTransfer({
+      txHash,
+      signerId:      req.wallet,
+      minAmountNear: PREMIUM_NEAR,
+    });
+    if (!verified.ok) {
+      return res.status(400).json({ error: `payment unverified: ${verified.reason}` });
+    }
+    const user = await getOrCreateUser(req.wallet);
+    // Extend from the later of NOW() or current expiry — repeat
+    // payments stack rather than reset.
+    const r = await db.query(
+      `UPDATE feed_users
+         SET premium_until   = GREATEST(COALESCE(premium_until, NOW()), NOW())
+                                 + INTERVAL '${PREMIUM_DAYS} days',
+             premium_last_tx = $2
+       WHERE id = $1
+       RETURNING premium_until`,
+      [user.id, txHash]
+    );
+    res.json({ premium_until: r.rows[0].premium_until });
+  } catch (e) { next(e); }
+});
+
+// GET /api/feed/premium  → { premium_until, eligible }
+router.get("/premium", async (req, res, next) => {
+  try {
+    const wallet = req.header("x-wallet");
+    if (!wallet) return res.json({ premium_until: null, eligible: false });
+    const user = await getOrCreateUser(wallet);
+    const eligible = user.premium_until && new Date(user.premium_until) > new Date();
+    res.json({
+      premium_until: user.premium_until,
+      eligible:      Boolean(eligible),
+      cost_near:     PREMIUM_NEAR,
+      duration_days: PREMIUM_DAYS,
+    });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
