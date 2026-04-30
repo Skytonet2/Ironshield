@@ -1561,3 +1561,62 @@ UPDATE feed_tg_links
    SET user_id = NULL
  WHERE link_code IS NULL
    AND user_id IS NOT NULL;
+
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║ Phase 10 Tier 5 — catalog scale + admin + authors                   ║
+-- ╠══════════════════════════════════════════════════════════════════════╣
+-- ║ Additive only. Existing runtime read paths (status='active') are    ║
+-- ║ unchanged. lifecycle_status is the new moderation channel that      ║
+-- ║ admin UI flips independently of the runtime active flag.            ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
+
+-- Mirror of on-chain skill metadata into the runtime manifest row, so
+-- FTS / catalog queries don't need RPC fan-out. Nullable; populated
+-- by the search endpoint's lazy backfill (Tier 5 slice 2).
+ALTER TABLE skill_runtime_manifests
+  ADD COLUMN IF NOT EXISTS name        TEXT,
+  ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- Moderation state, distinct from the runtime "active" flag in `status`.
+-- Admin UI (slice 3) flips this; runtime never reads it.
+ALTER TABLE skill_runtime_manifests
+  ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'internal';
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'skill_manifests_lifecycle_status_chk'
+  ) THEN
+    ALTER TABLE skill_runtime_manifests
+      ADD CONSTRAINT skill_manifests_lifecycle_status_chk
+      CHECK (lifecycle_status IN ('internal','curated','public','deprecated','slashed'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_skill_manifests_lifecycle
+  ON skill_runtime_manifests (lifecycle_status);
+
+-- FTS over name + description + prompt_fragment. GIN over a tsvector
+-- expression — the english config is the standard catalog-text choice.
+CREATE INDEX IF NOT EXISTS idx_skill_manifests_fts
+  ON skill_runtime_manifests
+  USING GIN (to_tsvector('english',
+    coalesce(name,'') || ' ' ||
+    coalesce(description,'') || ' ' ||
+    coalesce(prompt_fragment,'')
+  ));
+
+-- One row per (skill, reviewer wallet). Author leaderboard reads
+-- AVG(rating) GROUP BY skill_id; per-skill detail page lists bodies.
+CREATE TABLE IF NOT EXISTS skill_reviews (
+  id               BIGSERIAL    PRIMARY KEY,
+  skill_id         BIGINT       NOT NULL,
+  reviewer_wallet  TEXT         NOT NULL,
+  rating           SMALLINT     NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  body             TEXT,
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE (skill_id, reviewer_wallet)
+);
+CREATE INDEX IF NOT EXISTS idx_skill_reviews_skill_id
+  ON skill_reviews (skill_id);
+CREATE INDEX IF NOT EXISTS idx_skill_reviews_reviewer
+  ON skill_reviews (reviewer_wallet, created_at DESC);
