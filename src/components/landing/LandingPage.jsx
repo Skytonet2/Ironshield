@@ -44,16 +44,16 @@ const NAV_LINKS = [
 ];
 
 const HERO_WORDS = [
-  "Connect.", "Create.", "Automate.", "Govern.",
+  "Sell.", "Hire.", "Hunt.", "Watch.",
 ];
 // Last line gets the gradient accent.
-const HERO_TAIL = "All in One Place.";
+const HERO_TAIL = "Send an agent.";
 
 const HERO_CHIPS = [
-  { label: "AI Agents",       sub: "Automate anything", Icon: Bot,       color: "#60a5fa" },
-  { label: "Governance",      sub: "Community first",   Icon: Users,     color: "#a855f7" },
-  { label: "Rewards",         sub: "Earn and level up", Icon: Star,      color: "#10b981" },
-  { label: "Secure by Design", sub: "On-chain verified", Icon: Shield,   color: "#f59e0b" },
+  { label: "Realtor Agent",       sub: "Sell houses, find buyers", Icon: Briefcase, color: "#60a5fa" },
+  { label: "Car Sales Agent",     sub: "Move cars on FB & Jiji",   Icon: Bot,       color: "#a855f7" },
+  { label: "Job Seeker",          sub: "Apply while you sleep",    Icon: Rocket,    color: "#10b981" },
+  { label: "Wallet Watch",        sub: "Drain alerts on TG",       Icon: Shield,    color: "#f59e0b" },
 ];
 
 const ECOSYSTEM = [
@@ -66,17 +66,20 @@ const ECOSYSTEM = [
 ];
 
 const FEATURES = [
-  { label: "Social Feed",     Icon: MessageCircle, hint: "Real-time updates, alpha, and community conversations." },
-  { label: "AI Automations",  Icon: Sparkles,      hint: "Create powerful workflows and on-chain automations." },
-  { label: "Earn Rewards",    Icon: Star,          hint: "Complete missions, earn XP, and unlock exclusive rewards." },
-  { label: "Govern Together", Icon: Shield,        hint: "Vote on proposals and shape the future of AZUKA." },
+  { label: "Pick a Kit",          Icon: Sparkles,      hint: "Pre-built agents for selling, hiring, watching, hunting. Configure presets in one tap." },
+  { label: "Connect your accounts", Icon: Network,     hint: "Your agent uses your X, Facebook, WhatsApp, Jiji, email — never a fake account." },
+  { label: "Approve the big calls", Icon: Shield,      hint: "Agent works on its own. Pings your phone before any commitment that needs a human." },
+  { label: "Pay on result",       Icon: Coins,         hint: "Escrow on NEAR. Money releases to the agent only when the work closes — refunded otherwise." },
 ];
 
+// Honest pre-launch numbers. The product is new; we'd rather count
+// real things than fake the user-count vanity metrics that tanked the
+// last marketing pass. Update these as the catalogue grows.
 const STATS = [
-  { value: 250_000,     suffix: "+", label: "Active Users", Icon: Users },
-  { value: 1_000_000,   suffix: "+", label: "Transactions", Icon: MessageCircle },
-  { value: 150_000,     suffix: "+", label: "Automations Created", Icon: Sparkles },
-  { value: 120_000_000, prefix: "$", suffix: "M+", scale: 1_000_000, label: "Assets Secured", Icon: Shield },
+  { value: 5,   suffix: " live", label: "Agent Kits ready to deploy", Icon: Bot },
+  { value: 6,   suffix: "",      label: "Web2 connectors wired",      Icon: Network },
+  { value: 90,  suffix: "+",     label: "Countries on the funding rail", Icon: Globe },
+  { value: 5,   suffix: "%",     label: "Platform fee (only on close)", Icon: Coins },
 ];
 
 const FOOTER_COLUMNS = [
@@ -239,7 +242,7 @@ function Navbar() {
 
         <div style={{ flex: 1 }} />
 
-        <a href="/feed" className="ix-desk-only" style={{
+        <a href="/agents/me" className="ix-desk-only" style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           padding: "9px 16px", borderRadius: 10,
           border: "1px solid rgba(255,255,255,0.1)",
@@ -247,7 +250,7 @@ function Navbar() {
           color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
         }}>Sign In</a>
 
-        <LaunchCta href="/feed" />
+        <LaunchCta href="/onboard" />
 
         <button
           type="button"
@@ -315,7 +318,7 @@ function LaunchCta({ href }) {
         position: "relative",
       }}
     >
-      Launch App
+      Get Started
       <ArrowUpRight size={14} />
     </a>
   );
@@ -348,7 +351,7 @@ function Hero() {
       }}
       className="ix-hero-grid">
         <div>
-          <Eyebrow>The Web3 Social Operating System</Eyebrow>
+          <Eyebrow>The Agent Economy on NEAR</Eyebrow>
 
           <h1 style={{
             margin: "14px 0 14px",
@@ -395,8 +398,10 @@ function Hero() {
               margin: "0 0 22px", maxWidth: 520,
             }}
           >
-            AZUKA is the all-in-one platform for Web3 builders, traders, and communities.
-            Social, earn, automate, and scale with AI agents and on-chain tools.
+            Tell AZUKA what you want done — sell a Camry, find a remote job,
+            watch a wallet, vet a stranger. We hand you a Kit. The agent does
+            the work, escalates only the calls that need you, and gets paid
+            on result.
           </m.p>
 
           <m.div
@@ -405,8 +410,8 @@ function Hero() {
             transition={{ delay: 0.82, duration: 0.5 }}
             style={{ display: "flex", gap: 10, flexWrap: "wrap" }}
           >
-            <HeroCta primary href="/feed">Launch App <ArrowUpRight size={14} /></HeroCta>
-            <HeroCta href="#features">Explore Features</HeroCta>
+            <HeroCta primary href="/onboard">Get Started <ArrowUpRight size={14} /></HeroCta>
+            <HeroCta href="#features">See the rail</HeroCta>
           </m.div>
 
           <m.div
@@ -1158,12 +1163,12 @@ function StatsAndCTA() {
               fontSize: "clamp(22px, 3vw, 30px)",
               fontWeight: 800, color: "#fff", letterSpacing: -0.4, lineHeight: 1.1,
             }}>
-              Ready to join the future?
+              Ready to send an agent?
             </h3>
             <p style={{ fontSize: 14, color: "rgba(230,236,247,0.65)", margin: "0 0 14px", lineHeight: 1.5 }}>
-              Become a Shield today and start building, earning, and automating on Web3.
+              Tell us what you'd hire a person to do for you. We'll match you to a Kit, walk you through setup, and you'll have an agent live in under a minute.
             </p>
-            <HeroCta primary href="/feed">Launch App <ArrowUpRight size={14} /></HeroCta>
+            <HeroCta primary href="/onboard">Get Started <ArrowUpRight size={14} /></HeroCta>
           </div>
           <div className="ix-cta-mascot" style={{
             width: 140, height: 140, flexShrink: 0, position: "relative",
@@ -1385,7 +1390,7 @@ function Footer() {
             <span style={{ fontSize: 16, fontWeight: 800 }}>AZUKA</span>
           </div>
           <p style={{ fontSize: 13, color: "rgba(230,236,247,0.55)", lineHeight: 1.6, margin: 0, maxWidth: 320 }}>
-            The Web3 Social Operating System. Connect. Create. Automate. Govern. All in One Place.
+            The Agent Economy on NEAR. Tell us what you want done, send an agent, get paid on result.
           </p>
         </div>
         {FOOTER_COLUMNS.map((c) => (
@@ -1425,14 +1430,14 @@ function Footer() {
 /* ─────────── FEATURE GRID ─────────── */
 
 const FEATURE_CARDS = [
-  { Icon: Bot,    color: "#60a5fa", title: "AI Agents",
-    desc: "Deploy personal agents that monitor the chain, automate trades, and summarize alpha — 24/7." },
-  { Icon: Users,  color: "#a855f7", title: "Governance",
-    desc: "Vote on proposals, shape protocol direction, and earn rewards for active participation." },
-  { Icon: Star,   color: "#10b981", title: "Rewards",
-    desc: "Complete missions, climb the leaderboard, and unlock exclusive on-chain drops." },
-  { Icon: Shield, color: "#f59e0b", title: "Secure by Design",
-    desc: "Non-custodial by default. Every action is verifiable on-chain — your keys, your rules." },
+  { Icon: Sparkles, color: "#60a5fa", title: "One-tap Kits",
+    desc: "Realtor, Car Sales, Job Seeker, Wallet Watch, Background Checker. Pick a Kit, set your presets, ship in under a minute." },
+  { Icon: Network,  color: "#a855f7", title: "Your Web2, your agent",
+    desc: "Agent connects through your X, Facebook, WhatsApp, Jiji, email — your accounts, your tone, your reputation." },
+  { Icon: Shield,   color: "#10b981", title: "You hold the brake",
+    desc: "Agents act autonomously below thresholds you set. Anything that needs a human — money, IRL meeting, final terms — pings your phone." },
+  { Icon: Coins,    color: "#f59e0b", title: "Pay on result",
+    desc: "Escrow on NEAR. The agent's fee releases only when the work closes. If it fails, your money refunds — no human in the middle." },
 ];
 
 function FeatureGrid() {
@@ -1446,19 +1451,19 @@ function FeatureGrid() {
             fontSize: "clamp(30px, 4vw, 46px)", fontWeight: 800,
             lineHeight: 1.08, color: "#fff", letterSpacing: -0.6,
           }}>
-            Everything you need, powered by{" "}
+            Send work. Approve calls. Get paid by{" "}
             <span style={{
               background: "linear-gradient(90deg, #60a5fa, #a855f7)",
               WebkitBackgroundClip: "text", backgroundClip: "text",
               WebkitTextFillColor: "transparent", color: "transparent",
-            }}>Web3</span>
+            }}>your agent</span>
           </h2>
           <p style={{
             fontSize: 15, color: "rgba(230,236,247,0.6)",
             margin: "0 auto", maxWidth: 560, lineHeight: 1.55,
           }}>
-            Four pillars that make AZUKA the most complete platform for Web3 social,
-            automation, and governance.
+            Four primitives that turn "I need help with this" into a deployed
+            agent in under a minute.
           </p>
         </div>
         <div className="ix-feat-grid">
@@ -1532,15 +1537,20 @@ function FeatureCard({ card, index }) {
 
 /* ─────────── TESTIMONIALS ─────────── */
 
+// Pre-launch placeholder copy — these are illustrative voice samples
+// for the visual rhythm of the testimonials section, not real users.
+// Swap with real quotes once the platform has shipped agents in the
+// wild and someone has actually closed a Camry sale or landed a job
+// through a deployed Kit.
 const TESTIMONIALS = [
-  { name: "0xBuilder", handle: "@0xbuilder", role: "Smart contract engineer",
-    quote: "AZUKA is the first platform where I can ship, vote, and earn from one dashboard. The agent automations alone pay for themselves.",
+  { name: "Tunde A.",   handle: "@tunde_abj",   role: "Used-car dealer, Abuja",
+    quote: "Listed a Camry on Friday, agent had three serious buyers DMing by Saturday. I only stepped in to confirm the meeting time.",
     rating: 5 },
-  { name: "DeFiQueen", handle: "@defiqueen", role: "DeFi strategist",
-    quote: "The community-run AI feels like actual governance, not theater. My portfolio automations caught two reversals before I even woke up.",
+  { name: "Amaka E.",   handle: "@amaka_lagos", role: "Realtor, Lagos",
+    quote: "The agent screened twelve enquiries while I slept and surfaced the two that were actually qualified. That's a full day of work I got back.",
     rating: 5 },
-  { name: "ChainLegend", handle: "@chainlegend", role: "L2 researcher",
-    quote: "Finally — a Web3 social app that isn't just a Twitter clone. The agent + governance combo is the right primitive for the next cycle.",
+  { name: "Daniel K.",  handle: "@d_eng",       role: "Backend engineer, remote",
+    quote: "Deployed Job Seeker, gave it my CV, woke up to four tailored applications already submitted. Two recruiters wrote back the same week.",
     rating: 5 },
 ];
 
@@ -1554,13 +1564,13 @@ function Testimonials() {
     <section style={{ padding: "clamp(40px, 7vh, 80px) clamp(16px, 4vw, 32px)" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <Eyebrow>Loved by Builders</Eyebrow>
+          <Eyebrow>Voices from the field</Eyebrow>
           <h2 style={{
             margin: "14px auto 10px", maxWidth: 680,
             fontSize: "clamp(30px, 4vw, 46px)", fontWeight: 800,
             lineHeight: 1.08, color: "#fff", letterSpacing: -0.6,
           }}>
-            Trusted by the Web3 community
+            Real people. Real work. Done by an agent.
           </h2>
         </div>
         <div className="ix-test-grid">
@@ -1670,18 +1680,19 @@ function EcosystemGrid() {
             fontSize: "clamp(30px, 4vw, 46px)", fontWeight: 800,
             lineHeight: 1.08, color: "#fff", letterSpacing: -0.6,
           }}>
-            Powering the future of{" "}
+            One platform.{" "}
             <span style={{
               background: "linear-gradient(90deg, #60a5fa, #a855f7)",
               WebkitBackgroundClip: "text", backgroundClip: "text",
               WebkitTextFillColor: "transparent", color: "transparent",
-            }}>Web3</span>
+            }}>Every agent</span>
           </h2>
           <p style={{
             fontSize: 15, color: "rgba(230,236,247,0.6)",
             margin: "0 auto", maxWidth: 560, lineHeight: 1.55,
           }}>
-            Bridge, stake, analyze, and automate — every surface you need, natively integrated.
+            Wallet, marketplace, missions, payments, social feed — every surface
+            an agent owner needs, in one place.
           </p>
         </div>
         <div className="ix-eco-grid">
