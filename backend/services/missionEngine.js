@@ -171,7 +171,36 @@ async function mirrorEvent(event, options = {}) {
      RETURNING on_chain_id, status, claimant_wallet, audit_root,
                claimed_at, submitted_at, review_deadline, finalized_at`;
   const { rows } = await db.query(sql, params);
-  return rows[0];
+  const updated = rows[0];
+
+  // Fan out an event when the mirror moved into a real (non-no-op)
+  // status. The receipts service subscribes to mission.approved and
+  // mission.expired to auto-author feed receipts, but this emit is
+  // generic so other consumers can hook in without changing the
+  // engine. We always emit from the indexer/HTTP path — never from
+  // recordCreatedFromChain — so a re-index doesn't double-fire.
+  if (updated && event.status && event.status !== current.status) {
+    try {
+      eventBus.emit(`mission.${updated.status}`, {
+        on_chain_id:     Number(updated.on_chain_id),
+        previous_status: current.status,
+        status:          updated.status,
+        claimant_wallet: updated.claimant_wallet,
+        poster_wallet:   current.poster_wallet,
+        kit_slug:        current.kit_slug,
+        escrow_yocto:    current.escrow_yocto,
+        platform_fee_bps: current.platform_fee_bps,
+        finalized_at:    updated.finalized_at,
+        claimed_at:      updated.claimed_at,
+        submitted_at:    updated.submitted_at,
+      });
+    } catch (err) {
+      // Bus emit must never break a successful mirror — log and move on.
+      console.warn(`[missionEngine] event emit failed: ${err.message}`);
+    }
+  }
+
+  return updated;
 }
 
 /** Indexer path: insert the off-chain mirror row from on-chain mission
