@@ -80,7 +80,9 @@ export default function MissionsListClient() {
   }, [wallet, headers]);
 
   return (
-    <div style={page}>
+    // data-app-shell="ready" unmounts the boot PreLoader. Without it
+    // the splash hangs at 65% on standalone pages.
+    <div data-app-shell="ready" style={page}>
       <div style={shell}>
         <header style={head}>
           <div>
