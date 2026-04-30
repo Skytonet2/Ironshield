@@ -20,9 +20,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles, Send, ArrowRight, Loader2, RotateCcw, Bot, User, Wallet } from "lucide-react";
+import { Sparkles, Send, ArrowRight, Loader2, RotateCcw, Bot, User, Wallet, SkipForward } from "lucide-react";
 import { useWallet } from "@/lib/contexts";
 import { API_BASE } from "@/lib/apiBase";
+
+// Old opener text that pre-rename sessions still carry in their
+// messages_json. Detecting it on resume lets us auto-rotate stale
+// sessions to the new step machine instead of confusing returning
+// users with the old "IronGuide" voice.
+const STALE_OPENER_PATTERN = /IronGuide/i;
 
 export default function OnboardPage() {
   const { address: wallet } = useWallet?.() || {};
@@ -67,20 +73,30 @@ export default function OnboardPage() {
         }
         if (cancelled) return;
         if (openSession?.id) {
-          setSessionId(openSession.id);
-          setMessages(Array.isArray(openSession.messages_json) ? openSession.messages_json : []);
-          setStatus(openSession.status === "active" ? "active" : "recommended");
-          if (openSession.recommended_kit_id) {
-            setRec({
-              kit_slug: openSession.recommended_kit_id,
-              presets:  openSession.recommended_presets_json || {},
-            });
+          // Detect stale sessions whose opener still says "IronGuide"
+          // (cached from before the AZUKA Guide rename + step machine
+          // landed). Resuming them shows the old text and the user
+          // can't proceed because the question shape doesn't match
+          // the new chip-button UI. Auto-rotate by ignoring the
+          // resume and starting fresh — same effect as them tapping
+          // Restart, just done for them.
+          const transcript = Array.isArray(openSession.messages_json) ? openSession.messages_json : [];
+          const opener = transcript.find((m) => m.role === "assistant");
+          const isStale = opener && STALE_OPENER_PATTERN.test(opener.content || "");
+          if (!isStale) {
+            setSessionId(openSession.id);
+            setMessages(transcript);
+            setStatus(openSession.status === "active" ? "active" : "recommended");
+            if (openSession.recommended_kit_id) {
+              setRec({
+                kit_slug: openSession.recommended_kit_id,
+                presets:  openSession.recommended_presets_json || {},
+              });
+            }
+            setQuestion(null);
+            return;
           }
-          // No question object on the open response — we only have the
-          // text in messages_json. Re-fetching the question is a future
-          // improvement; for now, still allow free-text input.
-          setQuestion(null);
-          return;
+          // Stale session — fall through to "Start fresh" below.
         }
         // Start fresh
         const startRes = await fetch(`${API_BASE}/api/ironguide/start`, {
@@ -294,6 +310,14 @@ export default function OnboardPage() {
     );
   }
 
+  // First-paint loading state. The boot effect can take a few seconds
+  // (Render cold start + /api/ironguide/open + /start round-trip), and
+  // before this fix the page rendered as a brand header on top of an
+  // empty scroller. Showing a placeholder bubble during boot gives the
+  // perceived load some shape and stops the "is this broken?" feeling
+  // on slow connections / mobile.
+  const isBooting = status === "idle" && messages.length === 0 && !error;
+
   return (
     <div style={pageStyle}>
       <div style={shellStyle}>
@@ -305,19 +329,64 @@ export default function OnboardPage() {
               <div style={{ fontSize: 11, color: "var(--text-2)" }}>Free concierge — finds the right agent in under a minute</div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={restart}
-            disabled={status === "idle"}
-            style={ghostButtonStyle}
-            title="Start over"
-          >
-            <RotateCcw size={13} />
-            <span>Restart</span>
-          </button>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            {/* Skip — let the user bail to the dashboard at any point.
+                Some visitors land on /onboard, decide they'd rather
+                browse Kits manually, and don't want to be locked
+                inside the chat to do that. */}
+            <Link
+              href="/agents/me"
+              style={{ ...ghostButtonStyle, textDecoration: "none", display: "inline-flex" }}
+              title="Skip the guide and go to your dashboard"
+            >
+              <SkipForward size={13} />
+              <span>Skip</span>
+            </Link>
+            <button
+              type="button"
+              onClick={restart}
+              disabled={status === "idle"}
+              style={ghostButtonStyle}
+              title="Start over"
+            >
+              <RotateCcw size={13} />
+              <span>Restart</span>
+            </button>
+          </div>
         </header>
 
         <div ref={scrollerRef} style={scrollerStyle}>
+          {isBooting && (
+            <div style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+            }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: 9,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "rgba(168, 85, 247, 0.12)", color: "#a855f7",
+                border: "1px solid rgba(168, 85, 247, 0.3)",
+                flexShrink: 0,
+              }}>
+                <Bot size={14} />
+              </div>
+              <div style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                fontSize: 13,
+                color: "var(--text-2)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+              }}>
+                <Loader2 size={13} style={{ animation: "ig-spin 0.9s linear infinite" }} />
+                <span>Setting up your guide… (~3-5s on first load)</span>
+              </div>
+            </div>
+          )}
           {messages.map((m, i) => (
             <Bubble key={i} role={m.role} content={m.content} />
           ))}
