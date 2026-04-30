@@ -145,19 +145,62 @@ export default function OnboardingModal({ initial, onComplete, onClose }) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"
+      onClick={(e) => {
+        // Backdrop click dismisses (only on the wrapper, not the modal
+        // itself). Mobile users with no visible footer button still get
+        // an obvious escape hatch.
+        if (onClose && e.target === e.currentTarget) onClose();
+      }}
       style={{
         position: "fixed", inset: 0, zIndex: 220,
         background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        padding: 16,
+        // dvh respects mobile browser chrome (URL bar collapse on scroll).
+        padding: 16, overflowY: "auto",
       }}
     >
-      <div style={{
-        width: "100%", maxWidth: 480,
-        background: "var(--bg-card)", border: `1px solid ${t.border}`,
-        borderRadius: 16, overflow: "hidden",
-        boxShadow: "0 30px 80px rgba(0,0,0,0.5)",
-      }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative",
+          width: "100%", maxWidth: 480,
+          // Cap the modal at the viewport so the footer is reachable on
+          // small screens, and let the body scroll inside. Without this
+          // the "Later" button + Continue button were below the fold on
+          // phones with the field set + banner stacked above them.
+          maxHeight: "calc(100dvh - 32px)",
+          background: "var(--bg-card)", border: `1px solid ${t.border}`,
+          borderRadius: 16, overflow: "hidden",
+          display: "flex", flexDirection: "column",
+          boxShadow: "0 30px 80px rgba(0,0,0,0.5)",
+        }}>
+        {/* Always-visible top-right close button. Was missing — modal
+            was effectively un-dismissable on mobile when "Later" sat
+            below the fold. Sits over the banner so it's discoverable
+            without scrolling. */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close onboarding (you can complete later)"
+            style={{
+              position: "absolute",
+              top: 10, right: 10,
+              zIndex: 2,
+              width: 32, height: 32,
+              borderRadius: 8,
+              background: "rgba(0,0,0,0.55)",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <XIcon size={16} />
+          </button>
+        )}
         {/* Banner preview band — doubles as the banner-set hint */}
         <div style={{
           height: 96, position: "relative",
@@ -217,7 +260,13 @@ export default function OnboardingModal({ initial, onComplete, onClose }) {
           </div>
         </div>
 
-        <div style={{ padding: "40px 18px 18px" }}>
+        <div style={{
+          padding: "40px 18px 18px",
+          // Let the body grow + scroll inside the capped modal so the
+          // footer stays reachable on phones. minHeight:0 is the
+          // standard flex-scroll incantation.
+          flex: 1, overflowY: "auto", minHeight: 0,
+        }}>
           <h2 id="onboarding-title" style={{
             margin: 0, fontSize: 18, fontWeight: 800, color: t.text, letterSpacing: -0.2,
           }}>

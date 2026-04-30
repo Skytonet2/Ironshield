@@ -1,10 +1,12 @@
 "use client";
 // /onboard — AZUKA Guide concierge web chat.
 //
-// Free, anonymous-friendly entry point. Visitor doesn't need a wallet
-// to chat — but to deploy the recommended Kit they'll need to connect
-// one (the wallet header attaches the session to the wallet so /onboard
-// resumes on revisit).
+// Wallet-gated entry. Visitors must connect a wallet first — the
+// session is bound to the wallet so progress persists on revisit AND
+// so a recommended Kit is one-tap deployable instead of bouncing the
+// user back here later. Anonymous-chat mode used to be allowed but
+// led to dead-ends (chat → "deploy this Kit" → "connect wallet first"
+// halfway through the flow). Better to gate up front.
 //
 // Conversation is a deterministic step machine on the backend. Each
 // turn returns a structured `question` object with optional clickable
@@ -18,7 +20,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles, Send, ArrowRight, Loader2, RotateCcw, Bot, User } from "lucide-react";
+import { Sparkles, Send, ArrowRight, Loader2, RotateCcw, Bot, User, Wallet } from "lucide-react";
 import { useWallet } from "@/lib/contexts";
 import { API_BASE } from "@/lib/apiBase";
 
@@ -39,18 +41,29 @@ export default function OnboardPage() {
     return h;
   }, [wallet]);
 
-  // Resume an open session if there is one for this wallet, else start fresh.
+  // Resume an open session if there is one for this wallet, else start
+  // fresh. Wallet-gated: with no wallet we leave status="idle" and
+  // render the connect-first panel. Without this gate the chat would
+  // start anonymously and dead-end at "deploy this Kit → connect first."
   useEffect(() => {
     let cancelled = false;
+    if (!wallet) {
+      // Wait for the wallet to land before doing anything. The render
+      // branch below shows the connect-first state until then.
+      setStatus("idle");
+      setSessionId(null);
+      setMessages([]);
+      setQuestion(null);
+      setRec(null);
+      return;
+    }
     async function boot() {
       try {
+        const openRes = await fetch(`${API_BASE}/api/ironguide/open?channel=web`, { headers });
         let openSession = null;
-        if (wallet) {
-          const r = await fetch(`${API_BASE}/api/ironguide/open?channel=web`, { headers });
-          if (r.ok) {
-            const j = await r.json();
-            openSession = j.session;
-          }
+        if (openRes.ok) {
+          const j = await openRes.json();
+          openSession = j.session;
         }
         if (cancelled) return;
         if (openSession?.id) {
@@ -70,17 +83,17 @@ export default function OnboardPage() {
           return;
         }
         // Start fresh
-        const r = await fetch(`${API_BASE}/api/ironguide/start`, {
+        const startRes = await fetch(`${API_BASE}/api/ironguide/start`, {
           method: "POST",
           headers,
           body: JSON.stringify({ channel: "web" }),
         });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error || "Could not start AZUKA Guide");
+        const startJson = await startRes.json();
+        if (!startRes.ok) throw new Error(startJson.error || "Could not start AZUKA Guide");
         if (cancelled) return;
-        setSessionId(j.session.id);
-        setMessages(Array.isArray(j.session.messages_json) ? j.session.messages_json : []);
-        setQuestion(j.question || null);
+        setSessionId(startJson.session.id);
+        setMessages(Array.isArray(startJson.session.messages_json) ? startJson.session.messages_json : []);
+        setQuestion(startJson.question || null);
         setStatus("active");
       } catch (e) {
         if (!cancelled) setError(e.message);
@@ -208,6 +221,78 @@ export default function OnboardPage() {
   const deployHref = recommendation?.kit_slug
     ? `/agents/deploy/${encodeURIComponent(recommendation.kit_slug)}?ironguide=${sessionId}`
     : null;
+
+  // Connect-first gate. Show this BEFORE we boot a Guide session so a
+  // visitor with no wallet sees a clear "connect to start" panel
+  // instead of getting halfway through the interview and dead-ending
+  // at the deploy step. The wallet header in AppShell's UserMenu is
+  // the canonical connect surface — we just point them at it.
+  if (!wallet) {
+    return (
+      <div style={pageStyle}>
+        <div style={shellStyle}>
+          <header style={headerStyle}>
+            <div style={brandStyle}>
+              <span style={brandIconStyle}><Sparkles size={14} /></span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-1)" }}>AZUKA Guide</div>
+                <div style={{ fontSize: 11, color: "var(--text-2)" }}>Free concierge — finds the right agent in under a minute</div>
+              </div>
+            </div>
+          </header>
+          <div style={{
+            padding: "44px 24px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 14,
+            textAlign: "center",
+          }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: 16,
+              background: "linear-gradient(135deg, rgba(168, 85, 247, 0.18), rgba(96, 165, 250, 0.14))",
+              border: "1px solid var(--accent-border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--accent)",
+            }}>
+              <Wallet size={22} />
+            </div>
+            <h2 style={{
+              margin: "4px 0 0", fontSize: 20, fontWeight: 800,
+              color: "var(--text-1)", letterSpacing: -0.3,
+            }}>
+              Connect a wallet to begin
+            </h2>
+            <p style={{
+              margin: 0, maxWidth: 460, fontSize: 13.5, lineHeight: 1.6,
+              color: "var(--text-2)",
+            }}>
+              The AZUKA Guide remembers your answers and lines up a Kit
+              you can deploy in one tap at the end. To save your
+              progress and pre-bind the deployment, the chat starts
+              once a wallet is linked. Tap the wallet menu in the top
+              bar to connect — Privy email, Google, or any of the NEAR
+              wallets work.
+            </p>
+            <Link href="/agents/me" style={{
+              ...ghostButtonStyle,
+              textDecoration: "none",
+              display: "inline-flex",
+              marginTop: 6,
+            }}>
+              <ArrowRight size={13} />
+              <span>Manage my agents</span>
+            </Link>
+          </div>
+          <footer style={footerStyle}>
+            <span>
+              No wallet yet? <Link href="/skills" style={linkStyle}>Browse Kits manually →</Link> while you set one up.
+            </span>
+          </footer>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={pageStyle}>
