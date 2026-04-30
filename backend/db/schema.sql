@@ -1620,3 +1620,166 @@ CREATE INDEX IF NOT EXISTS idx_skill_reviews_skill_id
   ON skill_reviews (skill_id);
 CREATE INDEX IF NOT EXISTS idx_skill_reviews_reviewer
   ON skill_reviews (reviewer_wallet, created_at DESC);
+
+-- ╔═════════════════════════════════════════════════════════════════════╗
+-- ║  Agent-economy feed — receipts, missions, bounties                   ║
+-- ║                                                                      ║
+-- ║  Turns the social feed into a daily-return surface where every post  ║
+-- ║  is actionable by an agent. Three post types live alongside chat:    ║
+-- ║    chat     — existing free-form social posts (default)              ║
+-- ║    mission  — free-form intent ("selling Camry, ₦5M, Minna"); the    ║
+-- ║               classifier extracts vertical/budget/geo, the matcher   ║
+-- ║               surfaces ranked agents, agents bid (stake-gated), the  ║
+-- ║               poster picks one → a real mission launches via the     ║
+-- ║               Tier 4 Kit runtime                                     ║
+-- ║    bounty   — escrowed challenge; multiple agents compete; public    ║
+-- ║               attempt feed + leaderboard                             ║
+-- ║                                                                      ║
+-- ║  Receipts are not a post type — they are auto-authored chat posts    ║
+-- ║  by the orchestrator on mission terminal transitions, carrying       ║
+-- ║  structured fields in intent_json so FeedPostCard can render the     ║
+-- ║  "Use this Kit" + "Hire this agent" CTAs.                            ║
+-- ╚═════════════════════════════════════════════════════════════════════╝
+
+-- Extend feed_posts with the four economic columns. type=chat is the
+-- default so every existing row keeps working unchanged. status only
+-- has meaning for type IN ('mission','bounty'); chat posts ignore it.
+ALTER TABLE feed_posts
+  ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'chat'
+    CHECK (type IN ('chat','mission','bounty','receipt'));
+ALTER TABLE feed_posts
+  ADD COLUMN IF NOT EXISTS intent_json   JSONB;
+ALTER TABLE feed_posts
+  ADD COLUMN IF NOT EXISTS escrow_tx     TEXT;
+ALTER TABLE feed_posts
+  ADD COLUMN IF NOT EXISTS escrow_yocto  NUMERIC(40,0);
+ALTER TABLE feed_posts
+  ADD COLUMN IF NOT EXISTS status        TEXT NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open','hired','fulfilled','expired','cancelled'));
+
+-- Pinning lets the orchestrator surface fresh receipts at the top of
+-- For You for a short window. Boolean instead of timestamp to keep
+-- indexing cheap; the unpin sweep clears it.
+ALTER TABLE feed_posts
+  ADD COLUMN IF NOT EXISTS pinned        BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Composite index for the mission/bounty list queries: WHERE
+-- type IN ('mission','bounty') AND status='open' ORDER BY created_at.
+CREATE INDEX IF NOT EXISTS idx_feed_posts_type_status
+  ON feed_posts (type, status, created_at DESC)
+  WHERE type IN ('mission','bounty');
+CREATE INDEX IF NOT EXISTS idx_feed_posts_pinned
+  ON feed_posts (created_at DESC)
+  WHERE pinned = TRUE AND deleted_at IS NULL;
+
+-- ── Post classifications ──────────────────────────────────────────────
+-- One row per classified post. Cached so we don't re-call IronClaw on
+-- every list render. classifier_version lets us invalidate cheaply if
+-- the prompt changes — readers can choose to ignore old versions or
+-- re-run.
+CREATE TABLE IF NOT EXISTS post_classifications (
+  post_id            INTEGER     PRIMARY KEY REFERENCES feed_posts(id) ON DELETE CASCADE,
+  vertical           TEXT,
+  intent             TEXT,
+  budget_min         NUMERIC(20,2),
+  budget_max         NUMERIC(20,2),
+  budget_currency    TEXT,
+  geo                TEXT,
+  urgency            TEXT,
+  language           TEXT,
+  confidence         REAL        NOT NULL DEFAULT 0,
+  classifier_version TEXT        NOT NULL,
+  raw_json           JSONB,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_post_classifications_vertical
+  ON post_classifications (vertical, geo)
+  WHERE vertical IS NOT NULL;
+
+-- ── Post agent bids ───────────────────────────────────────────────────
+-- A pitch from an agent on a mission post. stake_yocto is the locked
+-- bond (refunded on accept, slashed on a verified report). UNIQUE on
+-- (post_id, agent_owner_wallet) enforces one-bid-per-agent without
+-- needing a separate guard in the bid engine.
+CREATE TABLE IF NOT EXISTS post_agent_bids (
+  id                 BIGSERIAL   PRIMARY KEY,
+  post_id            INTEGER     NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+  agent_owner_wallet TEXT        NOT NULL,
+  pitch              TEXT        NOT NULL,
+  stake_tx           TEXT,
+  stake_yocto        NUMERIC(40,0) NOT NULL DEFAULT 0,
+  status             TEXT        NOT NULL DEFAULT 'pending'
+                                  CHECK (status IN ('pending','accepted','rejected','withdrawn','slashed','refunded')),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  decided_at         TIMESTAMPTZ,
+  UNIQUE (post_id, agent_owner_wallet)
+);
+CREATE INDEX IF NOT EXISTS idx_post_agent_bids_post
+  ON post_agent_bids (post_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_agent_bids_agent
+  ON post_agent_bids (agent_owner_wallet, status, created_at DESC);
+
+-- ── Post hires ────────────────────────────────────────────────────────
+-- Once a poster picks a bid, a row lands here and a real mission
+-- launches via the Tier 4 Kit runtime. mission_on_chain_id is nullable
+-- because the hire decision is recorded synchronously while the actual
+-- chain call may complete a few seconds later.
+CREATE TABLE IF NOT EXISTS post_hires (
+  post_id              INTEGER     PRIMARY KEY REFERENCES feed_posts(id) ON DELETE CASCADE,
+  agent_owner_wallet   TEXT        NOT NULL,
+  bid_id               BIGINT      REFERENCES post_agent_bids(id) ON DELETE SET NULL,
+  mission_on_chain_id  BIGINT      REFERENCES missions(on_chain_id) ON DELETE SET NULL,
+  hired_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_post_hires_agent
+  ON post_hires (agent_owner_wallet, hired_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_hires_mission
+  ON post_hires (mission_on_chain_id)
+  WHERE mission_on_chain_id IS NOT NULL;
+
+-- ── Per-vertical mute controls ────────────────────────────────────────
+-- Lets a poster suppress a whole vertical of unsolicited bids/DMs.
+-- Distinct from feed_muted_accounts which mutes a specific user.
+CREATE TABLE IF NOT EXISTS post_vertical_mutes (
+  user_id    INTEGER     NOT NULL REFERENCES feed_users(id) ON DELETE CASCADE,
+  vertical   TEXT        NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, vertical)
+);
+
+-- ── Bounty attempts ───────────────────────────────────────────────────
+-- One row per agent submission against a bounty post. The poster (or
+-- a judge skill) marks is_winner on the final pick. score is the
+-- ranking signal for the leaderboard — judges or a kit can fill it.
+CREATE TABLE IF NOT EXISTS bounty_attempts (
+  id                  BIGSERIAL   PRIMARY KEY,
+  post_id             INTEGER     NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+  agent_owner_wallet  TEXT        NOT NULL,
+  result_json         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+  score               INTEGER,
+  is_winner           BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bounty_attempts_post
+  ON bounty_attempts (post_id, score DESC NULLS LAST, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bounty_attempts_winner
+  ON bounty_attempts (post_id) WHERE is_winner = TRUE;
+
+-- ── Post reports → governance slash flow ──────────────────────────────
+-- A reporter flags a bid (typically for spam or off-topic pitches).
+-- The governance vote engine reads pending rows and either dismisses
+-- them or upholds them — upheld reports flip the bid to 'slashed' and
+-- forfeit the stake to the platform fee account.
+CREATE TABLE IF NOT EXISTS post_reports (
+  id           BIGSERIAL   PRIMARY KEY,
+  post_id      INTEGER     REFERENCES feed_posts(id) ON DELETE CASCADE,
+  bid_id       BIGINT      REFERENCES post_agent_bids(id) ON DELETE CASCADE,
+  reporter_id  INTEGER     NOT NULL REFERENCES feed_users(id) ON DELETE CASCADE,
+  reason       TEXT        NOT NULL,
+  status       TEXT        NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending','upheld','dismissed')),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_post_reports_pending
+  ON post_reports (status, created_at DESC) WHERE status = 'pending';
