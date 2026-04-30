@@ -130,7 +130,9 @@ app.use("/api/ironguide",      require("./routes/ironguide.route"));
 app.use("/api/kit-deployments", require("./routes/kitDeployments.route"));
 app.use("/api/auth-profiles",  require("./routes/authProfiles.route"));
 
-// PingPay hosted-checkout fiat on-ramp for mission escrow
+// PingPay payment surface — hosted-checkout on-ramp (chip 1) + agent
+// balance read (chip 2 thin slice). Cash-out endpoints land in a
+// follow-up PR.
 app.use("/api/payments",       require("./routes/payments.route"));
 
 // Root
