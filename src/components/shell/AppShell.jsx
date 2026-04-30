@@ -35,6 +35,7 @@ import {
   Eye, Trophy, Briefcase, Bot, Settings, DollarSign,
   Shield, Rss, Activity, Coins, Vote, Rocket, Mic, Network, BookOpen,
   Home, Menu, X as XIcon, User, MessageCircle, Users, Sparkles,
+  Target, Package, Plug,
 } from "lucide-react";
 import { useTheme, useWallet as useCtxWallet } from "@/lib/contexts";
 import { useSettings } from "@/lib/stores/settingsStore";
@@ -79,6 +80,10 @@ const SIDEBAR_GROUPS = [
   {
     label: "Platform",
     items: [
+      // Onboard sits at the top — it's the new-user entry to the AZUKA
+      // Guide concierge. Visible regardless of whether the user has a
+      // wallet linked yet, because that's exactly when they need it.
+      { key: "onboard",     label: "Get Started",      Icon: Sparkles,       href: "/onboard"     },
       { key: "ironfeed",    label: "IronFeed",         Icon: Rss,            href: "/feed"        },
       { key: "messages",    label: "Messages",         Icon: MessageCircle,  href: "/messages"    },
       { key: "newscoin",    label: "NewsCoin",         Icon: Coins,          href: "/newscoin"    },
@@ -98,11 +103,17 @@ const SIDEBAR_GROUPS = [
       { key: "treasury",    label: "Treasury",         Icon: Briefcase,  href: "/treasury"    },
       { key: "earn",        label: "Earn",             Icon: Trophy,     href: "/earn"        },
       { key: "agent",       label: "Agent",            Icon: Bot,        href: "/agent"       },
-      // Phase 5/6 agent platform routes. Kept below the legacy "Agent"
+      // Phase 5/6/10 agent platform routes. Kept below the legacy "Agent"
       // link so the IronClaw autonomous agent stays the top-level entry;
-      // the user-owned profiles and marketplace sit underneath.
+      // the user-owned profiles, missions, marketplace, and Web2
+      // connections sit underneath in roughly the order a user touches
+      // them: my agent → its missions → my connectors → directory →
+      // Kit + skill catalogues → ecosystem.
       { key: "my-agent",    label: "My Agent",         Icon: User,       href: "/agents/me"   },
+      { key: "missions",    label: "Missions",         Icon: Target,     href: "/missions"    },
+      { key: "connectors",  label: "Connectors",       Icon: Plug,       href: "/connectors"  },
       { key: "agents",      label: "Agents",           Icon: Users,      href: "/agents"      },
+      { key: "kits",        label: "Kits",             Icon: Package,    href: "/marketplace/kits" },
       { key: "skills",      label: "Skills",           Icon: Sparkles,   href: "/skills"      },
       { key: "ecosystem",   label: "Ecosystem",        Icon: Network,    href: "/ecosystem"   },
       { key: "docs",        label: "Docs",             Icon: BookOpen,   href: "/docs"        },
