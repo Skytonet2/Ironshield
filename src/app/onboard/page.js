@@ -66,7 +66,7 @@ export default function OnboardPage() {
           body: JSON.stringify({ channel: "web" }),
         });
         const j = await r.json();
-        if (!r.ok) throw new Error(j.error || "Could not start IronGuide");
+        if (!r.ok) throw new Error(j.error || "Could not start AZUKA Guide");
         if (cancelled) return;
         setSessionId(j.session.id);
         setMessages(Array.isArray(j.session.messages_json) ? j.session.messages_json : []);
@@ -192,7 +192,7 @@ export default function OnboardPage() {
           <div style={brandStyle}>
             <span style={brandIconStyle}><Sparkles size={14} /></span>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-1)" }}>IronGuide</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-1)" }}>AZUKA Guide</div>
               <div style={{ fontSize: 11, color: "var(--text-2)" }}>Free concierge — finds the right agent in under a minute</div>
             </div>
           </div>
