@@ -1813,3 +1813,88 @@ CREATE INDEX IF NOT EXISTS idx_post_dms_post
   ON post_dms (post_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_dms_agent_recent
   ON post_dms (agent_owner_wallet, created_at DESC);
+
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║ PingPay hosted-checkout integration                                  ║
+-- ╠══════════════════════════════════════════════════════════════════════╣
+-- ║ Mission-funding fiat on-ramp. Buyer hits the deploy wizard, picks    ║
+-- ║ "Pay with PingPay", pays card / bank / USDC on the hosted page,      ║
+-- ║ PingPay routes funds via NEAR Intents into the buyer's NEAR wallet.  ║
+-- ║ The buyer then signs create_mission with the now-funded NEAR — i.e.  ║
+-- ║ settlement shape (a) per the design doc: cleanest custody, two-step  ║
+-- ║ UX. The contract is unchanged.                                       ║
+-- ║                                                                      ║
+-- ║ Why a separate pending_missions table instead of extending missions:  ║
+-- ║ missions.on_chain_id is NOT NULL PK and is also the FK target for     ║
+-- ║ mission_audit_log + mission_escalations. Adding a "pending_payment"   ║
+-- ║ row with NULL on_chain_id would require dropping/reshaping that PK    ║
+-- ║ — way out of scope for an additive payment integration. We hold       ║
+-- ║ the pre-chain intent here; once the buyer signs create_mission the    ║
+-- ║ existing missionEngine.recordCreated path inserts the missions row    ║
+-- ║ exactly as it does for every other poster, and we link forward via    ║
+-- ║ resolved_on_chain_id.                                                 ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
+
+CREATE TABLE IF NOT EXISTS pending_missions (
+  id                    BIGSERIAL    PRIMARY KEY,
+  poster_wallet         TEXT         NOT NULL,
+  template_slug         TEXT,
+  kit_slug              TEXT,
+  inputs_json           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  inputs_hash           TEXT         NOT NULL,
+  escrow_amount_usd     NUMERIC(12,2) NOT NULL,
+  -- Yocto value is set at the moment the buyer signs create_mission
+  -- (we don't lock a USD↔NEAR rate before the user actually has the
+  -- funds in-wallet). NULL until then.
+  escrow_yocto          NUMERIC(40,0),
+  -- pingpay_session_id mirrors pingpay_payments.session_id for the
+  -- one-to-one happy path. Kept here for cheap status reads from the
+  -- frontend without joining.
+  pingpay_session_id    TEXT,
+  pingpay_status        TEXT,
+  status                TEXT         NOT NULL DEFAULT 'pending_payment'
+                                     CHECK (status IN (
+                                       'pending_payment',  -- session created, awaiting buyer payment
+                                       'funded',           -- PingPay completed; NEAR landed in buyer wallet
+                                       'signed',           -- buyer signed create_mission; resolved_on_chain_id set
+                                       'cancelled',        -- buyer hit cancelUrl
+                                       'expired',          -- never paid; janitor (future) reaps
+                                       'failed'            -- PingPay reported a hard failure
+                                     )),
+  resolved_on_chain_id  BIGINT,        -- set after recordCreated lands; not FK because missions PK is BIGINT not BIGSERIAL
+  created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  funded_at             TIMESTAMPTZ,
+  signed_at             TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_pending_missions_poster
+  ON pending_missions (poster_wallet, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pending_missions_session
+  ON pending_missions (pingpay_session_id)
+  WHERE pingpay_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pending_missions_status
+  ON pending_missions (status, created_at DESC);
+
+-- Audit trail of every PingPay session we create, plus every webhook
+-- event we accept (one row per inbound `checkout.session.completed`).
+-- raw_event_json is what PingPay sent us, post-signature-verification —
+-- it's the answer to "what did the upstream say happened" if a buyer
+-- disputes a charge. Never log the raw body or signature anywhere
+-- *else*; this table is the one durable record.
+CREATE TABLE IF NOT EXISTS pingpay_payments (
+  id                  BIGSERIAL    PRIMARY KEY,
+  session_id          TEXT         NOT NULL,
+  pending_mission_id  BIGINT       REFERENCES pending_missions(id) ON DELETE SET NULL,
+  amount_usd          NUMERIC(12,2),
+  amount_yocto        NUMERIC(40,0),
+  status              TEXT         NOT NULL,   -- mirrors PingPay session.status: PENDING|COMPLETED|FAILED|CANCELLED
+  raw_event_json      JSONB,                   -- last webhook payload for this session
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  completed_at        TIMESTAMPTZ,
+  UNIQUE (session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pingpay_payments_pending
+  ON pingpay_payments (pending_mission_id)
+  WHERE pending_mission_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pingpay_payments_status
+  ON pingpay_payments (status, created_at DESC);

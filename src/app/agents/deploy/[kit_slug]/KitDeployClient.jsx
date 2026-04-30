@@ -22,11 +22,24 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, ArrowRight, Check, Loader2, ShieldCheck, Plug,
-  Sparkles, AlertTriangle, Wallet, Send,
+  Sparkles, AlertTriangle, Wallet, Send, CreditCard,
 } from "lucide-react";
 import { useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
 import { API_BASE } from "@/lib/apiBase";
+import { apiFetch } from "@/lib/apiFetch";
+
+// Best-effort detect of Nigerian buyers so we can surface the
+// fiat-on-ramp gap (PingPay supports crypto-only on the Nigerian
+// on-ramp; naira card/bank funding lands via a separate PSP). We use
+// the browser timezone — no IP geolocation, no sketchy fingerprinting.
+function isLikelyNigerian() {
+  if (typeof Intl === "undefined") return false;
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    return tz === "Africa/Lagos";
+  } catch { return false; }
+}
 
 const STEPS = [
   { key: "details",     label: "Details" },
@@ -235,6 +248,7 @@ export default function DeployKitPage() {
         {step === 3 && (
           <ReviewStep
             kit={kit}
+            slug={slug}
             presets={presets}
             authProfileId={authProfileId}
             authProfiles={authProfiles}
@@ -605,7 +619,7 @@ function ConnectionsStep({ kit }) {
   );
 }
 
-function ReviewStep({ kit, presets, authProfileId, authProfiles, agentHandle, setAgentHandle, connected, wallet, hasAgent, error, submitting, deploymentId, showModal }) {
+function ReviewStep({ kit, slug, presets, authProfileId, authProfiles, agentHandle, setAgentHandle, connected, wallet, hasAgent, error, submitting, deploymentId, showModal }) {
   const profileLabel = authProfileId === null
     ? "System default"
     : `Profile #${authProfileId}`;
@@ -677,6 +691,140 @@ function ReviewStep({ kit, presets, authProfileId, authProfiles, agentHandle, se
           <Check size={13} /> Deployed (id #{deploymentId}). Redirecting to your agents…
         </div>
       )}
+
+      <FundFirstMission
+        slug={slug}
+        kit={kit}
+        presets={presets}
+        connected={connected}
+        showModal={showModal}
+      />
+    </div>
+  );
+}
+
+// ── Optional: fund a first mission via PingPay ──
+// Sits below the deploy CTA on the review step. Two payment options:
+// PingPay (default — fiat / card / USDC) and NEAR wallet (advanced —
+// for crypto-native buyers who already hold NEAR). The NEAR-wallet
+// option points the buyer at the missions surface that owns the
+// direct-to-contract create_mission flow, rather than re-implementing
+// it inline (the wizard's contract today is "deploy a kit", not
+// "post a mission" — keeping mission creation on /missions/create
+// avoids tangling the two flows).
+function FundFirstMission({ slug, kit, presets, connected, showModal }) {
+  const [escrow, setEscrow]       = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr]             = useState(null);
+  const showNigeriaNote           = isLikelyNigerian();
+
+  const handlePingPay = useCallback(async () => {
+    setErr(null);
+    if (!connected) { showModal?.(); return; }
+    const usd = Number(escrow);
+    if (!Number.isFinite(usd) || usd <= 0) {
+      setErr("Enter the amount you want to fund the mission with.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const r = await apiFetch(`/api/payments/pingpay/checkout`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mission_template_slug: kit?.default_mission_template || null,
+          kit_slug: slug,
+          inputs_json: presets || {},
+          escrow_amount_usd: usd,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Could not start checkout");
+      if (!j.sessionUrl) throw new Error("No sessionUrl returned");
+      // Drop a cookie-free hint so the success page knows which session
+      // to poll without leaking the id through the URL only.
+      try {
+        sessionStorage.setItem(
+          `pingpay:last_session`,
+          JSON.stringify({ sessionId: j.sessionId, pendingMissionId: j.pending_mission_id, kitSlug: slug }),
+        );
+      } catch { /* private mode → ignored */ }
+      window.location.assign(j.sessionUrl);
+    } catch (e) {
+      setErr(e?.message || "PingPay checkout failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [connected, showModal, escrow, kit, slug, presets]);
+
+  return (
+    <div style={{ ...cardStyle, marginTop: 18 }}>
+      <h2 style={cardTitleStyle}>
+        <CreditCard size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />
+        Fund a first mission (optional)
+      </h2>
+      <p style={muted}>
+        Set how much you want to escrow. Your agent picks up the work
+        as soon as the mission goes live on-chain.
+      </p>
+
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-1)" }}>Escrow amount (USD)</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          min="1"
+          step="1"
+          value={escrow}
+          onChange={(e) => setEscrow(e.target.value)}
+          placeholder="e.g. 25"
+          style={{
+            width: "100%",
+            background: "var(--bg-input)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: "8px 10px",
+            color: "var(--text-1)",
+            fontSize: 13,
+            outline: "none",
+          }}
+        />
+        <span style={{ fontSize: 11, color: "var(--text-2)" }}>
+          Fees: 0.75% PingPay + 0.0001% NEAR Intents. The 5% platform fee is taken from the payout when the mission is approved.
+        </span>
+      </label>
+
+      {showNigeriaNote && (
+        <div style={{ ...hintStyle, marginTop: 12, background: "rgba(245, 158, 11, 0.08)", borderColor: "rgba(245, 158, 11, 0.3)" }}>
+          <AlertTriangle size={13} />
+          <span style={{ fontSize: 11.5 }}>
+            Nigeria: PingPay only supports crypto funding here today. Naira card and bank
+            funding via a separate PSP is on the roadmap.
+          </span>
+        </div>
+      )}
+
+      {err && <div style={{ ...errorStyle, marginTop: 12 }}>{err}</div>}
+
+      <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={handlePingPay}
+          disabled={submitting}
+          style={{ ...primaryBtn, opacity: submitting ? 0.6 : 1 }}
+        >
+          {submitting
+            ? <><Loader2 size={13} style={{ animation: "kw-spin 0.9s linear infinite" }} /> Starting checkout…</>
+            : <><CreditCard size={13} /> Pay with PingPay</>}
+        </button>
+        <Link
+          href={`/missions/create?kit=${encodeURIComponent(slug)}`}
+          style={{ ...ghostBtn, textDecoration: "none" }}
+          title="Sign create_mission directly with your NEAR wallet"
+        >
+          <Wallet size={13} /> Pay with NEAR wallet (advanced)
+        </Link>
+      </div>
     </div>
   );
 }
