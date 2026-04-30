@@ -130,6 +130,9 @@ app.use("/api/ironguide",      require("./routes/ironguide.route"));
 app.use("/api/kit-deployments", require("./routes/kitDeployments.route"));
 app.use("/api/auth-profiles",  require("./routes/authProfiles.route"));
 
+// PingPay hosted-checkout fiat on-ramp for mission escrow
+app.use("/api/payments",       require("./routes/payments.route"));
+
 // Root
 app.get("/", (req, res) => {
   res.json({ service: "IronClaw API", version: "1.0.0", docs: "/health" });
