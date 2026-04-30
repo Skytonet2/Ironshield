@@ -1,10 +1,15 @@
 "use client";
-// /onboard — IronGuide concierge web chat.
+// /onboard — AZUKA Guide concierge web chat.
 //
 // Free, anonymous-friendly entry point. Visitor doesn't need a wallet
 // to chat — but to deploy the recommended Kit they'll need to connect
 // one (the wallet header attaches the session to the wallet so /onboard
 // resumes on revisit).
+//
+// Conversation is a deterministic step machine on the backend. Each
+// turn returns a structured `question` object with optional clickable
+// chips. Free-text input is still accepted on every step that has
+// `allow_other: true` (almost all of them).
 //
 // Brand: matches AZUKA dark aesthetic via tokens.css CSS vars.
 // No external chat-UI dependency — the bubble layout is a thin custom
@@ -21,6 +26,7 @@ export default function OnboardPage() {
   const { address: wallet } = useWallet?.() || {};
   const [sessionId, setSessionId]   = useState(null);
   const [messages, setMessages]     = useState([]);
+  const [currentQuestion, setQuestion] = useState(null); // { id, text, options, allow_other }
   const [recommendation, setRec]    = useState(null);
   const [status, setStatus]         = useState("idle"); // idle | active | recommended | sending
   const [draft, setDraft]           = useState("");
@@ -57,6 +63,10 @@ export default function OnboardPage() {
               presets:  openSession.recommended_presets_json || {},
             });
           }
+          // No question object on the open response — we only have the
+          // text in messages_json. Re-fetching the question is a future
+          // improvement; for now, still allow free-text input.
+          setQuestion(null);
           return;
         }
         // Start fresh
@@ -70,6 +80,7 @@ export default function OnboardPage() {
         if (cancelled) return;
         setSessionId(j.session.id);
         setMessages(Array.isArray(j.session.messages_json) ? j.session.messages_json : []);
+        setQuestion(j.question || null);
         setStatus("active");
       } catch (e) {
         if (!cancelled) setError(e.message);
@@ -86,27 +97,28 @@ export default function OnboardPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, recommendation]);
 
-  const send = useCallback(async () => {
-    if (!sessionId || !draft.trim() || status === "sending") return;
-    const content = draft.trim();
-    setDraft("");
+  // Send an answer. `value` is what we POST (e.g. an option id like "ng"
+  // or a free-text answer). `displayLabel` is what we render in the
+  // optimistic user bubble (e.g. "🇳🇬 Nigeria"); defaults to value.
+  const sendAnswer = useCallback(async (value, displayLabel = null) => {
+    if (!sessionId || !value || status === "sending") return;
     setStatus("sending");
-    // Optimistic user bubble
-    setMessages((m) => [...m, { role: "user", content, ts: Date.now() }]);
+    // Optimistic user bubble — show the human-readable label, not the id.
+    setMessages((m) => [...m, { role: "user", content: displayLabel || value, ts: Date.now() }]);
     try {
       const r = await fetch(`${API_BASE}/api/ironguide/${sessionId}/reply`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: value }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Reply failed");
-      // The server returns the canonical messages array — overwrite the
+      // Server returns the canonical messages array — overwrite the
       // optimistic state so we don't drift if it normalised anything.
       if (Array.isArray(j.session?.messages_json)) {
         setMessages(j.session.messages_json);
-      } else if (j.question) {
-        setMessages((m) => [...m, { role: "assistant", content: j.question, ts: Date.now() }]);
+      } else if (j.question?.text) {
+        setMessages((m) => [...m, { role: "assistant", content: j.question.text, ts: Date.now() }]);
       }
       if (j.recommendation && j.recommendation.kit) {
         setRec({
@@ -114,17 +126,27 @@ export default function OnboardPage() {
           kit:      j.recommendation.kit,
           presets:  j.recommendation.presets || {},
         });
+        setQuestion(null);
         setStatus("recommended");
       } else if (j.session?.status === "recommended") {
+        setQuestion(null);
         setStatus("recommended");
       } else {
+        setQuestion(j.question || null);
         setStatus("active");
       }
     } catch (e) {
       setError(e.message);
       setStatus("active");
     }
-  }, [sessionId, draft, headers, status]);
+  }, [sessionId, headers, status]);
+
+  const send = useCallback(() => {
+    if (!draft.trim()) return;
+    const content = draft.trim();
+    setDraft("");
+    sendAnswer(content);
+  }, [draft, sendAnswer]);
 
   const recommendNow = useCallback(async () => {
     if (!sessionId || status === "sending") return;
@@ -154,6 +176,7 @@ export default function OnboardPage() {
   const restart = useCallback(async () => {
     setSessionId(null);
     setMessages([]);
+    setQuestion(null);
     setRec(null);
     setStatus("idle");
     setError(null);
@@ -168,6 +191,7 @@ export default function OnboardPage() {
       if (!r.ok) throw new Error(j.error || "Could not restart");
       setSessionId(j.session.id);
       setMessages(Array.isArray(j.session.messages_json) ? j.session.messages_json : []);
+      setQuestion(j.question || null);
       setStatus("active");
     } catch (e) {
       setError(e.message);
@@ -221,40 +245,56 @@ export default function OnboardPage() {
         </div>
 
         {status !== "recommended" && (
-          <form
-            style={composerStyle}
-            onSubmit={(e) => { e.preventDefault(); send(); }}
-          >
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onKey}
-              placeholder="Type your answer…"
-              rows={2}
-              style={textareaStyle}
-              disabled={status === "sending" || !sessionId}
-            />
-            <div style={composerActionsStyle}>
-              <button
-                type="button"
-                onClick={recommendNow}
-                disabled={status === "sending" || !sessionId || messages.filter((m) => m.role === "user").length === 0}
-                style={ghostButtonStyle}
-                title="Skip ahead and pick a Kit now"
-              >
-                <ArrowRight size={13} />
-                <span>I'm ready, recommend</span>
-              </button>
-              <button
-                type="submit"
-                disabled={!draft.trim() || status === "sending" || !sessionId}
-                style={primaryButtonStyle}
-              >
-                <Send size={13} />
-                <span>Send</span>
-              </button>
-            </div>
-          </form>
+          <div style={composerStyle}>
+            {/* Chip row — only when the current question has options.
+                Picking a chip submits the answer immediately; no draft
+                state, no second click. */}
+            {currentQuestion?.options?.length > 0 && (
+              <ChipRow
+                options={currentQuestion.options}
+                onPick={(o) => sendAnswer(o.value, o.label)}
+                disabled={status === "sending" || !sessionId}
+              />
+            )}
+            {/* Textarea — for free-text steps and "Or type yours" on
+                option steps with allow_other. Hide entirely when the
+                step is option-only (allow_other = false), so the user
+                isn't tempted to type into a text input that'll be
+                rejected by canonicalize(). */}
+            {(currentQuestion === null || currentQuestion?.allow_other !== false) && (
+              <form onSubmit={(e) => { e.preventDefault(); send(); }}>
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={onKey}
+                  placeholder={currentQuestion?.options?.length ? "Or type your own answer…" : "Type your answer…"}
+                  rows={2}
+                  style={textareaStyle}
+                  disabled={status === "sending" || !sessionId}
+                />
+                <div style={composerActionsStyle}>
+                  <button
+                    type="button"
+                    onClick={recommendNow}
+                    disabled={status === "sending" || !sessionId || messages.filter((m) => m.role === "user").length === 0}
+                    style={ghostButtonStyle}
+                    title="Skip ahead and pick a Kit now"
+                  >
+                    <ArrowRight size={13} />
+                    <span>I'm ready, recommend</span>
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!draft.trim() || status === "sending" || !sessionId}
+                    style={primaryButtonStyle}
+                  >
+                    <Send size={13} />
+                    <span>Send</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         )}
 
         {error && <div style={errorStyle}>{error}</div>}
@@ -269,6 +309,46 @@ export default function OnboardPage() {
       <style jsx global>{`
         @keyframes ig-spin { to { transform: rotate(360deg); } }
       `}</style>
+    </div>
+  );
+}
+
+function ChipRow({ options, onPick, disabled }) {
+  // Wrap chips in a flex row that wraps on narrow screens. Each chip is
+  // a button — clicking dispatches the answer immediately (no separate
+  // submit). Disabled while a request is in flight so a fast double-tap
+  // doesn't double-send.
+  return (
+    <div style={{
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 8,
+      paddingBottom: 8,
+    }}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onPick(o)}
+          disabled={disabled}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 14px",
+            borderRadius: 999,
+            border: "1px solid var(--accent-border)",
+            background: disabled ? "var(--bg-card)" : "var(--accent-dim)",
+            color: "var(--text-1)",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: disabled ? "not-allowed" : "pointer",
+            transition: "background 120ms ease, border-color 120ms ease",
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }

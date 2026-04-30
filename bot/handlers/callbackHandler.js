@@ -2,6 +2,7 @@
 
 const { handleWalletCallback }   = require("../commands/wallets");
 const { handleSettingsCallback } = require("../commands/settings");
+const onboard                    = require("../commands/onboard");
 const { tg, economy } = require("../services/backend");
 
 // Phase 10 — Agent Economy: route escalation:approve:<id> and
@@ -59,6 +60,11 @@ async function handleCallback(bot, cq) {
     }
     if (data.startsWith("set:")) {
       await handleSettingsCallback(bot, cq);
+      return;
+    }
+    if (data.startsWith(`${onboard.CB_PREFIX}:`)) {
+      // AZUKA Guide step-machine answer (option chip tapped).
+      await onboard.handleCallback(bot, cq);
       return;
     }
     if (data.startsWith("escalation:")) {

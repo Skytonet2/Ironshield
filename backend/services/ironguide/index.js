@@ -1,41 +1,51 @@
 // backend/services/ironguide/index.js
 //
-// IronGuide — the free, always-available concierge that interviews a
-// new user and walks them to the right Kit. The flow:
+// AZUKA Guide — the free, always-available concierge that interviews a
+// new user and walks them to the right Kit.
 //
-//   1. start({channel, subject})  → creates a session + IronClaw thread,
-//                                    returns the opening question.
-//   2. reply({sessionId, content}) → records the user's turn, asks
-//                                    IronClaw for the next question OR
-//                                    a recommendation when enough signal.
-//   3. recommend({sessionId})      → forces a Kit pick from the current
-//                                    transcript (used by the UI when the
-//                                    user clicks "I'm ready, recommend now").
-//   4. confirm({sessionId, kit_slug, presets}) → marks the session
-//                                    deployed and returns the deploy URL.
+// Flow shape (rewritten 2026-04-30 to drop the LLM-driven free-form
+// interview that produced wall-of-text answers and zero structured
+// options). The conversation is now a **deterministic step machine**
+// (see ./steps.js) that asks ONE question at a time with clickable
+// option chips. The LLM is only involved at the final step, when we
+// have enough signal to score Kits and frame a recommendation in
+// natural language.
 //
-// IronClaw is the LLM here — we don't run our own runtime. The classifier
-// (./classifier.js) is what actually maps the transcript onto a Kit; the
-// LLM's job is to keep the conversation flowing and to surface the
-// recommendation in user-friendly language.
+// API:
+//   start({channel, subject})   → creates a session, returns
+//                                 { session, question }, where
+//                                 `question` is a structured object
+//                                 with id, text, options[], allow_other.
+//   reply({sessionId, content}) → records the user's answer, advances
+//                                 the step, returns the next question
+//                                 OR a recommendation if at terminal.
+//   recommend({sessionId})      → force a kit pick from current
+//                                 answers (used by the UI's "I'm
+//                                 ready, recommend now" CTA).
+//   confirmDeployed({sessionId})→ flip status to 'deployed' after
+//                                 the deploy wizard finishes.
+//   findOpen({channel, …})      → resume the most recent open session.
+//
+// Storage shape:
+//   ironguide_sessions
+//     id, channel, subject_wallet, subject_tg_id, status,
+//     messages_json   — chat transcript [{role, content, ts}]
+//     answers_json    — typed answers keyed by step id (added in
+//                       this rewrite via idempotent ALTER COLUMN)
+//     current_step    — id of the step that's currently waiting on
+//                       the user (added same)
+//     classified_json — output of the classifier at finalize time
+//     recommended_kit_id, recommended_presets_json
+//     created_at, updated_at
+//
+// The classifier (./classifier.js) is unchanged and still runs over
+// the answers at the final step to score Kits.
 
 const db = require("../../db/client");
 const { classify, pickKit } = require("./classifier");
+const steps = require("./steps");
 
-const SYSTEM_PROMPT = `You are the AZUKA Guide — the concierge that helps new users pick their first agent. Your job is to interview a new user with short, plain-language questions to figure out the right Kit for them. Ask one question at a time. Keep questions under 20 words. Avoid jargon. After 3-4 questions you should have enough to suggest a Kit.
-
-Topics to cover (in this order):
-1. What kind of business / activity they want help with.
-2. Where their customers or audience are.
-3. Whether they have a budget for it (free, low, mid, high).
-4. Preferred language if not English.
-
-When the user has answered enough, finish with a single line:
-RECOMMEND: <one-line summary of what kind of agent they need>
-
-Otherwise reply with just the next question, no preamble.`;
-
-const ENOUGH_SIGNAL_FIELDS = ["vertical", "geo", "budget"]; // language is optional
+const OPENER_PREFIX = "Hey, I'm the AZUKA Guide.";
 
 function loadIronclaw() {
   try {
@@ -43,17 +53,6 @@ function loadIronclaw() {
   } catch (_) {
     return null;
   }
-}
-
-function transcriptText(messages) {
-  return (messages || [])
-    .filter((m) => m.role === "user")
-    .map((m) => m.content)
-    .join("\n");
-}
-
-function hasEnoughSignal(classified) {
-  return ENOUGH_SIGNAL_FIELDS.every((k) => classified[k]);
 }
 
 async function listKits() {
@@ -95,9 +94,11 @@ async function persistSession(id, patch) {
 }
 
 /**
- * Start a new IronGuide interview. `subject` carries either
- * { wallet } for the web channel or { tg_id } for Telegram.
- * Returns { session, question } where question is the opener.
+ * Start a new AZUKA Guide interview. Always opens at the `country`
+ * step regardless of what the user typed in `/start` — country is the
+ * highest-signal field and locking it in first means classifier and
+ * connector availability are already constrained by the time the user
+ * picks a category.
  */
 async function start({ channel, subject = {} }) {
   if (!["web", "tg"].includes(channel)) {
@@ -105,27 +106,34 @@ async function start({ channel, subject = {} }) {
   }
   const wallet = subject.wallet || null;
   const tgId   = subject.tg_id || null;
+
+  const initialStepId = steps.INITIAL_STEP;
+  const question = steps.publicQuestion(initialStepId);
+  const opener = `${OPENER_PREFIX} ${question.text}`;
+
+  const messages = [{ role: "assistant", content: opener, step: initialStepId, ts: Date.now() }];
+
   const { rows } = await db.query(
     `INSERT INTO ironguide_sessions
-       (channel, subject_wallet, subject_tg_id, messages_json)
-     VALUES ($1, $2, $3, '[]'::jsonb)
+       (channel, subject_wallet, subject_tg_id,
+        messages_json, current_step, answers_json)
+     VALUES ($1, $2, $3, $4::jsonb, $5, '{}'::jsonb)
      RETURNING *`,
-    [channel, wallet, tgId],
+    [channel, wallet, tgId, JSON.stringify(messages), initialStepId],
   );
   const session = rows[0];
 
-  // Hardcoded opener so a misconfigured IronClaw doesn't block onboarding.
-  const opener = "Hey, I'm the AZUKA Guide. To find you the right agent in under a minute — what kind of work would you like an agent to help you with?";
-  const messages = [{ role: "assistant", content: opener, ts: Date.now() }];
-  await persistSession(session.id, { messages_json: JSON.stringify(messages) });
-  return { session: { ...session, messages_json: messages }, question: opener };
+  return {
+    session: { ...session, messages_json: messages, answers_json: {} },
+    question,
+  };
 }
 
 /**
- * User sends a turn. We append it, ask IronClaw for the next move, and
- * persist the new state. If the LLM returns "RECOMMEND: ..." OR our
- * deterministic classifier already has enough signal, we run pickKit
- * and return a recommendation. Otherwise we return the next question.
+ * User sends a turn. Validates the answer against the current step's
+ * options (or accepts free text if allow_other), advances the step,
+ * returns the next question. At the `recommend` terminal we hand off
+ * to finalizeRecommendation.
  */
 async function reply({ sessionId, content }) {
   const session = await loadSession(sessionId);
@@ -133,76 +141,121 @@ async function reply({ sessionId, content }) {
   if (session.status !== "active") {
     throw new Error(`session is ${session.status}, cannot accept new turns`);
   }
-  const messages = Array.isArray(session.messages_json) ? session.messages_json.slice() : [];
-  messages.push({ role: "user", content: String(content || "").slice(0, 2000), ts: Date.now() });
 
-  const transcript = transcriptText(messages);
-  const classified = classify(transcript);
-
-  // If the deterministic classifier has enough signal, jump straight
-  // to a recommendation regardless of what the LLM thinks. This
-  // also covers the IronClaw-unreachable path.
-  if (hasEnoughSignal(classified)) {
-    return finalizeRecommendation(session, messages, classified);
+  const currentStepId = session.current_step || steps.INITIAL_STEP;
+  const canon = steps.canonicalize(currentStepId, content);
+  if (!canon) {
+    // Empty or invalid (strict step received an unknown value).
+    // Don't advance; re-ask the same question. Surfaces gracefully
+    // as a no-op so the bot/web can show "please pick one".
+    return {
+      session,
+      question: steps.publicQuestion(currentStepId),
+      error: "Please pick one of the options or type a custom answer.",
+      recommendation: null,
+    };
   }
 
-  // Otherwise, ask IronClaw for the next question.
-  const ironclaw = loadIronclaw();
-  let nextQ = null;
-  let threadId = session.ironclaw_thread_id || null;
-  if (ironclaw) {
-    try {
-      const { threadId: tid, reply: r } = await ironclaw.chat({
-        threadId,
-        content: String(content || ""),
-        systemPrompt: SYSTEM_PROMPT,
-        timeoutMs: 20_000,
-      });
-      threadId = tid;
-      nextQ = (r || "").trim();
-    } catch (_) {
-      nextQ = null;
-    }
+  // Append the user's turn to the transcript with the human-readable
+  // label (so re-rendering the chat shows "🇳🇬 Nigeria" not "ng").
+  const messages = Array.isArray(session.messages_json)
+    ? session.messages_json.slice()
+    : [];
+  messages.push({
+    role: "user",
+    content: canon.label,
+    answer_value: canon.value,
+    step: currentStepId,
+    ts: Date.now(),
+  });
+
+  // Merge into typed answers — the classifier reads this map.
+  const answers = { ...(session.answers_json || {}) };
+  answers[currentStepId] = canon.value;
+
+  // Resolve the next step.
+  const nextStepId = steps.resolveNext(currentStepId, canon.value, answers);
+
+  // Terminal? Hand off to recommendation.
+  if (!nextStepId || nextStepId === "recommend") {
+    return finalizeRecommendation({ ...session, answers_json: answers }, messages, answers);
   }
 
-  // If the LLM signalled it has enough, finalize even without classifier
-  // hitting the gate (covers "RECOMMEND: …" output mid-conversation).
-  if (nextQ && /^RECOMMEND:/i.test(nextQ)) {
-    return finalizeRecommendation(session, messages, classified, nextQ.replace(/^RECOMMEND:\s*/i, ""));
-  }
+  // Append the next assistant question to the transcript.
+  const nextQuestion = steps.publicQuestion(nextStepId);
+  messages.push({
+    role: "assistant",
+    content: nextQuestion.text,
+    step: nextStepId,
+    ts: Date.now(),
+  });
 
-  // Fallback: deterministic next question if IronClaw is down or returned
-  // empty. We pick the next missing classifier field.
-  if (!nextQ) nextQ = fallbackQuestion(classified);
-
-  messages.push({ role: "assistant", content: nextQ, ts: Date.now() });
   await persistSession(sessionId, {
     messages_json: JSON.stringify(messages),
-    classified_json: JSON.stringify(classified),
-    ironclaw_thread_id: threadId,
+    answers_json:  JSON.stringify(answers),
+    current_step:  nextStepId,
   });
+
   return {
-    session: { ...session, messages_json: messages, classified_json: classified, ironclaw_thread_id: threadId },
-    question: nextQ,
-    classified,
+    session: {
+      ...session,
+      messages_json: messages,
+      answers_json:  answers,
+      current_step:  nextStepId,
+    },
+    question: nextQuestion,
     recommendation: null,
   };
 }
 
-function fallbackQuestion(classified) {
-  if (!classified.vertical) {
-    return "Got it. What's the main work you'd like the agent to take off your plate?";
-  }
-  if (!classified.geo) {
-    return "And where are most of your customers — country or region is enough.";
-  }
-  if (!classified.budget) {
-    return "What budget can you put behind it? Free, a small monthly amount, or more?";
-  }
-  return "Last one — what language should the agent reply in?";
+/**
+ * Map the structured answers map into the classifier's expected
+ * shape (vertical / geo / budget / language) and run pickKit. The
+ * classifier still works on a free-text transcript too, but the
+ * structured map is more reliable when present.
+ */
+function answersToClassified(answers) {
+  const c = { vertical: null, geo: null, budget: null, language: null };
+
+  if (answers.country)       c.geo     = answers.country;
+  if (answers.budget_window) c.budget  = answers.budget_window;
+
+  // Map category + sub-category → vertical
+  const cat = answers.category;
+  const item = answers.sell_item || answers.work_type;
+  if (cat === "sell" && item === "car")              c.vertical = "commerce";
+  else if (cat === "sell" && item === "property")    c.vertical = "realestate";
+  else if (cat === "sell" && item === "service")     c.vertical = "lead_gen";
+  else if (cat === "sell" && item === "product")     c.vertical = "commerce";
+  else if (cat === "find_work" && item === "freelance") c.vertical = "lead_gen";
+  else if (cat === "find_work" && item === "job")    c.vertical = "personal_ops";
+  else if (cat === "find_work" && item === "leads")  c.vertical = "lead_gen";
+  else if (cat === "watch_wallet")                   c.vertical = "security";
+  else if (cat === "background_check")               c.vertical = "reputation";
+  // "other" / free_describe leaves vertical null — classifier falls
+  // back to the free-text path via the answers we have.
+
+  return c;
 }
 
-async function finalizeRecommendation(session, messages, classified, llmSummary = null) {
+async function finalizeRecommendation(session, messages, answers, llmSummary = null) {
+  // Prefer the structured-answer mapping; fall back to free-text
+  // classification of the transcript if a step was answered freely
+  // ("other"). Both shapes feed pickKit.
+  const fromAnswers = answersToClassified(answers);
+  const transcript = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content)
+    .join("\n");
+  const fromText = classify(transcript);
+
+  const classified = {
+    vertical: fromAnswers.vertical || fromText.vertical || null,
+    geo:      fromAnswers.geo      || fromText.geo      || null,
+    budget:   fromAnswers.budget   || fromText.budget   || null,
+    language: fromAnswers.language || fromText.language || null,
+  };
+
   const kits = await listKits();
   const pick = pickKit(kits, classified);
   let kit = null;
@@ -211,16 +264,18 @@ async function finalizeRecommendation(session, messages, classified, llmSummary 
     kit = pick.kit;
     presets = derivePresets(kit, classified);
   }
-  const summary = llmSummary || summaryFromClassified(classified);
+  const summary = llmSummary || summaryFromClassified(classified, answers);
 
   const closingMsg = kit
     ? `Got it. Based on what you told me, the **${kit.title}** Kit fits best — ${kit.description.slice(0, 160)}. Tap "Deploy this Kit" to wire it up in one click.`
     : `Got it — but no existing Kit fits this profile yet. I've logged it for the AZUKA team to look at, and you'll see it appear in your inbox when one is ready. In the meantime you can browse the live Kits.`;
-  messages.push({ role: "assistant", content: closingMsg, ts: Date.now() });
+  messages.push({ role: "assistant", content: closingMsg, step: "recommend", ts: Date.now() });
 
   if (kit) {
     await persistSession(session.id, {
       messages_json: JSON.stringify(messages),
+      answers_json:  JSON.stringify(answers),
+      current_step:  "recommend",
       classified_json: JSON.stringify(classified),
       recommended_kit_id: kit.slug,
       recommended_presets_json: JSON.stringify(presets),
@@ -229,6 +284,8 @@ async function finalizeRecommendation(session, messages, classified, llmSummary 
   } else {
     await persistSession(session.id, {
       messages_json: JSON.stringify(messages),
+      answers_json:  JSON.stringify(answers),
+      current_step:  "recommend",
       classified_json: JSON.stringify(classified),
       status: "recommended",
     });
@@ -251,25 +308,28 @@ async function finalizeRecommendation(session, messages, classified, llmSummary 
     session: {
       ...session,
       messages_json: messages,
+      answers_json:  answers,
+      current_step:  "recommend",
       classified_json: classified,
       recommended_kit_id: kit ? kit.slug : null,
       recommended_presets_json: presets,
       status: "recommended",
     },
-    question: closingMsg,
+    question: null,
     classified,
     recommendation: kit
-      ? { kit, presets, score: pick.score }
-      : null,
+      ? { kit, presets, score: pick.score, summary: closingMsg }
+      : { kit: null, summary: closingMsg },
   };
 }
 
-function summaryFromClassified(c) {
+function summaryFromClassified(c, answers = {}) {
   const parts = [];
   if (c.vertical) parts.push(c.vertical);
-  if (c.geo)      parts.push(`for ${c.geo.replace("_", " ")}`);
+  if (c.geo)      parts.push(`for ${c.geo}`);
   if (c.budget)   parts.push(`budget=${c.budget}`);
-  if (c.language) parts.push(`lang=${c.language}`);
+  if (answers.sell_item)   parts.push(`item=${answers.sell_item}`);
+  if (answers.work_type)   parts.push(`work=${answers.work_type}`);
   return parts.length ? parts.join(", ") : "uncategorized profile";
 }
 
@@ -279,7 +339,7 @@ function summaryFromClassified(c) {
  */
 function derivePresets(kit, classified) {
   const schema = kit?.preset_config_schema_json || {};
-  const props = schema.properties || schema; // tolerate either shape
+  const props = schema.properties || schema;
   const presets = {};
   for (const [key, def] of Object.entries(props)) {
     const lc = key.toLowerCase();
@@ -302,13 +362,10 @@ async function recommend({ sessionId }) {
   const session = await loadSession(sessionId);
   if (!session) throw new Error("session not found");
   const messages = Array.isArray(session.messages_json) ? session.messages_json.slice() : [];
-  const classified = classify(transcriptText(messages));
-  return finalizeRecommendation(session, messages, classified);
+  const answers = session.answers_json || {};
+  return finalizeRecommendation(session, messages, answers);
 }
 
-/**
- * Mark the session deployed (called after the deploy wizard finishes).
- */
 async function confirmDeployed({ sessionId }) {
   await db.query(
     `UPDATE ironguide_sessions SET status = 'deployed', updated_at = NOW() WHERE id = $1`,
@@ -317,10 +374,6 @@ async function confirmDeployed({ sessionId }) {
   return loadSession(sessionId);
 }
 
-/**
- * Find the most-recent active or recommended session for a wallet/tg_id,
- * if any. Lets /onboard return the user to where they left off.
- */
 async function findOpen({ channel, wallet, tg_id }) {
   if (channel === "web") {
     const { rows } = await db.query(
@@ -350,7 +403,15 @@ module.exports = {
   confirmDeployed,
   findOpen,
   loadSession,
-  // exposed for tests / callers that need the same scoring
   classify,
   pickKit,
+  // Re-exposed for tests + frontend hydration: lets a caller render
+  // the right question for a session that was started in a prior visit.
+  publicQuestion: steps.publicQuestion,
+  resolveNext:    steps.resolveNext,
+  canonicalize:   steps.canonicalize,
+  STEPS:          steps.STEPS,
+  INITIAL_STEP:   steps.INITIAL_STEP,
+  // Internal helpers exposed for tests.
+  answersToClassified,
 };

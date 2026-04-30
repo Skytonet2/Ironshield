@@ -1507,6 +1507,15 @@ ALTER TABLE ironguide_sessions
   ADD COLUMN IF NOT EXISTS recommended_kit_id TEXT REFERENCES agent_kits(slug);
 ALTER TABLE ironguide_sessions
   ADD COLUMN IF NOT EXISTS recommended_presets_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- 2026-04-30 rewrite: deterministic step-machine flow. current_step
+-- tracks which question is waiting on the user; answers_json stores
+-- the typed answers keyed by step id. Existing rows get 'country'
+-- as the default step which puts them right back at the opener — a
+-- harmless restart (the LLM-driven sessions never finished anyway).
+ALTER TABLE ironguide_sessions
+  ADD COLUMN IF NOT EXISTS current_step TEXT NOT NULL DEFAULT 'country';
+ALTER TABLE ironguide_sessions
+  ADD COLUMN IF NOT EXISTS answers_json JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- ── Kit requests (gap log) ────────────────────────────────────────────
 -- When IronGuide can't recommend any existing Kit for the classified
