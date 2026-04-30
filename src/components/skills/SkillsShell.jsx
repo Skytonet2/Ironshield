@@ -50,6 +50,8 @@ const SIDEBAR_PRIMARY = [
   { key: "new",          label: "New & Noteworthy", Icon: Sparkles,   href: "/skills/new"        },
   { key: "top-paid",     label: "Top Paid",         Icon: Crown,      href: "/skills/paid"       },
   { key: "trending",     label: "Trending",         Icon: TrendingUp, href: "/skills/trending"   },
+  // Tier 5 slice 4 — author leaderboard.
+  { key: "authors",      label: "Top Authors",      Icon: Users,      href: "/skills/authors"    },
 ];
 
 // CREATE block — the launchpad surfaces. AZUKA's primary product is

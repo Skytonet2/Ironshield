@@ -285,6 +285,7 @@ export default function AdminPanel({ onClose }) {
             { key: "contests",   label: "Contests" },
             { key: "scores",     label: "Score Users" },
             { key: "governance", label: "Governance" },
+            { key: "skills",     label: "Skills" },
           ].map(tab => (
             <button key={tab.key} onClick={() => setAdminTab(tab.key)} style={{
               padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", border: "none",
@@ -298,6 +299,9 @@ export default function AdminPanel({ onClose }) {
 
           {/* ── Stats tab ── live counts from /api/admin/stats. */}
           {adminTab === "stats" && <StatsTab t={t} />}
+
+          {/* ── Skills tab ── Tier 5 slice 3 moderation queue. */}
+          {adminTab === "skills" && <SkillsTab t={t} />}
 
           {/* ── Contests tab ── */}
           {adminTab === "contests" && (
@@ -705,6 +709,152 @@ function Section({ t, title, children }) {
       }}>
         {children}
       </div>
+    </div>
+  );
+}
+
+// ── SkillsTab ────────────────────────────────────────────────────────
+// Tier 5 slice 3 — admin moderation queue for skill_runtime_manifests.
+// Lists rows filtered by lifecycle_status, with three actions per row:
+//   - Lifecycle dropdown   → POST /skills/:id/lifecycle  (any state)
+//   - Pin                  → POST /skills/:id/pin        (runtime status='active')
+//   - Slash                → POST /skills/:id/slash      (lifecycle_status='slashed')
+// All routes are admin-gated by requireAdmin in the backend.
+const LIFECYCLES = ["internal", "curated", "public", "deprecated", "slashed"];
+
+function SkillsTab({ t }) {
+  const [filter, setFilter] = useState(["internal", "curated"]);
+  const [rows, setRows]     = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr]       = useState("");
+  const [busyKey, setBusyKey] = useState(null); // `${skill_id}:${version}` while a write is in flight
+  const [msg, setMsg]       = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(""); setMsg("");
+    try {
+      const lifecycle = filter.join(",");
+      const r = await apiFetch(`/api/admin/skills?lifecycle=${encodeURIComponent(lifecycle)}&limit=100`);
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      const j = await r.json();
+      setRows(j.rows || []);
+    } catch (e) {
+      setErr(e.message || String(e));
+      setRows([]);
+    } finally { setLoading(false); }
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const act = useCallback(async (row, action, body) => {
+    const key = `${row.skill_id}:${row.version}`;
+    setBusyKey(key); setErr(""); setMsg("");
+    try {
+      const r = await apiFetch(`/api/admin/skills/${row.skill_id}/${action}`, {
+        method: "POST",
+        body: JSON.stringify({ version: row.version, ...body }),
+        headers: { "Content-Type": "application/json" },
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setMsg(`${action} ok: skill ${row.skill_id} v${row.version}`);
+      load();
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally { setBusyKey(null); }
+  }, [load]);
+
+  return (
+    <div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: t.white, marginBottom: 14 }}>
+        Skill moderation
+      </div>
+      <div style={{ color: t.textMuted, fontSize: 12, marginBottom: 14 }}>
+        Lifecycle moves are catalog-only. Slash is off-chain — when contract gains <code>slash_skill</code> the route will fire that too.
+      </div>
+
+      {/* Lifecycle filter chips */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        {LIFECYCLES.map(l => {
+          const active = filter.includes(l);
+          return (
+            <button key={l} onClick={() => {
+              setFilter(active ? filter.filter(x => x !== l) : [...filter, l]);
+            }} style={{
+              padding: "6px 12px", borderRadius: 6, border: "none", cursor: "pointer",
+              fontSize: 12, fontWeight: 600,
+              background: active ? t.accent : t.bgSurface,
+              color: active ? "#fff" : t.textMuted,
+            }}>{l}</button>
+          );
+        })}
+      </div>
+
+      {msg && <div style={{ background: `${t.green}18`, color: t.green, padding: "8px 12px", borderRadius: 6, marginBottom: 12, fontSize: 12 }}>{msg}</div>}
+      {err && <div style={{ background: `${t.red}18`, color: t.red, padding: "8px 12px", borderRadius: 6, marginBottom: 12, fontSize: 12 }}>{err}</div>}
+
+      {loading && <div style={{ color: t.textMuted, padding: 12 }}>Loading…</div>}
+      {!loading && rows.length === 0 && (
+        <div style={{ color: t.textMuted, padding: 24, textAlign: "center", border: `1px dashed ${t.border}`, borderRadius: 10 }}>
+          No skills match the current lifecycle filter.
+        </div>
+      )}
+      {!loading && rows.length > 0 && (
+        <div style={{ background: t.bgSurface, borderRadius: 12, overflow: "auto", border: `1px solid ${t.border}` }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${t.border}`, color: t.textMuted, textAlign: "left" }}>
+                {["Skill", "Version", "Lifecycle", "Hash", "Actions"].map(h => (
+                  <th key={h} style={{ padding: "10px 14px", fontSize: 11, fontWeight: 600 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const key = `${r.skill_id}:${r.version}`;
+                const busy = busyKey === key;
+                return (
+                  <tr key={r.id} style={{ borderTop: `1px solid ${t.border}44` }}>
+                    <td style={{ padding: "10px 14px", color: t.text }}>
+                      <div style={{ fontWeight: 600 }}>{r.name || `#${r.skill_id}`}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted }}>id {r.skill_id} · {r.category}</div>
+                    </td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: t.text }}>{r.version}</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <select
+                        value={r.lifecycle_status}
+                        disabled={busy}
+                        onChange={(e) => act(r, "lifecycle", { lifecycle_status: e.target.value })}
+                        style={{ padding: "4px 8px", borderRadius: 6, background: t.bgCard, color: t.text, border: `1px solid ${t.border}`, fontSize: 12 }}
+                      >
+                        {LIFECYCLES.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 11, color: t.textMuted }}>
+                      {r.manifest_hash?.slice(0, 10)}…
+                    </td>
+                    <td style={{ padding: "10px 14px", display: "flex", gap: 6 }}>
+                      <button onClick={() => act(r, "pin", {})} disabled={busy} style={{
+                        padding: "4px 10px", borderRadius: 6, border: `1px solid ${t.accent}55`,
+                        background: `${t.accent}22`, color: t.accent, fontSize: 11, fontWeight: 600,
+                        cursor: busy ? "wait" : "pointer",
+                      }}>Pin</button>
+                      <button onClick={() => act(r, "slash", {})} disabled={busy} style={{
+                        padding: "4px 10px", borderRadius: 6, border: `1px solid ${t.red}55`,
+                        background: `${t.red}22`, color: t.red, fontSize: 11, fontWeight: 600,
+                        cursor: busy ? "wait" : "pointer",
+                      }}>Slash</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

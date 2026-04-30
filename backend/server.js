@@ -82,6 +82,12 @@ app.use("/api/agents/avatar",   require("./routes/avatars.route"));
 // wins for the /diy subpath without disturbing the rest.
 app.use("/api/agents/diy",      require("./routes/agentsDiy.route"));
 app.use("/api/agents",    require("./routes/agents.route"));
+// Tier 5 catalog surface (FTS search, authors leaderboard, version
+// listing + diff). Mounted under /api/skills so its routes share the
+// prefix with /api/skills/run, /api/skills/registry etc. Order matters:
+// it must come BEFORE skills.route so /catalog and /authors don't fall
+// through to the execution router (which has no such handlers).
+app.use("/api/skills",    require("./routes/skillsCatalog.route"));
 app.use("/api/skills",    require("./routes/skills.route"));
 app.use("/api/connectors", require("./routes/connectors.route"));
 app.use("/api/trending",  require("./routes/trending.route"));

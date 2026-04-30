@@ -95,4 +95,131 @@ router.post("/classifieds-drift/run", requireWallet, requireAdmin, async (req, r
   } catch (e) { next(e); }
 });
 
+// ── Phase 10 Tier 5 slice 3 — skill moderation ───────────────────────
+// Admin-only operations on skill_runtime_manifests. Three actions:
+//   - lifecycle  : flip lifecycle_status (curated/public/deprecated/...)
+//   - pin        : promote one version to runtime status='active' and
+//                  demote others (the only path that touches runtime
+//                  status; see project_skill_status_columns memory)
+//   - slash      : off-chain mark as removed (lifecycle_status='slashed').
+//                  The contract has no slash_skill method yet, so this
+//                  is purely a catalog-layer takedown — runtime that
+//                  reads from the manifest table will hide the row.
+//                  When the contract gets slash_skill, this handler
+//                  should be extended to fire that call too.
+const { setLifecycleStatus, pinVersion } = require("../services/skillManifests");
+
+/** GET /api/admin/skills?lifecycle=public,curated&limit=100&cursor=<id>
+ *  Paged moderation queue. Reads from skill_runtime_manifests with
+ *  optional lifecycle_status filter; defaults to "internal,curated"
+ *  so brand-new submissions show up first.
+ */
+router.get("/skills", requireWallet, requireAdmin, async (req, res, next) => {
+  try {
+    const lifecycles = String(req.query.lifecycle || "internal,curated")
+      .split(",").map(s => s.trim()).filter(Boolean);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const cursor = req.query.cursor ? Number(req.query.cursor) : null;
+
+    const params = [lifecycles];
+    let where = "lifecycle_status = ANY($1::text[])";
+    if (cursor && Number.isFinite(cursor)) {
+      params.push(cursor);
+      where += ` AND id < $${params.length}`;
+    }
+    params.push(limit + 1);
+
+    const r = await db.query(
+      `SELECT id, skill_id, version, name, description, category,
+              vertical_tags, manifest_hash,
+              status, lifecycle_status, deployed_at
+         FROM skill_runtime_manifests
+        WHERE ${where}
+        ORDER BY id DESC
+        LIMIT $${params.length}`,
+      params
+    );
+    const hasMore = r.rows.length > limit;
+    const rows = hasMore ? r.rows.slice(0, limit) : r.rows;
+    res.json({ rows, nextCursor: hasMore ? rows[rows.length - 1].id : null });
+  } catch (e) { next(e); }
+});
+
+/** POST /api/admin/skills/:skill_id/lifecycle
+ *  Body: { version: string, lifecycle_status: string, reason?: string }
+ *
+ *  Writes ONLY skill_runtime_manifests.lifecycle_status. Does not
+ *  touch the runtime status column — see the two-status-columns memo
+ *  in project_skill_status_columns. Use /pin to change runtime
+ *  active-version, /slash for the takedown shortcut.
+ */
+router.post("/skills/:skill_id/lifecycle", requireWallet, requireAdmin, async (req, res, next) => {
+  try {
+    const skillId = Number(req.params.skill_id);
+    const { version, lifecycle_status } = req.body || {};
+    if (!Number.isFinite(skillId)) return res.status(400).json({ error: "skill_id must be an integer" });
+    if (!version)                   return res.status(400).json({ error: "version required" });
+    if (!lifecycle_status)          return res.status(400).json({ error: "lifecycle_status required" });
+
+    const row = await setLifecycleStatus(skillId, version, lifecycle_status);
+    if (!row) return res.status(404).json({ error: "manifest version not found" });
+    res.json({ ok: true, ...row, by: req.wallet });
+  } catch (e) {
+    if (/Invalid lifecycle_status/.test(e.message)) {
+      return res.status(400).json({ error: e.message });
+    }
+    next(e);
+  }
+});
+
+/** POST /api/admin/skills/:skill_id/pin
+ *  Body: { version: string }
+ *
+ *  Promote the named version to runtime status='active' and demote
+ *  all other versions of the same skill to status='inactive'. Single
+ *  transaction so reads never see zero active versions.
+ *  This is the ONE admin path that mutates the runtime status column;
+ *  it's exactly that column's purpose.
+ */
+router.post("/skills/:skill_id/pin", requireWallet, requireAdmin, async (req, res, next) => {
+  try {
+    const skillId = Number(req.params.skill_id);
+    const { version } = req.body || {};
+    if (!Number.isFinite(skillId)) return res.status(400).json({ error: "skill_id must be an integer" });
+    if (!version)                   return res.status(400).json({ error: "version required" });
+
+    const row = await pinVersion(skillId, version);
+    if (!row) return res.status(404).json({ error: "manifest version not found" });
+    res.json({ ok: true, ...row, by: req.wallet });
+  } catch (e) { next(e); }
+});
+
+/** POST /api/admin/skills/:skill_id/slash
+ *  Body: { version: string, reason?: string }
+ *
+ *  Off-chain takedown shortcut. Sets lifecycle_status='slashed' which
+ *  hides the row from the public catalog. Runtime callers that look up
+ *  by skill_id will still find an active manifest version (status=
+ *  'active') — slash does NOT stop in-flight executions, only hides
+ *  the listing. To halt execution, also POST /pin to a different
+ *  version (or none — pin's transaction permits demoting all to
+ *  inactive by passing a version that doesn't match any row, though
+ *  that's not a designed shape; recommend explicit version-pin).
+ *
+ *  When contract gains slash_skill (future phase), this handler
+ *  should also fire that call so the on-chain reputation effect lands.
+ */
+router.post("/skills/:skill_id/slash", requireWallet, requireAdmin, async (req, res, next) => {
+  try {
+    const skillId = Number(req.params.skill_id);
+    const { version } = req.body || {};
+    if (!Number.isFinite(skillId)) return res.status(400).json({ error: "skill_id must be an integer" });
+    if (!version)                   return res.status(400).json({ error: "version required" });
+
+    const row = await setLifecycleStatus(skillId, version, "slashed");
+    if (!row) return res.status(404).json({ error: "manifest version not found" });
+    res.json({ ok: true, ...row, by: req.wallet, note: "off-chain takedown only; contract slash_skill not yet wired" });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
