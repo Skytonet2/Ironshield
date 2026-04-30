@@ -34,6 +34,12 @@ async function upsertManifest({
   required_connectors = [],
   io_schema = {},
   status = "internal",
+  // Tier 5 slice 1 added these as nullable mirrors of on-chain skill
+  // metadata so FTS / catalog queries don't need RPC fan-out. Either
+  // pass them at upsert time (preferred) or backfill via
+  // setNameAndDescription() / scripts/backfill-skill-names.js.
+  name = null,
+  description = null,
 }) {
   if (!skill_id || !Number.isInteger(Number(skill_id))) {
     throw new Error("skill_id (integer) required");
@@ -49,8 +55,8 @@ async function upsertManifest({
     INSERT INTO skill_runtime_manifests
       (skill_id, version, category, vertical_tags, prompt_fragment,
        tool_manifest_json, required_connectors, io_schema_json,
-       manifest_hash, status, deployed_at)
-    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, NOW())
+       manifest_hash, status, name, description, deployed_at)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, $11, $12, NOW())
     ON CONFLICT (skill_id, version) DO UPDATE
       SET category = EXCLUDED.category,
           vertical_tags = EXCLUDED.vertical_tags,
@@ -60,6 +66,10 @@ async function upsertManifest({
           io_schema_json = EXCLUDED.io_schema_json,
           manifest_hash = EXCLUDED.manifest_hash,
           status = EXCLUDED.status,
+          -- Don't clobber a populated name/description with a NULL
+          -- upsert from a caller that doesn't know the metadata yet.
+          name = COALESCE(EXCLUDED.name, skill_runtime_manifests.name),
+          description = COALESCE(EXCLUDED.description, skill_runtime_manifests.description),
           deployed_at = NOW()
     RETURNING id, manifest_hash, deployed_at`;
 
@@ -74,8 +84,75 @@ async function upsertManifest({
     JSON.stringify(io_schema),
     manifest_hash,
     status,
+    name,
+    description,
   ]);
   return rows[0];
+}
+
+/** Backfill / repair the on-chain metadata mirror for a single
+ *  (skill_id, version) row. Used by scripts/backfill-skill-names.js
+ *  and the admin "Refresh names" action. Idempotent. */
+async function setNameAndDescription(skill_id, version, { name, description }) {
+  const sql = `
+    UPDATE skill_runtime_manifests
+       SET name = $3,
+           description = $4
+     WHERE skill_id = $1 AND version = $2
+     RETURNING id, name, description`;
+  const { rows } = await db.query(sql, [skill_id, version, name ?? null, description ?? null]);
+  return rows[0] || null;
+}
+
+/** Set the moderation lifecycle_status (admin slice 3). Distinct from
+ *  the runtime `status` column — see project_skill_status_columns
+ *  memory entry. Don't conflate the two. Runtime never reads
+ *  lifecycle_status; admin paths only write lifecycle_status (with the
+ *  one exception of the "pin" action, which writes runtime status). */
+async function setLifecycleStatus(skill_id, version, lifecycle_status) {
+  if (!["internal", "curated", "public", "deprecated", "slashed"].includes(lifecycle_status)) {
+    throw new Error(`Invalid lifecycle_status: ${lifecycle_status}`);
+  }
+  const sql = `
+    UPDATE skill_runtime_manifests
+       SET lifecycle_status = $3
+     WHERE skill_id = $1 AND version = $2
+     RETURNING id, lifecycle_status`;
+  const { rows } = await db.query(sql, [skill_id, version, lifecycle_status]);
+  return rows[0] || null;
+}
+
+/** Mark one (skill_id, version) row as the runtime-active version,
+ *  demoting all other versions of the same skill to status='inactive'.
+ *  This is the only admin path that touches the runtime status column;
+ *  it's exactly that column's purpose. Runs in a single transaction so
+ *  there's never a window where zero versions are active. */
+async function pinVersion(skill_id, version) {
+  return db.transaction(async (client) => {
+    const exists = await client.query(
+      `SELECT id FROM skill_runtime_manifests WHERE skill_id = $1 AND version = $2`,
+      [skill_id, version],
+    );
+    if (exists.rows.length === 0) return null;
+    // Demote every other version to inactive first, then promote the
+    // chosen one. Doing it in this order means a concurrent reader of
+    // "active version" might briefly see zero rows; the transaction
+    // wrapper hides that from anyone except a dirty read.
+    await client.query(
+      `UPDATE skill_runtime_manifests
+          SET status = 'inactive'
+        WHERE skill_id = $1 AND version <> $2 AND status = 'active'`,
+      [skill_id, version],
+    );
+    const r = await client.query(
+      `UPDATE skill_runtime_manifests
+          SET status = 'active'
+        WHERE skill_id = $1 AND version = $2
+        RETURNING id, version, status`,
+      [skill_id, version],
+    );
+    return r.rows[0];
+  });
 }
 
 /** Returns the active manifest for a skill_id, or null. */
@@ -145,4 +222,7 @@ module.exports = {
   getManifest,
   listManifests,
   setStatus,
+  setLifecycleStatus,
+  setNameAndDescription,
+  pinVersion,
 };
