@@ -101,7 +101,7 @@ export default function KitsCatalogPage() {
             </h1>
             <p style={{ fontSize: 13.5, color: "var(--text-2)", lineHeight: 1.55, margin: 0 }}>
               Each Kit bundles skills, presets, and an authorization profile —
-              ready to wire to your wallet. Not sure which? <Link href="/onboard" style={linkStyle}>Ask IronGuide →</Link>
+              ready to wire to your wallet. Not sure which? <Link href="/onboard" style={linkStyle}>Ask the AZUKA Guide →</Link>
             </p>
           </div>
         </header>
@@ -138,7 +138,7 @@ export default function KitsCatalogPage() {
         {!loading && !error && filtered.length === 0 && (
           <div style={emptyStyle}>
             <Package size={20} style={{ color: "var(--text-3)" }} />
-            <div>No Kits match these filters yet. <Link href="/onboard" style={linkStyle}>Tell IronGuide what you need →</Link></div>
+            <div>No Kits match these filters yet. <Link href="/onboard" style={linkStyle}>Tell the AZUKA Guide what you need →</Link></div>
           </div>
         )}
 

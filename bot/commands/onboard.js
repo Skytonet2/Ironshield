@@ -59,7 +59,7 @@ async function tryRoute(bot, msg) {
 
   const r = await ironguide.reply(open.session.id, msg.text);
   if (!r.ok) {
-    await bot.sendMessage(msg.chat.id, `Hmm, IronGuide hit an error: ${r.error || "try again"}`);
+    await bot.sendMessage(msg.chat.id, `Hmm, AZUKA Guide hit an error: ${r.error || "try again"}`);
     return true; // still consume the turn so we don't fall through to the wallet detector
   }
   if (r.recommendation && r.recommendation.kit) {

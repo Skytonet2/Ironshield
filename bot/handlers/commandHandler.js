@@ -100,7 +100,7 @@ async function helpHandler(bot, msg) {
   const message = `*AZUKA Bot — Commands*
 
 🔗 *Onboarding*
-• /onboard — IronGuide picks the right agent for you
+• /onboard — AZUKA Guide picks the right agent for you
 • Paste any wallet address to link it
 • /wallets — switch between linked wallets
 • /addwallet <address>

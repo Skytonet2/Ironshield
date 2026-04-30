@@ -72,7 +72,7 @@ account" into a Telegram approval prompt.
                     └──────────────────────────────────┘                       └────────────┘
 ```
 
-The IronGuide concierge (Tier 2) reads the user's profile, the
+The AZUKA Guide concierge (Tier 2) reads the user's profile, the
 `/onboard` page recommends the Wallet Watch Kit because its
 `vertical='security'` tag matches the security bucket and the
 `default_pricing_json.tags` list includes `'global'`. Tap deploy →

@@ -22,7 +22,7 @@
 const db = require("../../db/client");
 const { classify, pickKit } = require("./classifier");
 
-const SYSTEM_PROMPT = `You are IronGuide — the AZUKA concierge. Your job is to interview a new user with short, plain-language questions to figure out the right Kit for them. Ask one question at a time. Keep questions under 20 words. Avoid jargon. After 3-4 questions you should have enough to suggest a Kit.
+const SYSTEM_PROMPT = `You are the AZUKA Guide — the concierge that helps new users pick their first agent. Your job is to interview a new user with short, plain-language questions to figure out the right Kit for them. Ask one question at a time. Keep questions under 20 words. Avoid jargon. After 3-4 questions you should have enough to suggest a Kit.
 
 Topics to cover (in this order):
 1. What kind of business / activity they want help with.
@@ -115,7 +115,7 @@ async function start({ channel, subject = {} }) {
   const session = rows[0];
 
   // Hardcoded opener so a misconfigured IronClaw doesn't block onboarding.
-  const opener = "Hey, I'm IronGuide. To find you the right agent in under a minute — what kind of work would you like an agent to help you with?";
+  const opener = "Hey, I'm the AZUKA Guide. To find you the right agent in under a minute — what kind of work would you like an agent to help you with?";
   const messages = [{ role: "assistant", content: opener, ts: Date.now() }];
   await persistSession(session.id, { messages_json: JSON.stringify(messages) });
   return { session: { ...session, messages_json: messages }, question: opener };

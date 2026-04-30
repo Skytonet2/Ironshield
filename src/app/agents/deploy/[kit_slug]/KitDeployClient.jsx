@@ -279,7 +279,7 @@ function DetailsStep({ kit, presets, setPresets, presetEntries, requiredKeys, ir
     <div style={cardStyle}>
       {ironguideSessionId && (
         <div style={hintStyle}>
-          <Sparkles size={13} /> IronGuide pre-filled some answers below. Edit anything that doesn't fit.
+          <Sparkles size={13} /> AZUKA Guide pre-filled some answers below. Edit anything that doesn't fit.
         </div>
       )}
 
