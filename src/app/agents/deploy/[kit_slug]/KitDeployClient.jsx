@@ -22,7 +22,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, ArrowRight, Check, Loader2, ShieldCheck, Plug,
-  Sparkles, AlertTriangle, Wallet, Send, CreditCard,
+  Sparkles, AlertTriangle, Wallet, Send, CreditCard, Globe,
 } from "lucide-react";
 import { useWallet } from "@/lib/contexts";
 import useAgent from "@/hooks/useAgent";
@@ -665,6 +665,10 @@ function ReviewStep({ kit, slug, presets, authProfileId, authProfiles, agentHand
         </label>
       </div>
 
+      {kit?.first_mission_template_slug && (
+        <FundingSourcePanel kit={kit} presets={presets} wallet={wallet} />
+      )}
+
       <details style={{ marginTop: 14, fontSize: 12 }}>
         <summary style={{ cursor: "pointer", color: "var(--text-2)" }}>Show preset values</summary>
         <pre style={{
@@ -826,6 +830,194 @@ function FundFirstMission({ slug, kit, presets, connected, showModal }) {
         </Link>
       </div>
     </div>
+  );
+}
+
+/* ── Funding source panel (Pay with naira / PingPay / NEAR) ──────── */
+
+// Detects whether the buyer is most likely Nigerian. We use the timezone
+// (Africa/Lagos covers all of Nigeria, no other country shares the zone)
+// as a privacy-cheap signal — it doesn't read IP or geolocation. The
+// other two options remain visible regardless; this only changes which
+// one is pre-selected.
+function detectLikelyNigerian() {
+  if (typeof Intl === "undefined") return false;
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    return tz === "Africa/Lagos";
+  } catch { return false; }
+}
+
+function FundingSourcePanel({ kit, presets, wallet }) {
+  const initial = detectLikelyNigerian() ? "naira" : "later";
+  const [source, setSource]   = useState(initial);
+  const [naira, setNaira]     = useState("");
+  const [email, setEmail]     = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [err, setErr]         = useState(null);
+
+  const startNairaCheckout = useCallback(async () => {
+    if (!wallet) return;
+    if (!naira || Number(naira) <= 0) { setErr("Enter a naira amount."); return; }
+    if (!/^[^@]+@[^@]+\.[^@]+$/.test(email)) { setErr("Enter a valid email for the receipt."); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      const { apiFetch } = await import("@/lib/apiFetch");
+      const r = await apiFetch("/api/payments/psp/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mission_template_slug: kit.first_mission_template_slug,
+          kit_slug:              kit.slug,
+          inputs_json:           presets || {},
+          escrow_amount_naira:   Number(naira),
+          buyer_email:           email,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.authorization_url) throw new Error(j.error || "Could not start checkout");
+      // Hand off to Paystack hosted page. The success page polls
+      // /api/payments/psp/session/:reference and shows mission status.
+      window.location.href = j.authorization_url;
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [wallet, naira, email, kit, presets]);
+
+  return (
+    <div style={{ marginTop: 18, padding: 14, borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-card)" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--text-1)", marginBottom: 8 }}>
+        Fund a first mission for this Kit
+      </div>
+      <div style={{ ...muted, marginBottom: 10 }}>
+        Optional. You can deploy without funding and start a mission later from the Missions page.
+      </div>
+
+      <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+        <FundChoice
+          active={source === "naira"}
+          onClick={() => setSource("naira")}
+          icon={<CreditCard size={14} />}
+          title="Pay with naira (Nigeria)"
+          subtitle="Card / bank transfer / USSD via Paystack. Mission goes live in seconds."
+        />
+        <FundChoice
+          active={source === "pingpay"}
+          onClick={() => setSource("pingpay")}
+          icon={<Globe size={14} />}
+          title="Pay with PingPay (international, 90+ countries)"
+          subtitle="Coming via the PingPay rollout. Disabled here until that flow ships."
+          disabled
+        />
+        <FundChoice
+          active={source === "later"}
+          onClick={() => setSource("later")}
+          icon={<Wallet size={14} />}
+          title="Pay later from a NEAR wallet"
+          subtitle="Sign create_mission yourself from the Missions page once the Kit is deployed."
+        />
+      </div>
+
+      {source === "naira" && (
+        <div style={{ display: "grid", gap: 8 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-1)" }}>Mission escrow (₦)</span>
+            <input
+              type="number"
+              min="100"
+              value={naira}
+              onChange={(e) => setNaira(e.target.value)}
+              placeholder="e.g. 50000"
+              style={{
+                width: "100%",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: "8px 10px",
+                color: "var(--text-1)",
+                fontSize: 13,
+                outline: "none",
+              }}
+            />
+            <span style={{ fontSize: 11, color: "var(--text-2)" }}>
+              Whole naira. The platform converts to NEAR at checkout and holds it as on-chain mission escrow.
+            </span>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-1)" }}>Receipt email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              style={{
+                width: "100%",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: "8px 10px",
+                color: "var(--text-1)",
+                fontSize: 13,
+                outline: "none",
+              }}
+            />
+          </label>
+          {err && <div style={errorStyle}>{err}</div>}
+          <button
+            type="button"
+            onClick={startNairaCheckout}
+            disabled={busy}
+            style={primaryBtn}
+          >
+            {busy
+              ? <><Loader2 size={13} style={{ animation: "kw-spin 0.9s linear infinite" }} /> Opening Paystack…</>
+              : <><CreditCard size={13} /> Continue to Paystack</>}
+          </button>
+          <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>
+            You'll be redirected to a secure Paystack page. We never see your card details.
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FundChoice({ active, onClick, icon, title, subtitle, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      style={{
+        textAlign: "left",
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        padding: 12,
+        borderRadius: 10,
+        background: active ? "var(--accent-dim)" : "var(--bg-card)",
+        border: `1px solid ${active ? "var(--accent-border)" : "var(--border)"}`,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.55 : 1,
+        color: "var(--text-1)",
+      }}
+    >
+      <span style={{
+        width: 28, height: 28, borderRadius: 8,
+        background: active ? "var(--accent)" : "var(--bg-input)",
+        color: active ? "#fff" : "var(--text-2)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0,
+      }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>{title}</div>
+        <div style={{ fontSize: 11.5, color: "var(--text-2)" }}>{subtitle}</div>
+      </div>
+      {active && <Check size={14} style={{ color: "var(--accent)" }} />}
+    </button>
   );
 }
 

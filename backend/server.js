@@ -135,6 +135,9 @@ app.use("/api/escalations",   require("./routes/escalations.route"));
 app.use("/api/ironguide",      require("./routes/ironguide.route"));
 app.use("/api/kit-deployments", require("./routes/kitDeployments.route"));
 app.use("/api/auth-profiles",  require("./routes/authProfiles.route"));
+// Fiat on-ramps (Paystack for Nigerian buyers; chip 1's PingPay flow
+// will mount sibling subpaths under the same router file later).
+app.use("/api/payments",       require("./routes/payments.route"));
 
 // PingPay payment surface — hosted-checkout on-ramp (chip 1) + agent
 // balance read (chip 2 thin slice). Cash-out endpoints land in a
@@ -203,6 +206,7 @@ async function start() {
   try { require("./services/batchWorker").start(); } catch (e) { console.warn("[batch] not started:", e.message); }
   try { require("./jobs/newsBot.job").start(); } catch (e) { console.warn("[newsbot] not started:", e.message); }
   try { require("./jobs/walletWatchPoller.job").start(); } catch (e) { console.warn("[wallet-watch] not started:", e.message); }
+  try { require("./jobs/floatRefill.job").start(); } catch (e) { console.warn("[floatRefill] not started:", e.message); }
   try { require("./services/trendingAgent").start(); } catch (e) { console.warn("[trendingAgent] not started:", e.message); }
   try { require("./services/orchestratorBot").start(); } catch (e) { console.warn("[orchestrator] not started:", e.message); }
   try { require("./services/agents/automationWorker").start(); } catch (e) { console.warn("[automation] not started:", e.message); }

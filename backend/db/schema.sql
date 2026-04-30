@@ -1542,6 +1542,86 @@ CREATE TABLE IF NOT EXISTS event_counters (
 CREATE INDEX IF NOT EXISTS idx_event_counters_last_seen
   ON event_counters (last_seen DESC);
 
+-- ── Paystack on-ramp (Nigerian buyers → NEAR mission escrow) ────────
+-- Paystack hosted-checkout transactions. One row per /transaction/initialize
+-- call. The webhook + the success page both look up by `reference` (the key
+-- we hand to Paystack), so a buyer who closes the tab still finds their
+-- mission via /api/payments/psp/session/:reference.
+--
+-- mission_id (NULL until settlement runs) is the on-chain mission id
+-- the float manager funded for this paid transaction. status walks
+-- 'pending' → 'paid' (Paystack confirmed) → 'settled' (NEAR escrow on
+-- chain) | 'failed' | 'quarantined' (paid w/o matching pending row,
+-- needs operator triage). raw_event_json keeps the last webhook body
+-- with email/phone redacted — never log untouched.
+CREATE TABLE IF NOT EXISTS paystack_transactions (
+  id              BIGSERIAL    PRIMARY KEY,
+  reference       TEXT         NOT NULL UNIQUE,
+  mission_id      BIGINT       REFERENCES missions(on_chain_id),
+  pending_key     TEXT,
+  buyer_wallet    TEXT,
+  amount_kobo     BIGINT       NOT NULL,
+  currency        TEXT         NOT NULL DEFAULT 'NGN',
+  status          TEXT         NOT NULL DEFAULT 'pending',
+  provider        TEXT         NOT NULL DEFAULT 'paystack',
+  raw_event_json  JSONB,
+  verified_at     TIMESTAMPTZ,
+  settled_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_paystack_tx_status
+  ON paystack_transactions (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_paystack_tx_pending_key
+  ON paystack_transactions (pending_key)
+  WHERE pending_key IS NOT NULL;
+
+-- Pending mission funding row — created at /checkout, drained when the
+-- webhook fires and the float manager funds the on-chain mission. Kept
+-- separate from `missions` because the on_chain_id doesn't exist until
+-- settlement runs. Unique on `pending_key` so the webhook can find it
+-- by Paystack reference.
+CREATE TABLE IF NOT EXISTS psp_pending_missions (
+  pending_key      TEXT         PRIMARY KEY,
+  buyer_wallet     TEXT         NOT NULL,
+  template_slug    TEXT,
+  kit_slug         TEXT,
+  inputs_json      JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  inputs_hash      TEXT         NOT NULL,
+  escrow_yocto     NUMERIC(40,0) NOT NULL,
+  amount_kobo      BIGINT       NOT NULL,
+  status           TEXT         NOT NULL DEFAULT 'pending_payment',
+  on_chain_id      BIGINT       REFERENCES missions(on_chain_id),
+  failure_reason   TEXT,
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  funded_at        TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_psp_pending_status
+  ON psp_pending_missions (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_psp_pending_buyer
+  ON psp_pending_missions (buyer_wallet, created_at DESC);
+
+-- Naira-float drawdown + refill audit log. Every settled paystack tx
+-- spends from the float (kind='spend'); every refill swap deposits into
+-- the float (kind='refill'). near_amount_yocto is signed: spend rows
+-- are negative, refill rows positive — sum is the float's net position
+-- since launch. Reconciliation reports flag mismatches between the sum
+-- and the live wallet balance.
+CREATE TABLE IF NOT EXISTS psp_naira_float_log (
+  id                BIGSERIAL    PRIMARY KEY,
+  kind              TEXT         NOT NULL,
+  paystack_tx_id    BIGINT       REFERENCES paystack_transactions(id),
+  mission_id        BIGINT       REFERENCES missions(on_chain_id),
+  naira_kobo        BIGINT,
+  near_amount_yocto NUMERIC(40,0) NOT NULL,
+  exchange          TEXT,
+  exchange_rate     NUMERIC(20,8),
+  tx_hash           TEXT,
+  notes             TEXT,
+  created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_psp_float_log_kind
+  ON psp_naira_float_log (kind, created_at DESC);
+
 -- ── Telegram link hardening (post-Day 9) ─────────────────────────────
 -- Pre-hardening, /api/tg/claim accepted a bare `wallet` body field
 -- and /api/tg/add-wallet upserted feed_users.id into the caller's
