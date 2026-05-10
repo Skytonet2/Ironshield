@@ -51,7 +51,7 @@ export default function DisconnectTab() {
       <div>
         <h2 style={tabTitle(t)}>Disconnect Wallets</h2>
         <p style={{ color: t.textDim, fontSize: 13, margin: "4px 0 0", lineHeight: 1.55 }}>
-          Signs out of NEAR, Privy (EVM + Solana), and clears any cached session
+          Signs out of Sui or NEAR, Privy (EVM + Solana), and clears any cached session
           tokens from this device. Your on-chain assets aren't touched.
         </p>
       </div>

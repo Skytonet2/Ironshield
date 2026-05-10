@@ -3084,7 +3084,7 @@ function InfiniteScrollSentinel({ cursor, loading, onMore, t }) {
 /* ───────────────────── Main page ───────────────────── */
 export default function IronFeedPage({ openWallet }) {
   const t = useTheme();
-  const { connected, address, selector } = useWallet();
+  const { connected, address, selector, walletType } = useWallet();
   const wallet = connected ? address : null;
 
   const [tab, setTab] = useState("foryou");
@@ -3344,7 +3344,7 @@ export default function IronFeedPage({ openWallet }) {
       )}
       {openNotifs && <NotificationsModal wallet={wallet} onClose={() => setOpenNotifs(false)} />}
       {boostPost && <AdBoostModal post={boostPost} wallet={wallet} selector={selector} onClose={() => setBoostPost(null)} />}
-      {tipPost && <TipModal post={tipPost} wallet={wallet} selector={selector} openWallet={openWallet}
+      {tipPost && <TipModal post={tipPost} wallet={wallet} selector={selector} walletType={walletType} openWallet={openWallet}
         onClose={() => setTipPost(null)}
         onTipped={() => { setTipPost(null); load(true); }} />}
       {tipHistoryPost && <TipHistoryDrawer post={tipHistoryPost}

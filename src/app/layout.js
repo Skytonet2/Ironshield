@@ -1,11 +1,13 @@
 import { ThemeProvider, WalletProvider, ProposalsProvider } from "@/lib/contexts";
 import PrivyWrapper from "@/components/auth/PrivyWrapper";
+import SuiWalletRuntime from "@/components/auth/SuiWalletRuntime";
 import PreLoader from "@/components/boot/PreLoader";
 import { Outfit, JetBrains_Mono } from "next/font/google";
 // tokens.css ships CSS variables for the 6 theme presets. It's imported
 // before globals.css so per-element overrides in globals take precedence —
 // theme tokens are a base layer, not a reset.
 import "../styles/tokens.css";
+import "@mysten/dapp-kit/dist/index.css";
 import "./globals.css";
 
 // Self-host the fonts at build time. Eliminates the render-blocking
@@ -425,11 +427,13 @@ export default function RootLayout({ children }) {
          * still boots in dev without credentials. */}
         <PrivyWrapper>
           <ThemeProvider>
-            <WalletProvider>
-              <ProposalsProvider>
-                {children}
-              </ProposalsProvider>
-            </WalletProvider>
+            <SuiWalletRuntime>
+              <WalletProvider>
+                <ProposalsProvider>
+                  {children}
+                </ProposalsProvider>
+              </WalletProvider>
+            </SuiWalletRuntime>
           </ThemeProvider>
         </PrivyWrapper>
       </body>

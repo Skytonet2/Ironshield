@@ -478,6 +478,7 @@ export default function FeedPage() {
           post={tipPost}
           wallet={wallet}
           selector={walletCtx?.selector}
+          walletType={walletCtx?.walletType}
           openWallet={() => walletCtx?.showModal?.()}
           onClose={() => setTipPost(null)}
           onTipped={onTipped}

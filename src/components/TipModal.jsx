@@ -35,8 +35,9 @@ function timeAgo(d) {
 }
 
 /* ─────────────────────────── TipModal ─────────────────────────── */
-export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped }) {
+export function TipModal({ post, wallet, selector, walletType, openWallet, onClose, onTipped }) {
   const t = useTheme();
+  const isNearWallet = walletType ? walletType === "near" : !!selector;
   const [tokens, setTokens]   = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -51,6 +52,12 @@ export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped
     let cancelled = false;
     (async () => {
       if (!wallet) { setLoadingTokens(false); return; }
+      if (!isNearWallet) {
+        setTokens([]);
+        setSelected(null);
+        setLoadingTokens(false);
+        return;
+      }
       try {
         const list = await fetchWalletTokens(wallet);
         if (cancelled) return;
@@ -63,7 +70,7 @@ export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped
       }
     })();
     return () => { cancelled = true; };
-  }, [wallet]);
+  }, [wallet, isNearWallet]);
 
   const usdPreview = useMemo(() => {
     if (!selected || !Number(amount)) return 0;
@@ -74,6 +81,7 @@ export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped
 
   const submit = async () => {
     if (!wallet) { openWallet?.(); return; }
+    if (!isNearWallet) { setErr("Sui tipping is not wired yet. Use a NEAR wallet for tips during the bridge window."); return; }
     if (!selected)      { setErr("Pick a token first"); return; }
     if (!Number(amount) || Number(amount) <= 0) { setErr("Enter an amount"); return; }
     if (tooMuch) { setErr(`Insufficient ${selected.symbol} balance`); return; }
@@ -136,7 +144,7 @@ export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped
     }
   };
 
-  const canSubmit = step === "idle" && !loadingTokens && selected && Number(amount) > 0 && !tooMuch;
+  const canSubmit = isNearWallet && step === "idle" && !loadingTokens && selected && Number(amount) > 0 && !tooMuch;
 
   return (
     <div onClick={onClose} style={overlayStyle}>
@@ -169,7 +177,13 @@ export function TipModal({ post, wallet, selector, openWallet, onClose, onTipped
             </div>
           )}
 
-          {wallet && (
+          {wallet && !isNearWallet && (
+            <div style={{ padding: 12, borderRadius: 10, background: `${t.amber}14`, color: t.amber, fontSize: 13, lineHeight: 1.5 }}>
+              Sui tipping is coming in a later wallet/token slice. During this dual-auth bridge, tips still use the existing NEAR token flow.
+            </div>
+          )}
+
+          {wallet && isNearWallet && (
             <>
               {/* Token picker */}
               <div>

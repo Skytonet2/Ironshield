@@ -12,6 +12,54 @@ import { useWallet as useWalletStore } from "@/lib/stores/walletStore";
 import { isPrivyConfigured } from "@/components/auth/PrivyWrapper";
 import { tabCard, tabTitle, btn } from "./_shared";
 
+function primaryWalletMeta(ctx) {
+  if (!ctx?.address) return null;
+  const type = ctx.walletType || "near";
+  if (type === "sui") {
+    return {
+      chain: "Sui",
+      address: ctx.address,
+      explorer: null,
+      provider: "Sui wallet",
+      onDisconnect: () => ctx.signOut?.(),
+    };
+  }
+  if (type === "evm") {
+    return {
+      chain: "EVM",
+      address: ctx.address,
+      explorer: `https://etherscan.io/address/${ctx.address}`,
+      provider: "Injected wallet",
+      onDisconnect: () => ctx.signOut?.(),
+    };
+  }
+  if (type === "sol") {
+    return {
+      chain: "Solana",
+      address: ctx.address,
+      explorer: `https://solscan.io/account/${ctx.address}`,
+      provider: "Injected wallet",
+      onDisconnect: () => ctx.signOut?.(),
+    };
+  }
+  if (type === "google") {
+    return {
+      chain: "Google",
+      address: ctx.address,
+      explorer: null,
+      provider: "Google Sign-In",
+      onDisconnect: () => ctx.signOut?.(),
+    };
+  }
+  return {
+    chain: "NEAR",
+    address: ctx.address,
+    explorer: `https://nearblocks.io/address/${encodeURIComponent(ctx.address)}`,
+    provider: "NEAR Wallet Selector",
+    onDisconnect: () => ctx.signOut?.(),
+  };
+}
+
 function truncate(a, l = 6, r = 4) {
   if (!a) return "";
   return a.length <= l + r ? a : `${a.slice(0, l)}…${a.slice(-r)}`;
@@ -24,13 +72,7 @@ export default function WalletsTab() {
   const bnbStore = useWalletStore((s) => s.bnb);
 
   const connected = [
-    nearCtx?.address && {
-      chain: "NEAR",
-      address: nearCtx.address,
-      explorer: `https://nearblocks.io/address/${encodeURIComponent(nearCtx.address)}`,
-      provider: "NEAR Wallet Selector",
-      onDisconnect: () => nearCtx.signOut?.(),
-    },
+    primaryWalletMeta(nearCtx),
     solStore?.address && {
       chain: "Solana",
       address: solStore.address,
@@ -86,7 +128,7 @@ export default function WalletsTab() {
       <section style={tabCard(t)}>
         <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 6 }}>Add a wallet</div>
         <div style={{ fontSize: 12, color: t.textDim, lineHeight: 1.55, marginBottom: 12 }}>
-          Use the top-right account menu to add another wallet. NEAR, Solana, and EVM chains are supported.
+          Use the top-right account menu to add another wallet. Sui, NEAR, Solana, and EVM chains are supported during the bridge window.
         </div>
         <button type="button" onClick={() => nearCtx?.showModal?.()} style={btn(t)}>
           <Link2 size={13} /> Open connect modal
@@ -131,15 +173,17 @@ function WalletRow({ wallet, t }) {
       <button type="button" onClick={onCopy} style={btn(t)} aria-label="Copy address">
         {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
       </button>
-      <a
-        href={wallet.explorer}
-        target="_blank"
-        rel="noreferrer"
-        style={{ ...btn(t), textDecoration: "none" }}
-        aria-label="Open in explorer"
-      >
-        <ExternalLink size={13} />
-      </a>
+      {wallet.explorer && (
+        <a
+          href={wallet.explorer}
+          target="_blank"
+          rel="noreferrer"
+          style={{ ...btn(t), textDecoration: "none" }}
+          aria-label="Open in explorer"
+        >
+          <ExternalLink size={13} />
+        </a>
+      )}
       {wallet.onDisconnect && (
         <button type="button" onClick={wallet.onDisconnect} style={{ ...btn(t), color: "var(--red)" }}>
           <LogOut size={13} />

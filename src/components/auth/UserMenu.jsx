@@ -119,6 +119,14 @@ function CopyableAddress({ label, address, t }) {
   );
 }
 
+function primaryAddressLabel(walletType) {
+  if (walletType === "sui") return "SUI";
+  if (walletType === "evm") return "EVM";
+  if (walletType === "sol") return "SOL";
+  if (walletType === "google") return "GOOGLE";
+  return "NEAR";
+}
+
 // Tiny cache for the viewer's profile so every page mount doesn't
 // re-fetch the same row. Scoped to the module so a sign-out clears it
 // when the wallet address changes.
@@ -163,6 +171,7 @@ export default function UserMenu() {
   }, [nearCtx?.address]);
 
   const nearAddr = nearCtx?.address || null;
+  const primaryLabel = primaryAddressLabel(nearCtx?.walletType);
 
   // If Privy isn't configured AND there's no NEAR wallet connected,
   // render the disabled placeholder. If Privy isn't configured but the
@@ -204,11 +213,12 @@ export default function UserMenu() {
       nearAddr={nearAddr}
       nearProfile={profile}
       nearSignOut={nearCtx?.signOut}
+      primaryLabel={primaryLabel}
     />
   );
 }
 
-function UserMenuInnerPrivy({ t, open, setOpen, refEl, nearAddr, nearProfile, nearSignOut }) {
+function UserMenuInnerPrivy({ t, open, setOpen, refEl, nearAddr, nearProfile, nearSignOut, primaryLabel }) {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
 
@@ -341,7 +351,7 @@ function UserMenuInnerPrivy({ t, open, setOpen, refEl, nearAddr, nearProfile, ne
             <User size={12} /> View profile
           </Link>
           <div style={{ padding: "4px 0", borderTop: `1px solid ${t.border}` }}>
-            {nearAddr && <CopyableAddress label="NEAR" address={nearAddr} t={t} />}
+            {nearAddr && <CopyableAddress label={primaryLabel} address={nearAddr} t={t} />}
             <CopyableAddress label="EVM"  address={evm?.address} t={t} />
             <CopyableAddress label="SOL"  address={sol?.address} t={t} />
           </div>
@@ -376,7 +386,7 @@ function UserMenuInnerPrivy({ t, open, setOpen, refEl, nearAddr, nearProfile, ne
 // NEAR-only variant: used when Privy isn't configured. Takes the same
 // props as the Privy variant and delegates rendering to a shared helper
 // so the avatar/dropdown layout stays identical.
-function UserMenuInnerNearOnly({ t, open, setOpen, refEl, nearAddr, nearProfile, nearSignOut }) {
+function UserMenuInnerNearOnly({ t, open, setOpen, refEl, nearAddr, nearProfile, nearSignOut, primaryLabel }) {
   if (!nearAddr) {
     // This shouldn't happen — the outer gates on either Privy or a
     // NEAR address being present — but keep a safe fallback.
@@ -449,7 +459,7 @@ function UserMenuInnerNearOnly({ t, open, setOpen, refEl, nearAddr, nearProfile,
             <User size={12} /> View profile
           </Link>
           <div style={{ padding: "4px 0", borderTop: `1px solid ${t.border}` }}>
-            <CopyableAddress label="NEAR" address={nearAddr} t={t} />
+            <CopyableAddress label={primaryLabel} address={nearAddr} t={t} />
           </div>
           <div style={{ borderTop: `1px solid ${t.border}`, padding: 4 }}>
             <button

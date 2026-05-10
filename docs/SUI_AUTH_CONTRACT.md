@@ -27,6 +27,12 @@ Phase A pins `@mysten/sui` to the latest Node-20-compatible 1.x line (`^1.45.2`)
 
 Do not start new work on legacy `@mysten/dapp-kit`; Mysten's current docs mark it JSON-RPC only and recommend the new split packages.
 
+Phase D.1 exception: the first frontend wallet bridge uses `@mysten/dapp-kit@0.17.7`
+because the current `@mysten/dapp-kit-react` line depends on `@mysten/sui` 2.x,
+which declares `node >=22`. AZUKA still builds on Node 20 in Docker and GitHub
+Actions. Treat this as a temporary compatibility bridge, not the final wallet
+SDK choice after the runtime moves to Node 22.
+
 Primary docs checked:
 
 - https://sdk.mystenlabs.com/dapp-kit

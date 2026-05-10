@@ -38,7 +38,7 @@ const TABS = [
 
 export default function ProfilePage() {
   const t = useTheme();
-  const { address: viewerAddress, showModal, selector } = useWallet();
+  const { address: viewerAddress, showModal, selector, walletType } = useWallet();
 
   const [targetKey, setTargetKey] = useState(null);        // address OR username passed to the backend
   const [targetAddress, setTargetAddress] = useState(null); // wallet for self-profile detection
@@ -499,6 +499,7 @@ export default function ProfilePage() {
           post={tipPost}
           wallet={viewerAddress}
           selector={selector}
+          walletType={walletType}
           openWallet={() => showModal?.()}
           onClose={() => setTipPost(null)}
           onTipped={onTipped}
