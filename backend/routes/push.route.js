@@ -3,7 +3,12 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser } = require("../services/feedHelpers");
-const requireWallet = require("../middleware/requireWallet");
+// Phase C.2 pilot: this route uses the dual-auth dispatcher so a Sui
+// client (x-wallet-chain: sui) can subscribe/unsubscribe alongside
+// NEAR clients during the cut-over window. Push notifications are
+// the safest pilot — cosmetic, self-contained, fully reversible via
+// /unsubscribe. See PR #150 for the dispatcher itself.
+const requireWallet = require("../middleware/requireAnyWallet");
 const { notifyUser } = require("../services/pushNotify");
 
 // GET /api/push/vapid-key — public VAPID key for the frontend
