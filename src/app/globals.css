@@ -1,29 +1,129 @@
+/* ─────────────────────────────────────────────────────────────────────
+   AZUKA design tokens — Phase E.1 (single source of truth for colors).
+   See docs/UI_TOKENS.md for the migration plan and usage rules.
+
+   Two layers:
+     :root.{}            — the new white+sky-blue tokens used by E.2+
+                           redesigns (LandingPage v2, AppShell v2, etc.)
+     :root .legacy-*     — current dark-theme values, kept verbatim so
+                           every un-migrated component keeps rendering
+                           identically until its phase ships.
+
+   "No colour conflicts" rule: never reach for raw hex inside a
+   component. If you need a colour, pull a token from this file
+   (or src/lib/theme.js for JS-side inline styles).
+─────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── New AZUKA palette (Phase E.2+) ────────────────────────────── */
+
+  /* Sky-blue scale, anchored on #3B82F6 (Tailwind blue-500). Use for
+     primary actions, links, focus rings, brand accents. */
+  --azuka-blue-50:  #EFF6FF;
+  --azuka-blue-100: #DBEAFE;
+  --azuka-blue-200: #BFDBFE;
+  --azuka-blue-300: #93C5FD;
+  --azuka-blue-400: #60A5FA;
+  --azuka-blue-500: #3B82F6;  /* primary */
+  --azuka-blue-600: #2563EB;  /* primary hover */
+  --azuka-blue-700: #1D4ED8;  /* primary pressed */
+
+  /* Surfaces — white-first, with subtle blue-tinted neutrals so cards
+     don't read as flat grey on a flat-grey page. */
+  --surface-canvas:    #FFFFFF;       /* page background */
+  --surface-card:      #FFFFFF;       /* card background */
+  --surface-subtle:    #F8FAFC;       /* hover row, table stripe */
+  --surface-muted:     #F1F5F9;       /* sidebar, code blocks */
+  --surface-tinted:    #EFF6FF;       /* hero washes, callouts */
+
+  /* Text — graphite-on-white, never pure black (too harsh against
+     the soft blue accents). */
+  --text-primary:    #0F172A;  /* headings, body */
+  --text-secondary:  #475569;  /* labels, captions */
+  --text-muted:      #94A3B8;  /* placeholder, disabled */
+  --text-inverse:    #FFFFFF;  /* on coloured surfaces */
+  --text-accent:     #2563EB;  /* links */
+
+  /* Borders / dividers — kept low-contrast so the layout reads clean. */
+  --border-subtle:   #E2E8F0;
+  --border-default:  #CBD5E1;
+  --border-strong:   #94A3B8;
+
+  /* Status — lifted from the mockup's badges. Kept distinct from
+     azuka-blue so a "completed" pill never reads as a primary button. */
+  --status-success: #10B981;
+  --status-warning: #F59E0B;
+  --status-danger:  #EF4444;
+  --status-info:    var(--azuka-blue-500);
+
+  /* Shadows — short and soft, NOT the pillow-y dark-theme shadows. */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.08);
+
+  /* ── Legacy dark-theme tokens (Phase E.1 keeps these unchanged) ─── */
+  /* Every value below is what the codebase used pre-redesign. New
+     screens MUST NOT consume these — they're here only so that
+     components written before E.2 keep rendering identically. */
+
+  --legacy-bg-page:    #080b12;
+  --legacy-bg-card:    #0d1117;
+  --legacy-text-body:  #e2e8f0;
+  --legacy-text-mute:  #64748b;
+  --legacy-border:     #334155;
+  --legacy-link-hover: #ffffff;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Base styles. Body still renders dark-theme until E.2 flips it as
+   part of the landing-page redesign — flipping it now would make
+   every un-migrated component look broken (white text on white bg).
+─────────────────────────────────────────────────────────────────────── */
+
 html, body {
-  background: #080b12; margin: 0; padding: 0; min-height: 100vh;
+  background: var(--legacy-bg-page);
+  margin: 0; padding: 0; min-height: 100vh;
   font-family: var(--font-outfit), 'Outfit', -apple-system, sans-serif;
 }
 code, pre { font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--legacy-border); border-radius: 3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes floatBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
 @keyframes swordSwing { 0%{transform:rotate(-8deg)} 25%{transform:rotate(12deg)} 50%{transform:rotate(-5deg)} 75%{transform:rotate(8deg)} 100%{transform:rotate(-8deg)} }
-input::placeholder, textarea::placeholder { color: #64748b; }
-select option { background: #0d1117; color: #e2e8f0; }
+input::placeholder, textarea::placeholder { color: var(--legacy-text-mute); }
+select option { background: var(--legacy-bg-card); color: var(--legacy-text-body); }
 .nav-link { transition: color 0.2s; }
-.nav-link:hover { color: #ffffff !important; }
+.nav-link:hover { color: var(--legacy-link-hover) !important; }
 
 /* Responsive adjustments */
 @media (max-width: 900px) {
   .desktop-nav { display: none !important; }
   .mobile-only { display: block !important; }
-  
+
   /* Force grid components to wrap smoothly */
   .grid-wrap-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }
   .grid-wrap-3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; }
   .grid-wrap-2 { grid-template-columns: 1fr !important; }
   .flex-col-responsive { flex-direction: column !important; text-align: center !important; }
   .flex-col-responsive > div { align-items: center !important; justify-content: center !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Phase E.2+ opt-in: any container marked data-azuka-v2 (or a child of
+   one) lives in the new white+blue world. Used so the redesigned
+   LandingPage / AppShell can render correctly while the rest of the
+   app keeps the legacy chrome. Remove this scoping when the whole
+   app is migrated.
+─────────────────────────────────────────────────────────────────────── */
+
+[data-azuka-v2] {
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+}
+[data-azuka-v2] ::selection {
+  background: var(--azuka-blue-200);
+  color: var(--text-primary);
 }
