@@ -3,7 +3,10 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser } = require("../services/feedHelpers");
-const requireWallet = require("../middleware/requireWallet");
+// Phase C.3: dual-auth pilot. Read-all is cosmetic (just flips
+// read_at on rows the caller already owns); fully reversible by
+// not calling it again. See PR #150 for the dispatcher.
+const requireWallet = require("../middleware/requireAnyWallet");
 
 // GET is unsigned: signed reads would force a wallet-popup-per-poll
 // (this endpoint polls every 30s). Identity comes from the bare
