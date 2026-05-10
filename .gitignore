@@ -65,3 +65,7 @@ agent/activeMission.json
 /test-results/
 /playwright/.cache/
 .deploy/
+
+# Sui Move build artifacts
+contract-sui/build/
+contract-sui/Move.lock
