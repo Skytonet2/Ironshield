@@ -4,6 +4,11 @@ const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser, postHash, hydratePosts } = require("../services/feedHelpers");
 const requireWallet = require("../middleware/requireWallet");
+// Phase C.6: dual-auth pilot for POST / + DELETE /:id only — the
+// matched create/delete pair so a Sui-created post can be Sui-deleted.
+// All other signed routes in this file (bid, hire, bounty_attempts,
+// report, dm) stay NEAR-only until each is individually validated.
+const requireAnyWallet = require("../middleware/requireAnyWallet");
 const { enqueue } = require("../services/batchWorker");
 
 // Agent-economy feed services. Required lazily (re-required is cheap)
@@ -49,7 +54,8 @@ function normalizeGate(raw) {
 const MAX_POST_CHARS    = 500;
 const MAX_ARTICLE_CHARS = 50_000;
 
-router.post("/", requireWallet, async (req, res, next) => {
+// Phase C.6: dual-auth — accepts NEAR or Sui (x-wallet-chain: sui).
+router.post("/", requireAnyWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const {
@@ -124,7 +130,10 @@ router.post("/", requireWallet, async (req, res, next) => {
 });
 
 // DELETE /api/posts/:id
-router.delete("/:id", requireWallet, async (req, res, next) => {
+// Phase C.6: dual-auth — matched pair with POST /, so a Sui-created
+// post can be Sui-deleted. Author check (author_id=$2) prevents
+// cross-wallet deletion regardless of which chain signed the request.
+router.delete("/:id", requireAnyWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const r = await db.query(
