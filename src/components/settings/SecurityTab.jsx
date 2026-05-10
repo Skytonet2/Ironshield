@@ -297,6 +297,14 @@ function CopyBtn({ value, t }) {
   );
 }
 
+function primaryChainLabel(walletType) {
+  if (walletType === "sui") return "Sui";
+  if (walletType === "evm") return "EVM";
+  if (walletType === "sol") return "Solana";
+  if (walletType === "google") return "Google";
+  return "NEAR";
+}
+
 function WalletRow({ chain, label, address, badges = [], onAction, actionLabel, actionIcon: Icon, t }) {
   return (
     <div style={{
@@ -398,6 +406,7 @@ export default function SecurityTab() {
 // happen inside the component that renders when Privy is configured,
 // so the app still boots without the provider.
 function SecurityNoPrivy({ nearCtx, t }) {
+  const primaryChain = primaryChainLabel(nearCtx?.walletType);
   return (
     <ShellHeader t={t}>
       <div style={{
@@ -408,8 +417,8 @@ function SecurityNoPrivy({ nearCtx, t }) {
         marginBottom: 10,
       }}>
         <WalletRow
-          chain="NEAR"
-          label={nearCtx?.address || "NEAR"}
+          chain={primaryChain}
+          label={nearCtx?.address || `${primaryChain} wallet`}
           address={nearCtx?.address}
           badges={nearCtx?.walletType ? [nearCtx.walletType] : []}
           onAction={nearCtx?.signOut}
@@ -421,7 +430,7 @@ function SecurityNoPrivy({ nearCtx, t }) {
       <div style={{ fontSize: 11, color: t.textDim, padding: "4px 4px" }}>
         Set NEXT_PUBLIC_PRIVY_APP_ID to enable embedded Solana + EVM wallets with seed-phrase reveal.
       </div>
-      <DMKeysSection nearAddr={nearCtx?.address} t={t} />
+      <DMKeysSection nearAddr={nearCtx?.walletType === "near" ? nearCtx?.address : null} t={t} />
     </ShellHeader>
   );
 }
@@ -433,6 +442,7 @@ function SecurityWithPrivy({ nearCtx, sol, bnb, isCustodial, t }) {
 
   const evmWallet = privyWallets.find((w) => w.chainType === "ethereum");
   const solWallet = privyWallets.find((w) => w.chainType === "solana");
+  const primaryChain = primaryChainLabel(nearCtx?.walletType);
 
   const exportFor = (wallet) => {
     if (!wallet) return () => {};
@@ -484,8 +494,8 @@ function SecurityWithPrivy({ nearCtx, sol, bnb, isCustodial, t }) {
           Connected wallets
         </div>
         <WalletRow
-          chain="NEAR"
-          label={nearCtx?.address || "NEAR wallet"}
+          chain={primaryChain}
+          label={nearCtx?.address || `${primaryChain} wallet`}
           address={nearCtx?.address}
           badges={nearCtx?.walletType ? [nearCtx.walletType] : []}
           onAction={nearCtx?.address ? nearCtx.signOut : null}
@@ -536,7 +546,7 @@ function SecurityWithPrivy({ nearCtx, sol, bnb, isCustodial, t }) {
           <LogOut size={13} /> Sign out of Privy
         </button>
       )}
-      <DMKeysSection nearAddr={nearCtx?.address} t={t} />
+      <DMKeysSection nearAddr={nearCtx?.walletType === "near" ? nearCtx?.address : null} t={t} />
     </ShellHeader>
   );
 }

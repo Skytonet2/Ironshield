@@ -54,7 +54,7 @@ function LoadingFallback() {
 
 function TipPageInner() {
   const t = useTheme();
-  const { connected, address: wallet, selector, showModal: openWallet } = useWallet();
+  const { connected, address: wallet, selector, walletType, showModal: openWallet } = useWallet();
   const sp = useSearchParams();
   const key = sp.get("u") || sp.get("username") || "";
 
@@ -205,7 +205,7 @@ function TipPageInner() {
             padding: "12px 14px", borderRadius: 12, marginBottom: 16,
             background: `${t.accent}14`, border: `1px solid ${t.accent}44`, color: t.text, fontSize: 13,
           }}>
-            Connect your wallet to tip this creator in <strong>any token</strong> you hold — NEAR, USDC, or anything else.
+            Connect your wallet to tip this creator. During the Sui bridge, tipping still uses the NEAR token flow.
           </div>
         )}
 
@@ -231,6 +231,7 @@ function TipPageInner() {
           post={tipPost}
           wallet={wallet}
           selector={selector}
+          walletType={walletType}
           openWallet={openWallet}
           onClose={() => setTipPost(null)}
           onTipped={() => {

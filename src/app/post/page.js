@@ -52,7 +52,7 @@ function timeAgo(iso) {
 
 export default function PostPage() {
   const t = useTheme();
-  const { address, selector, showModal: openWallet } = useWallet();
+  const { address, selector, walletType, showModal: openWallet } = useWallet();
   const [tipOpen, setTipOpen] = useState(false);
 
   const [postId, setPostId] = useState(null);
@@ -371,6 +371,7 @@ export default function PostPage() {
           post={post}
           wallet={address}
           selector={selector}
+          walletType={walletType}
           openWallet={() => openWallet?.()}
           onClose={() => setTipOpen(false)}
           onTipped={(tip) => {
