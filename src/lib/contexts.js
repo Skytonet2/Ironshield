@@ -1,5 +1,12 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  ConnectModal as SuiConnectModal,
+  useCurrentAccount,
+  useDisconnectWallet,
+  useSignPersonalMessage,
+  useSuiClientQuery,
+} from "@mysten/dapp-kit";
 import { useSettings } from "@/lib/stores/settingsStore";
 import { apiFetch, setWalletState as setApiFetchWalletState } from "@/lib/apiFetch";
 import { NETWORK_ID, NODE_URL, STAKING_CONTRACT } from "@/lib/nearConfig";
@@ -140,7 +147,7 @@ export function ThemeProvider({ children }) {
 export const WalletCtx = createContext({
   connected: false,
   address: null,
-  walletType: null, // near | evm | sol | google
+  walletType: null, // sui | near | evm | sol | google
   balance: "0",
   selector: null,
   modal: null,
@@ -150,6 +157,71 @@ export const WalletCtx = createContext({
 
 export const useWallet = () => useContext(WalletCtx);
 
+const MIST_PER_SUI = 1_000_000_000n;
+
+function formatSuiBalance(totalMist) {
+  try {
+    const mist = BigInt(totalMist || "0");
+    const whole = mist / MIST_PER_SUI;
+    const rem = (mist % MIST_PER_SUI) / 10_000_000n;
+    return `${whole}.${String(rem).padStart(2, "0")}`;
+  } catch {
+    return "0";
+  }
+}
+
+function SuiWalletBridge({
+  walletType,
+  setAddress,
+  setWalletType,
+  setDisplayName,
+  setBalance,
+  setChooserOpen,
+  setSuiSignPersonalMessage,
+  setSuiDisconnectWallet,
+}) {
+  const account = useCurrentAccount();
+  const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
+  const { mutateAsync: disconnectWallet } = useDisconnectWallet();
+  const address = account?.address ? String(account.address).toLowerCase().trim() : null;
+  const { data: balanceData } = useSuiClientQuery(
+    "getBalance",
+    { owner: address || "0x0" },
+    { enabled: !!address }
+  );
+
+  useEffect(() => {
+    setSuiSignPersonalMessage(() => signPersonalMessage);
+  }, [setSuiSignPersonalMessage, signPersonalMessage]);
+
+  useEffect(() => {
+    setSuiDisconnectWallet(() => disconnectWallet);
+  }, [setSuiDisconnectWallet, disconnectWallet]);
+
+  useEffect(() => {
+    if (address) {
+      setWalletType("sui");
+      setAddress(address);
+      setDisplayName(null);
+      setChooserOpen(false);
+      return;
+    }
+
+    if (walletType === "sui") {
+      setWalletType(null);
+      setAddress(null);
+      setBalance("0");
+    }
+  }, [address, walletType, setAddress, setWalletType, setDisplayName, setBalance, setChooserOpen]);
+
+  useEffect(() => {
+    if (walletType !== "sui") return;
+    setBalance(formatSuiBalance(balanceData?.totalBalance));
+  }, [walletType, balanceData?.totalBalance, setBalance]);
+
+  return null;
+}
+
 export function WalletProvider({ children }) {
   const [mounted, setMounted] = useState(false);
   const [selector, setSelector] = useState(null);
@@ -158,6 +230,8 @@ export function WalletProvider({ children }) {
   const [walletType, setWalletType] = useState(null);
   const [displayName, setDisplayName] = useState(null);
   const [balance, setBalance] = useState("0");
+  const [suiSignPersonalMessage, setSuiSignPersonalMessage] = useState(null);
+  const [suiDisconnectWallet, setSuiDisconnectWallet] = useState(null);
   // initWalletRef below serialises the lazy-init promise so concurrent
   // callers share one in-flight init instead of racing.
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -169,8 +243,13 @@ export function WalletProvider({ children }) {
   // non-hook callers (the apiFetch wrapper itself, libs, tests) can
   // sign requests without prop-drilling the selector. Reset on signOut.
   useEffect(() => {
-    setApiFetchWalletState({ selector, walletType });
-  }, [selector, walletType]);
+    setApiFetchWalletState({
+      selector,
+      walletType,
+      suiAddress: walletType === "sui" ? address : null,
+      signSuiPersonalMessage: suiSignPersonalMessage,
+    });
+  }, [selector, walletType, address, suiSignPersonalMessage]);
 
   // Referral claim: once a wallet connects, see if the visitor arrived
   // via a /?ref=<code> link (stashed in localStorage by the inline
@@ -346,6 +425,9 @@ export function WalletProvider({ children }) {
   };
 
   const signOut = async () => {
+    if (walletType === "sui" && typeof suiDisconnectWallet === "function") {
+      await suiDisconnectWallet();
+    }
     if (walletType === "near" && selector) {
       const wallet = await selector.wallet();
       await wallet.signOut();
@@ -477,6 +559,16 @@ export function WalletProvider({ children }) {
           onGoogle={() => connectGoogle().catch((e) => alert(e.message))}
         />
       )}
+      <SuiWalletBridge
+        walletType={walletType}
+        setAddress={setAddress}
+        setWalletType={setWalletType}
+        setDisplayName={setDisplayName}
+        setBalance={setBalance}
+        setChooserOpen={setChooserOpen}
+        setSuiSignPersonalMessage={setSuiSignPersonalMessage}
+        setSuiDisconnectWallet={setSuiDisconnectWallet}
+      />
       {children}
     </WalletCtx.Provider>
   );
@@ -492,6 +584,9 @@ export function WalletProvider({ children }) {
 //
 // Each row calls its connect function directly — no nested modal.
 function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
+  const currentSuiAccount = useCurrentAccount();
+  const [suiOpen, setSuiOpen] = useState(false);
+
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
     window.addEventListener("keydown", onKey);
@@ -508,7 +603,7 @@ function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
       key: "near",
       label: "NEAR Wallet",
       hint: "Meteor • HERE • HOT • Intear",
-      recommended: true,
+      badge: "Legacy",
       onClick: onNear,
       tile: { bg: "#0f0f17", border: "rgba(255,255,255,0.12)", glyph: "N", color: "#fff" },
     },
@@ -602,6 +697,62 @@ function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <SuiConnectModal
+            open={suiOpen}
+            onOpenChange={setSuiOpen}
+            trigger={
+              <button
+                type="button"
+                style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  padding: "14px 16px", width: "100%",
+                  background: "rgba(255,255,255,0.025)",
+                  border: "1px solid rgba(14,165,233,0.55)",
+                  borderRadius: 14,
+                  cursor: "pointer", textAlign: "left",
+                  transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease",
+                  boxShadow: "0 0 0 1px rgba(14,165,233,0.20) inset",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                  e.currentTarget.style.borderColor = "rgba(14,165,233,0.58)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.025)";
+                  e.currentTarget.style.borderColor = "rgba(14,165,233,0.55)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                <span aria-hidden style={{
+                  width: 42, height: 42, borderRadius: 10,
+                  background: "linear-gradient(135deg, #4ca3ff 0%, #0ea5e9 100%)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  fontWeight: 800, fontSize: 20,
+                  color: "#fff", letterSpacing: -1, flexShrink: 0,
+                }}>S</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    fontSize: 15, fontWeight: 800, color: "#fff",
+                  }}>
+                    {currentSuiAccount ? "Sui Wallet Connected" : "Sui Wallet"}
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, padding: "2px 10px", borderRadius: 999,
+                      background: "rgba(14,165,233,0.20)", color: "#7dd3fc",
+                    }}>Recommended</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#9aa4bd", marginTop: 2 }}>
+                    {currentSuiAccount?.address
+                      ? `${currentSuiAccount.address.slice(0, 10)}…${currentSuiAccount.address.slice(-6)}`
+                      : "Sui Wallet • Suiet • Slush"}
+                  </div>
+                </div>
+                <span style={{ color: "#6c7692", fontSize: 14, flexShrink: 0 }}>›</span>
+              </button>
+            }
+          />
           {opts.map(opt => (
             <button
               key={opt.key}
@@ -648,6 +799,12 @@ function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
                       background: "rgba(168,85,247,0.22)", color: "#c4b8ff",
                     }}>Recommended</span>
                   )}
+                  {opt.badge && (
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, padding: "2px 10px", borderRadius: 999,
+                      background: "rgba(96,165,250,0.16)", color: "#93c5fd",
+                    }}>{opt.badge}</span>
+                  )}
                 </div>
                 <div style={{ fontSize: 12, color: "#9aa4bd", marginTop: 2 }}>
                   {opt.hint}
@@ -664,7 +821,7 @@ function WalletChooser({ onClose, onNear, onEvm, onSol, onGoogle }) {
         }}>
           <span style={{ flex: 1, height: 1, background: "#1d2540" }} />
           <span style={{ fontSize: 11.5, color: "#6c7692", fontStyle: "italic" }}>
-            More options coming soon
+            NEAR stays available during migration
           </span>
           <span style={{ flex: 1, height: 1, background: "#1d2540" }} />
         </div>

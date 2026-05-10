@@ -27,15 +27,25 @@ import {
 } from "./session";
 
 const RECIPIENT = "ironshield.near";
+const SUI_AUTH_DOMAIN = "azuka-sui-auth:v1";
 
-let _wallet = { selector: null, walletType: null };
+let _wallet = { selector: null, walletType: null, suiAddress: null, signSuiPersonalMessage: null };
 export function setWalletState(next) {
   const prev = _wallet;
-  _wallet = next || { selector: null, walletType: null };
+  _wallet = {
+    selector: null,
+    walletType: null,
+    suiAddress: null,
+    signSuiPersonalMessage: null,
+    ...(next || {}),
+  };
   // Disconnect or wallet swap → drop the cached session so the next
   // mutating call logs in under the new identity.
-  const lostSelector = prev.selector && !_wallet.selector;
-  if (lostSelector) clearSession();
+  const identityChanged =
+    prev.selector !== _wallet.selector ||
+    prev.walletType !== _wallet.walletType ||
+    prev.suiAddress !== _wallet.suiAddress;
+  if (identityChanged) clearSession();
 }
 
 async function sha256Hex(input) {
@@ -63,6 +73,23 @@ async function fetchNonce(api) {
 }
 
 async function signRequest({ method, path, body, nonce }) {
+  const bodyStr = typeof body === "string" ? body : body == null ? "" : "";
+  const hash = await sha256Hex(bodyStr);
+
+  if (_wallet.walletType === "sui") {
+    const address = String(_wallet.suiAddress || "").toLowerCase().trim();
+    if (!address) throw new Error("not-connected");
+    if (typeof _wallet.signSuiPersonalMessage !== "function") {
+      throw new Error("sui-signer-unavailable");
+    }
+    const message = `${SUI_AUTH_DOMAIN}\n${method.toUpperCase()}\n${path}\n${hash}`;
+    const signed = await _wallet.signSuiPersonalMessage({
+      message: new TextEncoder().encode(message),
+    });
+    if (!signed?.signature) throw new Error("sui-sign-message-failed");
+    return { chain: "sui", accountId: address, signature: signed.signature };
+  }
+
   if (!_wallet.selector) {
     if (_wallet.walletType && _wallet.walletType !== "near") {
       throw new Error("wallet-type-unsupported");
@@ -74,8 +101,6 @@ async function signRequest({ method, path, body, nonce }) {
   }
   const wallet = await _wallet.selector.wallet();
   if (!wallet) throw new Error("not-connected");
-  const bodyStr = typeof body === "string" ? body : body == null ? "" : "";
-  const hash = await sha256Hex(bodyStr);
   const message = `ironshield-auth:v1\n${method.toUpperCase()}\n${path}\n${hash}`;
   const nonceBuf = decodeBase64UrlToBuffer(nonce);
   if (nonceBuf.length !== 32) throw new Error(`bad nonce length: ${nonceBuf.length}`);
@@ -96,13 +121,21 @@ async function signedFetch(path, options = {}) {
   let signed = await signRequest({ method, path, body: options.body, nonce });
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const headers = {
-      ...(options.headers || {}),
-      "x-wallet":     signed.accountId,
-      "x-public-key": signed.publicKey,
-      "x-nonce":      nonce,
-      "x-signature":  signed.signature,
-    };
+    const headers = signed.chain === "sui"
+      ? {
+          ...(options.headers || {}),
+          "x-wallet-chain": "sui",
+          "x-wallet": signed.accountId,
+          "x-nonce": nonce,
+          "x-signature": signed.signature,
+        }
+      : {
+          ...(options.headers || {}),
+          "x-wallet":     signed.accountId,
+          "x-public-key": signed.publicKey,
+          "x-nonce":      nonce,
+          "x-signature":  signed.signature,
+        };
     const r = await fetch(`${api}${path}`, { ...options, headers });
     if (r.status !== 401 || attempt > 0) return r;
 
@@ -116,6 +149,9 @@ async function signedFetch(path, options = {}) {
 }
 
 async function currentWalletAddress() {
+  if (_wallet.walletType === "sui") {
+    return _wallet.suiAddress ? String(_wallet.suiAddress).toLowerCase().trim() : null;
+  }
   if (!_wallet.selector) return null;
   if (_wallet.walletType && _wallet.walletType !== "near") return null;
   try {
@@ -172,6 +208,10 @@ export async function apiFetch(path, options = {}) {
 
   // /login MUST sign — recursing into the token path here would loop.
   if (path === "/api/auth/login") return signedFetch(path, options);
+
+  // Phase D.1 keeps Sui on per-request signatures until backend session
+  // tokens are chain-aware. This prevents cross-chain token confusion.
+  if (_wallet.walletType === "sui") return signedFetch(path, options);
 
   const wallet = await currentWalletAddress();
   if (!wallet) {
