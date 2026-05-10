@@ -23,6 +23,8 @@ Use the current Mysten packages:
 - Frontend wallet UI/actions: `@mysten/dapp-kit-react` plus `@mysten/dapp-kit-core`.
 - Sui TypeScript primitives and verification: `@mysten/sui`.
 
+Phase A pins `@mysten/sui` to the latest Node-20-compatible 1.x line (`^1.45.2`). The 2.x line declares `node >=22`, while this repo still uses Node 20 in Docker and GitHub Actions. Do not move to 2.x until the runtime upgrade is an explicit deployment slice.
+
 Do not start new work on legacy `@mysten/dapp-kit`; Mysten's current docs mark it JSON-RPC only and recommend the new split packages.
 
 Primary docs checked:
