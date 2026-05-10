@@ -5,6 +5,10 @@ const crypto = require("crypto");
 const db = require("../db/client");
 const { getOrCreateUser } = require("../services/feedHelpers");
 const requireWallet = require("../middleware/requireWallet");
+// Phase C.4: dual-auth pilot for /dm-pubkey and /grant-delegate only.
+// /onboard, PATCH /, and /upload stay on the NEAR-only requireWallet
+// until each is individually validated for Sui clients in a later chip.
+const requireAnyWallet = require("../middleware/requireAnyWallet");
 
 // GET /api/profile/me — viewer's own profile, used by the onboarding
 // modal trigger. Includes `onboardedAt` so the frontend can decide
@@ -138,7 +142,8 @@ router.post("/upload", requireWallet, async (req, res) => {
 
 // POST /api/profile/dm-pubkey  body: { pubkey }
 // Publishes the user's Curve25519 public key so peers can encrypt DMs to them.
-router.post("/dm-pubkey", requireWallet, async (req, res, next) => {
+// Phase C.4: dual-auth — accepts NEAR or Sui (x-wallet-chain: sui) signed reqs.
+router.post("/dm-pubkey", requireAnyWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const { pubkey } = req.body || {};
@@ -150,7 +155,8 @@ router.post("/dm-pubkey", requireWallet, async (req, res, next) => {
 
 // POST /api/profile/grant-delegate body: { pubkey }
 // Records that the user has granted the platform a function-call access key.
-router.post("/grant-delegate", requireWallet, async (req, res, next) => {
+// Phase C.4: dual-auth — accepts NEAR or Sui (x-wallet-chain: sui) signed reqs.
+router.post("/grant-delegate", requireAnyWallet, async (req, res, next) => {
   try {
     const user = await getOrCreateUser(req.wallet);
     const { pubkey } = req.body || {};
