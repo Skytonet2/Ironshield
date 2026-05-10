@@ -1,8 +1,8 @@
 module azuka::core {
     use sui::event;
-    use sui::object::{Self, UID};
-    use sui::transfer;
-    use sui::tx_context::{Self, TxContext};
+
+    #[test_only]
+    use sui::test_scenario;
 
     const VERSION: u64 = 1;
     const E_NOT_ADMIN: u64 = 0;
@@ -90,7 +90,40 @@ module azuka::core {
         config.paused
     }
 
-    public entry fun set_paused(
+    #[test_only]
+    fun new_for_testing(ctx: &mut TxContext): (Config, AdminCap) {
+        let sender = tx_context::sender(ctx);
+
+        (
+            Config {
+                id: object::new(ctx),
+                version: VERSION,
+                admin: sender,
+                orchestrator: sender,
+                paused: false,
+            },
+            AdminCap {
+                id: object::new(ctx),
+            },
+        )
+    }
+
+    #[test_only]
+    fun destroy_for_testing(config: Config, cap: AdminCap) {
+        let Config {
+            id: config_id,
+            version: _,
+            admin: _,
+            orchestrator: _,
+            paused: _,
+        } = config;
+        let AdminCap { id: cap_id } = cap;
+
+        object::delete(config_id);
+        object::delete(cap_id);
+    }
+
+    public fun set_paused(
         config: &mut Config,
         cap: &AdminCap,
         paused: bool,
@@ -105,7 +138,7 @@ module azuka::core {
         });
     }
 
-    public entry fun set_orchestrator(
+    public fun set_orchestrator(
         config: &mut Config,
         cap: &AdminCap,
         orchestrator: address,
@@ -121,7 +154,7 @@ module azuka::core {
         });
     }
 
-    public entry fun transfer_admin(
+    public fun transfer_admin(
         config: &mut Config,
         cap: AdminCap,
         new_admin: address,
@@ -138,5 +171,61 @@ module azuka::core {
             old_admin,
             new_admin,
         });
+    }
+
+    #[test]
+    fun test_initial_config() {
+        let mut scenario = test_scenario::begin(@0xA11CE);
+        let (config, cap) = new_for_testing(scenario.ctx());
+
+        assert!(version(&config) == VERSION, 100);
+        assert!(admin(&config) == @0xA11CE, 101);
+        assert!(orchestrator(&config) == @0xA11CE, 102);
+        assert!(!is_paused(&config), 103);
+        assert_not_paused(&config);
+
+        destroy_for_testing(config, cap);
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    fun test_admin_can_pause_and_unpause() {
+        let mut scenario = test_scenario::begin(@0xA11CE);
+        let (mut config, cap) = new_for_testing(scenario.ctx());
+
+        set_paused(&mut config, &cap, true, scenario.ctx());
+        assert!(is_paused(&config), 110);
+
+        set_paused(&mut config, &cap, false, scenario.ctx());
+        assert!(!is_paused(&config), 111);
+        assert_not_paused(&config);
+
+        destroy_for_testing(config, cap);
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    fun test_admin_can_set_orchestrator() {
+        let mut scenario = test_scenario::begin(@0xA11CE);
+        let (mut config, cap) = new_for_testing(scenario.ctx());
+        let next = @0xA11CE;
+
+        set_orchestrator(&mut config, &cap, next, scenario.ctx());
+        assert!(orchestrator(&config) == next, 120);
+
+        destroy_for_testing(config, cap);
+        test_scenario::end(scenario);
+    }
+
+    #[test, expected_failure(abort_code = E_PAUSED)]
+    fun test_pause_guard_aborts() {
+        let mut scenario = test_scenario::begin(@0xA11CE);
+        let (mut config, cap) = new_for_testing(scenario.ctx());
+
+        set_paused(&mut config, &cap, true, scenario.ctx());
+        assert_not_paused(&config);
+
+        destroy_for_testing(config, cap);
+        test_scenario::end(scenario);
     }
 }

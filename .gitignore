@@ -23,6 +23,7 @@
 
 # production
 /build
+contract-sui/build/
 
 # misc
 .DS_Store
