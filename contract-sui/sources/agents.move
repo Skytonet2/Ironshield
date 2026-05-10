@@ -205,6 +205,29 @@ module azuka::agents {
         string::utf8(out)
     }
 
+    /// Package-private: expose the registry's UID so sibling modules
+    /// (sub_agents, future skills/connections) can attach their own
+    /// dynamic fields to the shared registry without giving outsiders
+    /// raw mutation rights.
+    public(package) fun registry_uid(r: &AgentRegistry): &UID { &r.id }
+    public(package) fun registry_uid_mut(r: &mut AgentRegistry): &mut UID { &mut r.id }
+
+    /// Package-private: reserve a (already-lowercased) handle for `owner`.
+    /// Aborts if the handle is taken — callers must check first.
+    public(package) fun reserve_handle(r: &mut AgentRegistry, lower: String, owner: address) {
+        df::add(&mut r.id, lower, owner);
+    }
+
+    /// Package-private: release a previously-reserved handle. Pass the
+    /// display-cased handle; this lowercases internally so callers don't
+    /// need to track casing.
+    public(package) fun release_handle(r: &mut AgentRegistry, handle: String) {
+        let lower = to_lower(&handle);
+        if (df::exists_<String>(&r.id, lower)) {
+            let _: address = df::remove<String, address>(&mut r.id, lower);
+        };
+    }
+
     #[test_only]
     public fun init_for_testing(ctx: &mut TxContext) { init(ctx); }
 }
