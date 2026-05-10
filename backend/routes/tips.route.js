@@ -3,7 +3,11 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/client");
 const { getOrCreateUser } = require("../services/feedHelpers");
-const requireWallet = require("../middleware/requireWallet");
+// Phase C.5: dual-auth. POST /api/tips already trusts the caller's
+// txHash claim (no on-chain verification), and the wallet string is
+// stored opaquely — Sui addresses (0x...64chars) work the same as
+// NEAR account ids. Frontend TipModal is Sui-aware as of PR #153.
+const requireWallet = require("../middleware/requireAnyWallet");
 const { createAndPush } = require("../services/pushNotify");
 
 // Holding-period proxy: users created ≥ 7 days ago count as "held
