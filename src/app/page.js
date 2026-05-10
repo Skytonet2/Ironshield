@@ -1,17 +1,17 @@
 "use client";
 // / (root) — the public landing page.
 //
-// Previously this rendered HomePage inside AppShell, which made the
-// root URL feel like the authenticated product. Now /  serves a
-// dedicated marketing surface (navbar + hero + product showcase +
-// stats + subscribe + footer). Visitors click "Launch App" to drop
-// into the AppShell-wrapped /feed.
+// Phase E.2: routes to LandingPageV2, the white + sky-blue redesign.
+// The legacy dark landing is kept on disk as LandingPageLegacy.jsx
+// for one phase so we can revert with a one-line import swap if the
+// new design hits a blocker. Delete LandingPageLegacy.jsx in E.8
+// once every screen is migrated.
 //
-// LandingPage brings its own chrome — do NOT wrap it in AppShell
+// LandingPageV2 brings its own chrome — do NOT wrap it in AppShell
 // or LegacyRoute.
 
-import LandingPage from "@/components/landing/LandingPage";
+import LandingPageV2 from "@/components/landing/LandingPageV2";
 
 export default function RootPage() {
-  return <LandingPage />;
+  return <LandingPageV2 />;
 }
